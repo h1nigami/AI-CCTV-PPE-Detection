@@ -14,14 +14,28 @@ detection_thread = None
 cap = None
 
 def iou_overlap(boxA, boxB, threshold: float = 0.2) -> bool:
-    xA, yA = max(boxA[0], boxB[0]), max(boxA[1], boxB[1])
+    x_a, yA = max(boxA[0], boxB[0]), max(boxA[1], boxB[1])
     xB, yB = min(boxA[2], boxB[2]), min(boxA[3], boxB[3])
-    inter_area = max(0, xB - xA) * max(0, yB - yA)
+    inter_area = max(0, xB - x_a) * max(0, yB - yA)
     if inter_area == 0:
         return False
     boxA_area = (boxA[2] - boxA[0]) * (boxA[3] - boxA[1])
     iou = inter_area / float(boxA_area)
     return iou > threshold
+
+def has_item_on_person(person_box, item_box, top_ratio: 0.4):
+    """Проверка нахождения item_box в переделах верхней части бокса человека"""
+    px1,py1,px2,py2 = person_box
+    ix1,iy1,ix2,iy2 = item_box
+
+    center_x = (ix1 + ix2) / 2
+    center_y = (iy1 + iy2) / 2
+
+    upper_body = py1 + (py2 - py1) * top_ratio
+    return (
+        px1 <= center_x <= px2 and py1 <= upper_body
+    )
+
 def detection_worker():
     """Separate thread for detection processing and logging"""
     global LIVE_FEED_ACTIVE, DETECTION_LOG, cap
@@ -50,8 +64,8 @@ def detection_worker():
                     if person_boxes:
                         message += f"👷 {len(person_boxes)} Person(s) detected | "
                         for idx, pbox in enumerate(person_boxes):
-                            has_helmet = any(iou_overlap(pbox, hbox) for hbox in helmet_boxes)
-                            has_mask = any(iou_overlap(pbox, mbox) for mbox in mask_boxes)
+                            has_helmet = any(has_item_on_person(pbox, hbox) for hbox in helmet_boxes)
+                            has_mask = any(has_item_on_person(pbox, mbox) for mbox in mask_boxes)
 
                             message += f"👤P{idx+1}: "
                             message += "✅ Helmet, " if has_helmet else "❌ No Helmet, "
