@@ -20,6 +20,7 @@ def _load_font(size: int):
 FONT        = _load_font(FONT_SIZE_NORMAL)
 FONT_SMALL  = _load_font(FONT_SIZE_SMALL)
 FONT_LARGE  = _load_font(FONT_SIZE_LARGE)
+FONT_NORMAL = _load_font(FONT_SIZE_NORMAL)
 
 
 def put_text(frame, text: str, pos: Tuple, color=COLOR_WHITE, font=None):
@@ -76,3 +77,33 @@ def draw_legend(frame):
     return put_text(frame, legend,
                     (10, frame.shape[0] - 25),
                     color=COLOR_WHITE, font=FONT_SMALL)
+
+def draw_stats_panel(frame, persons_count: int, approved_count: int,
+                     violation_count: int, gesture_detected: bool):
+    """Панель статистики в верхнем левом углу"""
+    h, w = frame.shape[:2]
+
+    # Фон панели
+    overlay = frame.copy()
+    cv2.rectangle(overlay, (0, 0), (320, 140), (0, 0, 0), -1)
+    cv2.addWeighted(overlay, 0.6, frame, 0.4, 0, frame)
+
+    # Статистика
+    frame = put_text(frame, f"Людей в кадре:  {persons_count}",
+                     (10, 10), color=COLOR_WHITE, font=FONT_NORMAL)
+
+    frame = put_text(frame, f"Пропусков:      {approved_count}",
+                     (10, 38), color=COLOR_GOLD, font=FONT_NORMAL)
+
+    frame = put_text(frame, f"Нарушений:      {violation_count}",
+                     (10, 66),
+                     color=COLOR_RED if violation_count > 0 else COLOR_GREEN,
+                     font=FONT_NORMAL)
+
+    # Реакция на жест
+    if gesture_detected:
+        frame = put_text(frame, "ЖЕСТ ОК РАСПОЗНАН",
+                         (10, 100),
+                         color=COLOR_GOLD, font=FONT_LARGE)
+
+    return frame

@@ -5,7 +5,7 @@ from config import MODEL_PATH, POSE_MODEL_PATH, CLASS_NAMES
 from camera import FrameBuffer, CameraCapture
 from detection import run_detection, get_danger_zone, has_item_on_person, is_in_danger_zone
 from gestures import detect_ok_gesture
-from visualization import draw_danger_zone, draw_person, draw_hint, draw_legend
+from visualization import draw_danger_zone, draw_person, draw_hint, draw_legend, draw_stats_panel
 from state import DetectionState, LogEntry
 import threading
 import cv2
@@ -119,6 +119,12 @@ def generate_live_feed():
 
             frame = draw_danger_zone(frame, danger_zone)
 
+            # Счётчики для панели
+            persons_count   = len(detected["persons"])
+            approved_count  = 0
+            violation_count = 0
+            gesture_now     = False  # жест был распознан на этом кадре
+
             for idx, pbox in enumerate(detected["persons"]):
                 has_helmet = any(has_item_on_person(pbox, h) for h in detected["helmets"])
                 has_mask   = any(has_item_on_person(pbox, m) for m in detected["masks"])
@@ -127,21 +133,43 @@ def generate_live_feed():
                 approved   = state.is_approved(pbox)
 
                 fully_equipped = has_helmet and has_mask and has_vest
+
+                # Проверяем жест если в СИЗ и не одобрен
+                if fully_equipped and not approved:
+                    if detect_ok_gesture(frame, pbox, pose_model):
+                        state.approve(pbox)
+                        approved   = True
+                        gesture_now = True  # показываем реакцию на кадре
+
+                if approved:
+                    approved_count += 1
+                elif not fully_equipped:
+                    violation_count += 1
+
                 ppe = (
                     f"{'К' if has_helmet else '!К'} "
                     f"{'М' if has_mask   else '!М'} "
                     f"{'Ж' if has_vest   else '!Ж'}"
                 )
 
-                if approved:       label = f"Чел.{idx+1} ПРОПУСК | {ppe}"
-                elif in_danger:    label = f"Чел.{idx+1} ОПАСНАЯ ЗОНА | {ppe}"
-                else:              label = f"Чел.{idx+1} Вне зоны | {ppe}"
+                if approved:    label = f"Чел.{idx+1} ПРОПУСК | {ppe}"
+                elif in_danger: label = f"Чел.{idx+1} ОПАСНАЯ ЗОНА | {ppe}"
+                else:           label = f"Чел.{idx+1} Вне зоны | {ppe}"
 
                 frame = draw_person(frame, pbox, label,
                                     in_danger, not fully_equipped, approved)
 
                 if fully_equipped and not approved and in_danger:
                     frame = draw_hint(frame, pbox)
+
+            # Рисуем панель статистики
+            frame = draw_stats_panel(
+                frame,
+                persons_count   = persons_count,
+                approved_count  = approved_count,
+                violation_count = violation_count,
+                gesture_detected = gesture_now,
+            )
 
             frame = draw_legend(frame)
 
