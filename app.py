@@ -3,7 +3,7 @@ import uuid
 import cv2
 from ultralytics import YOLO
 from flask import Flask, send_file, render_template, Response, request, jsonify
-from main import generate_live_feed, start_live, stop_live, state
+from main import generate_live_feed, start_live, stop_live, state, model
 from waitress import serve
 
 app = Flask(__name__)
@@ -58,8 +58,6 @@ def upload_file():
     filename = f"{uuid.uuid4().hex}_{file.filename}"
     path = os.path.join(UPLOAD_FOLDER, filename)
     file.save(path)
-
-    model = YOLO("models/best.pt")
 
     if filename.lower().endswith((".png", ".jpg", ".jpeg")):
         img = cv2.imread(path)
