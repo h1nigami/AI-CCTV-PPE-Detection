@@ -79,24 +79,24 @@ def draw_legend(frame):
                     color=COLOR_WHITE, font=FONT_SMALL)
 
 def draw_stats_panel(frame, persons_count: int, approved_count: int,
-                     violation_count: int, gesture_detected: bool):
+                     violation_count: int, gesture_detected: bool, x = 20, y = 20):
     """Панель статистики в верхнем левом углу"""
     h, w = frame.shape[:2]
 
     # Фон панели
     overlay = frame.copy()
-    cv2.rectangle(overlay, (0, 0), (320, 140), (0, 0, 0), -1)
+    cv2.rectangle(overlay, (0, 0), (x + 320, y + 140), (0, 0, 0), -1)
     cv2.addWeighted(overlay, 0.6, frame, 0.4, 0, frame)
 
     # Статистика
     frame = put_text(frame, f"Людей в кадре:  {persons_count}",
-                     (10, 10), color=COLOR_WHITE, font=FONT_NORMAL)
+                     (x + 10, y + 10), color=COLOR_WHITE, font=FONT_NORMAL)
 
     frame = put_text(frame, f"Пропусков:      {approved_count}",
-                     (10, 38), color=COLOR_GOLD, font=FONT_NORMAL)
+                     (x + 10, y + 38), color=COLOR_GOLD, font=FONT_NORMAL)
 
     frame = put_text(frame, f"Нарушений:      {violation_count}",
-                     (10, 66),
+                     (x + 10, y + 66),
                      color=COLOR_RED if violation_count > 0 else COLOR_GREEN,
                      font=FONT_NORMAL)
 

@@ -3,7 +3,7 @@ MODEL_PATH       = "models/best.pt"
 POSE_MODEL_PATH  = "models/yolov8n-pose.pt"
 
 # ─── Камера ───────────────────────────────────
-CAMERA_SOURCE    = "rtsp://192.168.100.13:8554/live"
+CAMERA_SOURCE    = "rtsp://192.168.0.124:554/stream1"
 
 # ─── Детекция ─────────────────────────────────
 CONF_THRESH      = 0.75
