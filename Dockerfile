@@ -1,3 +1,4 @@
+# Dockerfile
 FROM python:3.11-slim
 
 RUN apt-get update && apt-get install -y \
@@ -13,13 +14,13 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
+# Сначала устанавливаем пакеты на хосте и копируем
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install -r requirements.txt
 
 COPY . .
-
 RUN mkdir -p uploads
 
 EXPOSE 8000
-
 CMD ["python", "app.py"]
