@@ -5,10 +5,13 @@ from config import MODEL_PATH, POSE_MODEL_PATH, CLASS_NAMES
 from camera import FrameBuffer, CameraCapture
 from detection import run_detection, get_danger_zone, has_item_on_person, is_in_danger_zone
 from gestures import detect_ok_gesture
-from visualization import draw_danger_zone, draw_person, draw_hint, draw_legend, draw_stats_panel
+from visualization import draw_danger_zone, draw_person, draw_hint, draw_legend, draw_stats_panel, put_text
 from state import DetectionState, LogEntry
 import threading
 import cv2
+from cv2_enumerate_cameras import  enumerate_cameras
+
+print(enumerate_cameras())
 
 # ─── Инициализация ────────────────────────────
 model      = YOLO(MODEL_PATH)
@@ -119,6 +122,26 @@ def generate_live_feed():
 
             frame = draw_danger_zone(frame, danger_zone)
 
+            for box in detected["helmets"]:
+                x1, y1, x2, y2 = map(int, box)
+                cv2.rectangle(frame, (x1,y1), (x2,y2), (255, 255, 0), 2)
+                frame = put_text(frame, "Каска", (x1, (max(0, y1 - 20))), color=(0,255,0))
+
+            for box in detected["masks"]:
+                x1, y1, x2, y2 = map(int, box)
+                cv2.rectangle(frame, (x1,y1), (x2,y2), (255, 255, 0), 2)
+                frame = put_text(frame, "Маска", (x1, (max(0, y1 - 20))), color=(255,255,0))
+
+            for box in detected["vests"]:
+                x1, y1, x2, y2 = map(int, box)
+                cv2.rectangle(frame, (x1,y1), (x2,y2), (255, 255, 0), 2)
+                frame = put_text(frame, "Жилет", (x1, (max(0, y1 - 20))), color=(265,165,0))
+
+            for box in detected["cones"]:
+                x1, y1, x2, y2 = map(int, box)
+                cv2.rectangle(frame, (x1,y1), (x2,y2), (255, 255, 0), 2)
+                frame = put_text(frame, "Конус", (x1, (max(0, y1 - 20))), color=(0,128,255))
+
             # Счётчики для панели
             persons_count   = len(detected["persons"])
             approved_count  = 0
@@ -169,6 +192,8 @@ def generate_live_feed():
                 approved_count  = approved_count,
                 violation_count = violation_count,
                 gesture_detected = gesture_now,
+                x=200,
+                y=100
             )
 
             frame = draw_legend(frame)
