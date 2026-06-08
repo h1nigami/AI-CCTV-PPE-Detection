@@ -9,9 +9,7 @@ from visualization import draw_danger_zone, draw_person, draw_hint, draw_legend,
 from state import DetectionState, LogEntry
 import threading
 import cv2
-from cv2_enumerate_cameras import  enumerate_cameras
 
-print(enumerate_cameras())
 
 # ─── Инициализация ────────────────────────────
 model      = YOLO(MODEL_PATH)

@@ -1,5 +1,4 @@
-# Базовый образ NVIDIA для Jetson с уже установленным PyTorch
-FROM nvcr.io/nvidia/l4t-pytorch:r35.2.1-pth2.0-py3
+FROM dustynv/pytorch:2.0-r35.3.1
 
 WORKDIR /app
 
@@ -10,18 +9,18 @@ RUN apt-get update && apt-get install -y \
     ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
-# PyTorch уже есть в образе, ставим только остальное
 COPY requirements.txt .
+
 RUN pip install --no-cache-dir \
-    ultralytics \
+    ultralytics==8.4.60 \
     opencv-python-headless \
-    flask \
-    waitress \
+    "flask~=3.1.3" \
+    "waitress~=3.0.2" \
     pillow \
-    numpy
+    "numpy<2.0"
 
 COPY . .
-RUN mkdir -p uploads
+RUN mkdir -p uploadss
 
 EXPOSE 8000
-CMD ["python", "app.py"]
+CMD ["python","app.py"]
