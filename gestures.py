@@ -95,3 +95,50 @@ def _is_ok_by_contour(hand_img) -> bool:
         if defects[i, 0][3] / 256.0 > DEFECT_DEPTH_MIN
     )
     return DEFECT_MIN <= count <= DEFECT_MAX
+
+def detect_raised_hand(frame, person_box, pose_model) -> bool:
+    """
+    Жест для печати — обе руки подняты вверх над головой.
+    """
+    px1, py1, px2, py2 = map(int, person_box)
+    px1 = max(0, px1 - 10)
+    py1 = max(0, py1 - 10)
+    px2 = min(frame.shape[1], px2 + 10)
+    py2 = min(frame.shape[0], py2 + 10)
+
+    crop = frame[py1:py2, px1:px2]
+    if crop.size == 0:
+        return False
+
+    try:
+        results = pose_model(crop, verbose=False)[0]
+    except Exception:
+        return False
+
+    if results.keypoints is None:
+        return False
+
+    kpts = results.keypoints.xy.cpu().numpy()
+    if len(kpts) == 0 or len(kpts[0]) < 11:
+        return False
+
+    kp = kpts[0]
+
+    def valid(pt):
+        return pt[0] > 0 and pt[1] > 0
+
+    left_wrist     = kp[9]
+    right_wrist    = kp[10]
+    left_shoulder  = kp[5]
+    right_shoulder = kp[6]
+    nose           = kp[0]
+
+    if not all(valid(p) for p in [left_wrist, right_wrist,
+                                   left_shoulder, right_shoulder, nose]):
+        return False
+
+    # Обе руки подняты выше головы
+    left_raised  = left_wrist[1]  < nose[1]
+    right_raised = right_wrist[1] < nose[1]
+
+    return left_raised and right_raised

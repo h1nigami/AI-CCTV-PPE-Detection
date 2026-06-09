@@ -4,13 +4,17 @@ from dataclasses import dataclass, field
 from typing import List, Dict, Optional, Tuple
 from config import APPROVAL_DURATION, PERSON_ID_GRID, MAX_LOG_SIZE
 
+GESTURE_DISPLAY_DURATION = 3
+PRINT_DISPLAY_DURATION   = 3
+
 
 @dataclass
 class LogEntry:
     id:        str
     timestamp: str
     message:   str
-    category:  str  # "норма" | "внимание" | "нарушение"
+    category:  str
+    cam_id:    str = "cam1"
 
 
 class DetectionState:
@@ -20,8 +24,10 @@ class DetectionState:
         self._lock            = threading.Lock()
         self.live_active      = False
         self.camera_released  = True
-        self._log: List[LogEntry]        = []
-        self._approved: Dict[Tuple, float] = {}
+        self._log:      List[LogEntry]         = []
+        self._approved: Dict[Tuple, float]     = {}
+        self._gesture_until: float             = 0
+        self._print_until:   float             = 0
 
     # ── Лог ──────────────────────────────────
 
@@ -66,3 +72,23 @@ class DetectionState:
     def clear_approved(self):
         with self._lock:
             self._approved.clear()
+
+    # ── Жест ОК ──────────────────────────────
+
+    def set_gesture_detected(self):
+        with self._lock:
+            self._gesture_until = time.time() + GESTURE_DISPLAY_DURATION
+
+    def is_gesture_active(self) -> bool:
+        with self._lock:
+            return time.time() < self._gesture_until
+
+    # ── Печать ───────────────────────────────
+
+    def set_print_triggered(self):
+        with self._lock:
+            self._print_until = time.time() + PRINT_DISPLAY_DURATION
+
+    def is_print_active(self) -> bool:
+        with self._lock:
+            return time.time() < self._print_until

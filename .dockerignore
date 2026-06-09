@@ -5,3 +5,4 @@ __pycache__/
 results/
 violation_logs/
 assets/
+.venv

@@ -1,4 +1,4 @@
-FROM dustynv/pytorch:2.1-r36.2.0
+FROM python:3.11-slim
 
 WORKDIR /app
 
@@ -9,12 +9,15 @@ RUN apt-get update && apt-get install -y \
     ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
-COPY wheels/ /wheels/
-RUN pip install --no-index --find-links=/wheels \
+COPY requirements.txt .
+
+RUN pip install --no-cache-dir --timeout=300 \
+    torch \
+    torchvision \
     ultralytics==8.4.60 \
     opencv-python-headless \
-    flask \
-    waitress \
+    flask==2.3.3 \
+    waitress==2.1.2 \
     pillow \
     "numpy<2.0"
 

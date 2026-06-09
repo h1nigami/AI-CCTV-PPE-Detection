@@ -4,8 +4,10 @@ from ultralytics import YOLO
 from config import MODEL_PATH, POSE_MODEL_PATH, CLASS_NAMES
 from camera import FrameBuffer, CameraCapture
 from detection import run_detection, get_danger_zone, has_item_on_person, is_in_danger_zone
-from gestures import detect_ok_gesture
-from visualization import draw_danger_zone, draw_person, draw_hint, draw_legend, draw_stats_panel, put_text
+from gestures import detect_ok_gesture, detect_raised_hand
+from printer import print_frame
+from visualization import draw_danger_zone, draw_person, draw_hint, draw_legend, draw_stats_panel, put_text, \
+    draw_printer_indicator
 from state import DetectionState, LogEntry
 import threading
 import cv2
@@ -48,6 +50,9 @@ def detection_worker():
                     has_vest   = any(has_item_on_person(pbox, v) for v in detected["vests"])
                     in_danger  = is_in_danger_zone(pbox, danger_zone)
                     approved   = state.is_approved(pbox)
+
+                    if detect_raised_hand(frame, pbox, pose_model):
+                        print(f"ЖЕСТ ПОДНЯТАЯ РУКА — Чел.{idx + 1}")
 
                     fully_equipped = has_helmet and has_mask and has_vest
                     missing = [
@@ -161,6 +166,27 @@ def generate_live_feed():
                         state.approve(pbox)
                         approved   = True
                         gesture_now = True  # показываем реакцию на кадре
+
+                if detect_raised_hand(frame, pbox, pose_model):
+                    missing = []
+                    if not has_helmet: missing.append("нет каски")
+                    if not has_vest: missing.append("нет жилета")
+                    if not has_mask: missing.append("нет маски")
+                    status = f"Все СИЗ на месте" if fully_equipped else f"Нарушения: {(", ").join(missing)}"
+                    all_statuses = []
+                    for i, pb in enumerate(detected["persons"]):
+                        hh = any(has_item_on_person(pbox, h) for h in detected["helmets"])
+                        hv = any(has_item_on_person(pbox, v) for v in detected["vests"])
+                        hm = any(has_item_on_person(pbox, m) for m in detected["masks"])
+                        miss = ", ".join(
+                            n for f, n in [(hh, "каска"), (hv, "жилет"), (hm, "маска")] if not f
+                        )
+                        all_statuses.append("Все СИЗ" if not miss else f"Нет: {miss}")
+                    if print_frame(frame, all_statuses):
+                        state.set_print_triggered()
+
+                if state.is_print_active():
+                    frame = draw_printer_indicator(frame)
 
                 if approved:
                     approved_count += 1
