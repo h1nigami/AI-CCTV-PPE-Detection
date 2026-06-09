@@ -113,6 +113,19 @@ def export_logs():
         headers={"Content-Disposition": "attachment; filename=ppe_detection_logs.csv"}
     )
 
+@app.route("/test_print", methods=["POST"])
+def test_print():
+    import numpy as np
+    from printer import print_frame
+
+    # Создаём тестовый чёрный кадр вместо реального
+    fake_frame = np.zeros((480, 640, 3), dtype=np.uint8)
+
+    statuses = ["Все СИЗ на месте", "Нет: каска, маска"]
+    success  = print_frame(fake_frame, statuses)
+
+    return jsonify({"printed": success})
+
 
 if __name__ == "__main__":
     print("Запуск на http://localhost:8000")

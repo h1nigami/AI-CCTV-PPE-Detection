@@ -107,3 +107,17 @@ def draw_stats_panel(frame, persons_count: int, approved_count: int,
                          color=COLOR_GOLD, font=FONT_LARGE)
 
     return frame
+
+def draw_printer_indicator(frame):
+    h, w = frame.shape[:2]
+    overlay = frame.copy()
+    cv2.rectangle(
+        overlay,
+        (w//2 - 200, h//2 - 40),
+        (w//2 + 200, h//2 + 40),(255,255,255),-1
+    )
+    cv2.addWeighted(overlay, 0.6, frame, 0.4, 0, frame)
+    frame = put_text(frame, "ОТПРАВЛЕНО НА ПЕЧАТЬ",
+                     (w//2 - 200, h//2 - 40),
+                     (0,0,0), FONT_LARGE)
+    return frame

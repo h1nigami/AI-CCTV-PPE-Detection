@@ -1,601 +1,913 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI CCTV PPE Detection</title>
-    <style>
-        :root {
-            --primary-color: #667eea;
-            --secondary-color: #764ba2;
-            --text-color: #2c3e50;
-            --bg-light: rgba(255, 255, 255, 0.97);
-            --border-color: #e9ecef;
-            --shadow-light: rgba(0, 0, 0, 0.05);
-            --shadow-dark: rgba(0, 0, 0, 0.1);
-        }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI CCTV PPE Detection</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;500;600;700&family=Exo+2:wght@300;400;600;700&display=swap');
 
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            text-align: center;
-            padding: 20px;
-            background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
-            min-height: 100vh;
-            margin: 0;
-            color: var(--text-color);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
+  :root {
+    --bg:        #080d14;
+    --panel:     #0d1520;
+    --panel2:    #111c2b;
+    --border:    #1a3a5c;
+    --accent:    #00e5ff;
+    --green:     #00ff88;
+    --red:       #ff3355;
+    --yellow:    #ffd600;
+    --orange:    #ff6d00;
+    --text:      #c8dff0;
+    --text-dim:  #4a6a8a;
+    --mono:      'Share Tech Mono', monospace;
+    --ui:        'Rajdhani', sans-serif;
+    --body:      'Exo 2', sans-serif;
+  }
 
-        .container {
-            width: 100%;
-            max-width: 1400px;
-            background: var(--bg-light);
-            border-radius: 20px;
-            padding: 30px 40px;
-            box-shadow: 0 20px 40px var(--shadow-dark);
-        }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
 
-        h1 {
-            color: var(--text-color);
-            margin-bottom: 20px;
-            font-size: 2.5em;
-            text-shadow: 2px 2px 4px var(--shadow-light);
-        }
-        
-        h3 {
-            color: #555;
-            margin-top: 40px;
-            margin-bottom: 10px;
-            border-bottom: 2px solid var(--border-color);
-            padding-bottom: 10px;
-        }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--body);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
 
-        .main-content {
-            display: flex;
-            gap: 30px;
-            margin-top: 30px;
-        }
+  /* ── HEADER ─────────────────────────────── */
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 24px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; z-index: 100;
+  }
 
-        .left-column, .right-column {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            gap: 20px;
-        }
+  .logo {
+    display: flex; align-items: center; gap: 10px;
+    font-family: var(--ui); font-weight: 700; font-size: 1.15rem;
+    letter-spacing: 2px; color: var(--accent);
+  }
+  .logo svg { width: 28px; height: 28px; }
 
-        .card {
-            background: #fff;
-            padding: 25px;
-            border-radius: 15px;
-            box-shadow: 0 5px 15px var(--shadow-light);
-            text-align: left;
-        }
+  .header-title {
+    font-family: var(--ui); font-weight: 600;
+    font-size: 0.95rem; letter-spacing: 3px;
+    color: var(--text-dim); text-transform: uppercase;
+  }
 
-        img, video {
-            border: 3px solid var(--border-color);
-            border-radius: 10px;
-            box-shadow: 0 10px 30px var(--shadow-dark);
-            width: 100%;
-            height: auto;
-            background-color: #000;
-        }
-        
-        .video-container {
-            position: relative;
-            height: 400px;
-            width: 100%;
-            background: transparent;
-            border: 2px dashed var(--border-color);
-            border-radius: 10px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: #666;
-            font-size: 16px;
-            box-shadow: inset 0 2px 5px var(--shadow-light);
-            overflow: hidden;
-        }
+  .header-right {
+    display: flex; align-items: center; gap: 20px;
+  }
 
-        #liveFeed {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-            display: none;
-            border: none;
-            border-radius: 10px;
-            box-shadow: none;
-        }
+  .live-badge {
+    display: flex; align-items: center; gap: 6px;
+    font-family: var(--mono); font-size: 0.75rem;
+    color: var(--red); letter-spacing: 1px;
+  }
+  .live-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--red);
+    box-shadow: 0 0 6px var(--red);
+    animation: blink 1.2s ease-in-out infinite;
+  }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
 
-        .feed-placeholder {
-            text-align: center;
-            color: #888;
-            font-style: italic;
-        }
+  .clock {
+    font-family: var(--mono); font-size: 0.85rem;
+    color: var(--accent); letter-spacing: 1px;
+    text-align: right; line-height: 1.4;
+  }
 
-        button {
-            background: linear-gradient(45deg, var(--primary-color), var(--secondary-color));
-            color: white;
-            border: none;
-            padding: 12px 24px;
-            font-size: 16px;
-            margin: 5px;
-            border-radius: 8px;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            box-shadow: 0 4px 15px var(--shadow-dark);
-            font-weight: 500;
-        }
+  /* ── LAYOUT ─────────────────────────────── */
+  .dashboard {
+    display: grid;
+    grid-template-columns: 240px 1fr 280px;
+    gap: 0;
+    height: calc(100vh - 53px);
+  }
 
-        button:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 6px 20px rgba(0,0,0,0.2);
-        }
+  /* ── LEFT PANEL ─────────────────────────── */
+  .left-panel {
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+    display: flex; flex-direction: column;
+    overflow-y: auto;
+  }
 
-        button:disabled {
-            background: #ccc;
-            cursor: not-allowed;
-            transform: none;
-            box-shadow: none;
-        }
-        
-        .controls {
-            text-align: center;
-            padding: 10px 0;
-        }
+  .panel-section {
+    border-bottom: 1px solid var(--border);
+    padding: 16px;
+  }
 
-        #statusMessage {
-            font-size: 18px;
-            font-weight: 500;
-            margin-top: 15px;
-            padding: 10px;
-            border-radius: 8px;
-            display: inline-block;
-            min-width: 200px;
-            text-align: center;
-        }
-        .status-active {
-            color: #28a745;
-            background-color: #e6ffed;
-            border: 1px solid #28a745;
-        }
-        .status-inactive {
-            color: #dc3545;
-            background-color: #ffebee;
-            border: 1px solid #dc3545;
-        }
-        .status-transition {
-            color: #ffc107;
-            background-color: #fff8e1;
-            border: 1px solid #ffc107;
-        }
+  .section-label {
+    font-family: var(--ui); font-weight: 700;
+    font-size: 0.65rem; letter-spacing: 3px;
+    color: var(--text-dim); text-transform: uppercase;
+    margin-bottom: 12px;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .section-label::before {
+    content:''; display:inline-block;
+    width:3px; height:10px;
+    background: var(--accent);
+    border-radius: 2px;
+  }
 
-        .status-active {
-            color: #28a745; /* Green for active */
-            background-color: #d4edda; /* Light green background */
-        }
+  /* PPE status items */
+  .ppe-item {
+    display: flex; align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    margin-bottom: 8px;
+    background: var(--panel2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    transition: border-color .3s;
+  }
+  .ppe-item.ok   { border-color: #00ff8844; }
+  .ppe-item.fail { border-color: #ff335544; }
+  .ppe-item.warn { border-color: #ffd60044; }
 
-        .status-inactive {
-            color: #dc3545; /* Red for inactive */
-            background-color: #f8d7d7; /* Light red background */
-        }
+  .ppe-left { display: flex; align-items: center; gap: 10px; }
+  .ppe-icon { font-size: 1.3rem; }
+  .ppe-name {
+    font-family: var(--ui); font-weight: 600;
+    font-size: 0.9rem; color: var(--text);
+    line-height: 1;
+  }
+  .ppe-sub {
+    font-size: 0.7rem; color: var(--text-dim);
+    font-family: var(--mono); margin-top: 2px;
+  }
+  .ppe-status-icon { font-size: 1.1rem; }
 
-        /* --- Stats Section --- */
-        .stats {
-            display: flex;
-            justify-content: space-around;
-            gap: 15px;
-        }
-        
-        .stat-item {
-            background: #f8f9fa;
-            padding: 20px;
-            border-radius: 10px;
-            flex: 1;
-            text-align: center;
-            border: 1px solid var(--border-color);
-        }
-        
-        .stat-number {
-            font-size: 2em;
-            font-weight: bold;
-            color: var(--primary-color);
-        }
-        
-        .stat-label {
-            font-size: 0.9em;
-            color: #666;
-            margin-top: 5px;
-        }
+  /* Counter */
+  .counter-grid {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .counter-item {
+    background: var(--panel2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px 10px;
+    text-align: center;
+  }
+  .counter-num {
+    font-family: var(--mono); font-size: 2rem;
+    color: var(--accent); line-height: 1;
+  }
+  .counter-num.red  { color: var(--red); }
+  .counter-num.green { color: var(--green); }
+  .counter-label {
+    font-size: 0.65rem; letter-spacing: 1px;
+    color: var(--text-dim); text-transform: uppercase;
+    margin-top: 4px; font-family: var(--ui);
+  }
 
-        /* --- Log Box Section --- */
-        #logBox {
-            width: 100%;
-            height: 300px;
-            margin: 0;
-            padding: 15px;
-            border: 2px solid var(--border-color);
-            border-radius: 10px;
-            overflow-y: auto;
-            font-family: 'Courier New', monospace;
-            background: #f8f9fa;
-            box-shadow: inset 0 2px 5px var(--shadow-light);
-        }
+  /* System metrics */
+  .metric-row {
+    display: flex; align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+  }
+  .metric-name {
+    font-family: var(--mono); font-size: 0.75rem;
+    color: var(--text-dim); width: 60px;
+  }
+  .metric-bar-wrap {
+    flex: 1; height: 5px; margin: 0 10px;
+    background: var(--border); border-radius: 3px;
+    overflow: hidden;
+  }
+  .metric-bar {
+    height: 100%; border-radius: 3px;
+    background: var(--accent);
+    transition: width .8s ease;
+  }
+  .metric-val {
+    font-family: var(--mono); font-size: 0.75rem;
+    color: var(--text); width: 35px; text-align: right;
+  }
 
-        .log-entry {
-            margin-bottom: 8px;
-            padding: 10px;
-            border-left: 5px solid;
-            border-radius: 5px;
-            font-size: 14px;
-            line-height: 1.4;
-        }
-        
-        .log-entry.violation { background: #ffebee; border-color: #f44336; color: #c62828; }
-        .log-entry.detection { background: #e3f2fd; border-color: #2196f3; color: #1565c0; }
-        .log-entry.normal { background: #e8f5e8; border-color: #4caf50; color: #2e7d32; }
+  /* Controls */
+  .btn {
+    font-family: var(--ui); font-weight: 600;
+    font-size: 0.85rem; letter-spacing: 1px;
+    border: none; border-radius: 5px;
+    padding: 9px 16px; cursor: pointer;
+    text-transform: uppercase;
+    transition: all .2s;
+    width: 100%; margin-bottom: 8px;
+  }
+  .btn-start {
+    background: linear-gradient(135deg, #00e5ff22, #00e5ff11);
+    border: 1px solid var(--accent);
+    color: var(--accent);
+  }
+  .btn-start:hover { background: #00e5ff22; box-shadow: 0 0 12px #00e5ff44; }
+  .btn-stop {
+    background: linear-gradient(135deg, #ff335522, #ff335511);
+    border: 1px solid var(--red);
+    color: var(--red);
+  }
+  .btn-stop:hover { background: #ff335522; box-shadow: 0 0 12px #ff335544; }
+  .btn:disabled { opacity: .35; cursor: not-allowed; box-shadow: none; }
 
-        .empty-state {
-            color: #666;
-            font-style: italic;
-            text-align: center;
-            padding: 20px;
-            height: 100%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
+  .btn-secondary {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    font-size: 0.75rem; padding: 6px 12px;
+    width: auto; margin: 0 4px 0 0;
+  }
+  .btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
 
-        .timestamp { font-weight: bold; }
-        .violation-text { font-weight: bold; }
-        
-        /* --- Responsive Design --- */
-        @media (max-width: 992px) {
-            .main-content {
-                flex-direction: column;
-            }
-        }
-    </style>
+  /* Status pill */
+  #statusPill {
+    display: flex; align-items: center; gap: 6px;
+    padding: 6px 12px; border-radius: 4px;
+    font-family: var(--mono); font-size: 0.72rem;
+    letter-spacing: 1px; margin-top: 8px;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    transition: all .3s;
+  }
+  #statusPill.active   { border-color: var(--green); color: var(--green); background: #00ff8811; }
+  #statusPill.inactive { border-color: var(--red);   color: var(--red);   background: #ff335511; }
+  #statusPill.loading  { border-color: var(--yellow); color: var(--yellow); background: #ffd60011; }
+  .pill-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: currentColor;
+  }
+
+  /* ── CENTER ─────────────────────────────── */
+  .center-panel {
+    display: flex; flex-direction: column;
+    background: var(--bg);
+  }
+
+  .video-area {
+    flex: 1; position: relative;
+    display: flex; align-items: center; justify-content: center;
+    background: #050a10;
+    border-bottom: 1px solid var(--border);
+    overflow: hidden;
+  }
+
+  #liveFeed {
+    width: 100%; height: 100%;
+    object-fit: contain;
+    display: none;
+  }
+
+  .feed-placeholder {
+    text-align: center; color: var(--text-dim);
+    font-family: var(--mono); font-size: 0.8rem;
+    letter-spacing: 1px;
+  }
+  .feed-placeholder .big { font-size: 3rem; margin-bottom: 12px; opacity: .3; }
+
+  /* Corner overlays */
+  .corner { position: absolute; width: 20px; height: 20px; }
+  .corner.tl { top:12px; left:12px; border-top: 2px solid var(--accent); border-left: 2px solid var(--accent); }
+  .corner.tr { top:12px; right:12px; border-top: 2px solid var(--accent); border-right: 2px solid var(--accent); }
+  .corner.bl { bottom:12px; left:12px; border-bottom: 2px solid var(--accent); border-left: 2px solid var(--accent); }
+  .corner.br { bottom:12px; right:12px; border-bottom: 2px solid var(--accent); border-right: 2px solid var(--accent); }
+
+  /* Access banner */
+  #accessBanner {
+    display: none;
+    position: absolute; bottom: 0; left: 0; right: 0;
+    padding: 14px 24px;
+    text-align: center;
+    font-family: var(--ui); font-weight: 700;
+    font-size: 1.4rem; letter-spacing: 4px;
+    text-transform: uppercase;
+  }
+  #accessBanner.granted {
+    background: linear-gradient(90deg, #00ff8800, #00ff8833, #00ff8800);
+    color: var(--green);
+    border-top: 1px solid #00ff8866;
+    display: block;
+  }
+  #accessBanner.denied {
+    background: linear-gradient(90deg, #ff335500, #ff335533, #ff335500);
+    color: var(--red);
+    border-top: 1px solid #ff335566;
+    display: block;
+  }
+
+  /* Gesture indicator */
+  #gestureIndicator {
+    display: none;
+    position: absolute; bottom: 70px; left: 50%;
+    transform: translateX(-50%);
+    background: #00e5ff22;
+    border: 1px solid var(--accent);
+    border-radius: 20px;
+    padding: 6px 20px;
+    font-family: var(--mono); font-size: 0.8rem;
+    color: var(--accent); letter-spacing: 2px;
+  }
+
+  /* Bottom bar */
+  .bottom-bar {
+    padding: 10px 16px;
+    background: var(--panel);
+    border-top: 1px solid var(--border);
+    display: flex; align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  /* Upload */
+  .upload-zone {
+    display: flex; align-items: center; gap: 8px; flex: 1;
+  }
+  .upload-zone input[type=file] {
+    flex: 1;
+    font-family: var(--mono); font-size: 0.72rem;
+    color: var(--text-dim);
+    background: var(--panel2);
+    border: 1px solid var(--border);
+    border-radius: 4px; padding: 5px 10px;
+  }
+  .upload-zone input[type=file]::-webkit-file-upload-button {
+    background: var(--panel2); border: none;
+    color: var(--text-dim); cursor: pointer;
+    font-family: var(--body);
+  }
+  .btn-upload {
+    font-family: var(--ui); font-weight: 600;
+    font-size: 0.78rem; letter-spacing: 1px;
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    border-radius: 4px; padding: 6px 14px;
+    cursor: pointer; text-transform: uppercase;
+    transition: all .2s; white-space: nowrap;
+  }
+  .btn-upload:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* ── RIGHT PANEL ─────────────────────────── */
+  .right-panel {
+    background: var(--panel);
+    border-left: 1px solid var(--border);
+    display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+
+  .events-header {
+    padding: 14px 16px 10px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center;
+    justify-content: space-between;
+  }
+
+  #logBox {
+    flex: 1; overflow-y: auto;
+    padding: 8px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+  #logBox::-webkit-scrollbar { width: 4px; }
+  #logBox::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .log-entry {
+    padding: 9px 10px;
+    margin-bottom: 6px;
+    border-radius: 5px;
+    border-left: 3px solid;
+    background: var(--panel2);
+    animation: fadeIn .3s ease;
+  }
+  @keyframes fadeIn { from{opacity:0;transform:translateY(-4px)} to{opacity:1;transform:none} }
+
+  .log-entry.нарушение { border-color: var(--red);    background: #ff335510; }
+  .log-entry.внимание  { border-color: var(--yellow); background: #ffd60010; }
+  .log-entry.норма     { border-color: var(--green);  background: #00ff8810; }
+  .log-entry.violation { border-color: var(--red);    background: #ff335510; }
+  .log-entry.normal    { border-color: var(--green);  background: #00ff8810; }
+
+  .log-time {
+    font-family: var(--mono); font-size: 0.68rem;
+    color: var(--text-dim); display: block; margin-bottom: 3px;
+  }
+  .log-msg {
+    font-size: 0.78rem; line-height: 1.4;
+    color: var(--text); font-family: var(--body);
+  }
+
+  .empty-state {
+    text-align: center; padding: 40px 20px;
+    color: var(--text-dim); font-family: var(--mono);
+    font-size: 0.75rem; letter-spacing: 1px;
+  }
+
+  .log-actions {
+    padding: 10px 12px;
+    border-top: 1px solid var(--border);
+    display: flex; gap: 8px;
+  }
+
+  /* Upload result overlay */
+  #uploadResult {
+    display: none;
+    position: fixed; inset: 0; z-index: 200;
+    background: #000000cc;
+    align-items: center; justify-content: center;
+  }
+  #uploadResult.show { display: flex; }
+  .upload-result-inner {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px; max-width: 90vw; max-height: 90vh;
+    position: relative; overflow: auto;
+  }
+  .close-overlay {
+    position: absolute; top: 10px; right: 14px;
+    background: none; border: none;
+    color: var(--text-dim); font-size: 1.4rem;
+    cursor: pointer;
+  }
+  #uploadedImage, #uploadedVideo {
+    max-width: 100%; max-height: 75vh;
+    border-radius: 6px; display: none;
+  }
+
+  /* Scan line effect on video */
+  .video-area::after {
+    content: '';
+    position: absolute; inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,229,255,0.015) 2px,
+      rgba(0,229,255,0.015) 4px
+    );
+    pointer-events: none;
+  }
+
+  /* Responsive */
+  @media (max-width: 1100px) {
+    .dashboard { grid-template-columns: 200px 1fr 240px; }
+  }
+  @media (max-width: 800px) {
+    .dashboard { grid-template-columns: 1fr; grid-template-rows: auto 1fr auto; height: auto; }
+    .left-panel, .right-panel { height: 300px; }
+  }
+</style>
 </head>
 <body>
 
-<div class="container">
-    <h1>👷 AI CCTV PPE Detection</h1>
-
-    <div class="main-content">
-        <div class="left-column">
-            <div class="card">
-                <h3>📷 Live Camera Feed</h3>
-                <div class="controls">
-                    <button id="startBtn" onclick="startFeed()">▶️ Start Detection</button>
-                    <button id="stopBtn" onclick="stopFeed()">⏹️ Stop Detection</button>
-                </div>
-                <div class="video-container">
-                    <img id="liveFeed" alt="Live Feed" src="">
-                    <div class="feed-placeholder" id="feedPlaceholder">Camera feed will appear here when detection starts</div>
-                </div>
-                <div id="statusMessage" class="status-active">📶 Ready to start detection...</div>
-            </div>
-            
-            <div class="card">
-                <h3>📤 Upload for Detection</h3>
-                <div class="controls">
-                    <form id="uploadForm" enctype="multipart/form-data">
-                        <input type="file" name="file" accept="image/*,video/*" required style="padding: 10px; margin: 5px; border-radius: 8px; border: 1px solid #ccc; background: #fff;">
-                        <button type="submit">🔍 Process File</button>
-                    </form>
-                </div>
-                <div id="uploadResult" style="margin-top: 15px;">
-                    <img id="uploadedImage" src="" style="max-width: 100%; display: none;" />
-                    <video id="uploadedVideo" controls style="max-width: 100%; display: none;"></video>
-                </div>
-            </div>
-        </div>
-
-        <div class="right-column">
-            <div class="card">
-                <h3>📊 Live Statistics</h3>
-                <div class="stats">
-                    <div class="stat-item">
-                        <div class="stat-number" id="totalDetections">0</div>
-                        <div class="stat-label">Total Logs</div>
-                    </div>
-                    <div class="stat-item">
-                        <div class="stat-number" id="violationCount">0</div>
-                        <div class="stat-label">Current Violations</div>
-                    </div>
-                    <div class="stat-item">
-                        <div class="stat-number" id="personCount">0</div>
-                        <div class="stat-label">People Detected</div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="card">
-                <h3>📋 Live Detection Log</h3>
-                <div class="controls">
-                    <button onclick="clearLogs()">🗑️ Clear</button>
-                    <button onclick="exportLogs()">💾 Export</button>
-                </div>
-                <div id="logBox">
-                    <div class="empty-state">Detection logs will appear here...</div>
-                </div>
-            </div>
-        </div>
+<!-- HEADER -->
+<header>
+  <div class="logo">
+    <svg viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect x="2" y="2" width="24" height="24" rx="4" stroke="#00e5ff" stroke-width="1.5"/>
+      <circle cx="14" cy="12" r="5" stroke="#00e5ff" stroke-width="1.5"/>
+      <path d="M6 22c0-4 3.6-7 8-7s8 3 8 7" stroke="#00e5ff" stroke-width="1.5" stroke-linecap="round"/>
+    </svg>
+    KONTROLER AI
+  </div>
+  <div class="header-title">Видеоаналитика в реальном времени</div>
+  <div class="header-right">
+    <div class="live-badge">
+      <div class="live-dot" id="liveDot"></div>
+      <span id="liveLabel">OFFLINE</span>
     </div>
+    <div class="clock">
+      <div id="clockTime">--:--:--</div>
+      <div style="font-size:.65rem;color:var(--text-dim)" id="clockDate">--.--.----</div>
+    </div>
+  </div>
+</header>
+
+<!-- DASHBOARD -->
+<div class="dashboard">
+
+  <!-- LEFT -->
+  <div class="left-panel">
+
+    <div class="panel-section">
+      <div class="section-label">Управление</div>
+      <button class="btn btn-start" id="startBtn" onclick="startFeed()">▶ Запустить</button>
+      <button class="btn btn-stop"  id="stopBtn"  onclick="stopFeed()">■ Остановить</button>
+      <div id="statusPill" class="inactive">
+        <div class="pill-dot"></div>
+        <span id="statusText">Система готова</span>
+      </div>
+    </div>
+
+    <div class="panel-section">
+      <div class="section-label">Статус проверки</div>
+      <div class="ppe-item" id="ppe-helmet">
+        <div class="ppe-left">
+          <div class="ppe-icon">⛑️</div>
+          <div>
+            <div class="ppe-name">Каска</div>
+            <div class="ppe-sub" id="sub-helmet">ожидание</div>
+          </div>
+        </div>
+        <div class="ppe-status-icon" id="icon-helmet">—</div>
+      </div>
+      <div class="ppe-item" id="ppe-mask">
+        <div class="ppe-left">
+          <div class="ppe-icon">😷</div>
+          <div>
+            <div class="ppe-name">Маска</div>
+            <div class="ppe-sub" id="sub-mask">ожидание</div>
+          </div>
+        </div>
+        <div class="ppe-status-icon" id="icon-mask">—</div>
+      </div>
+      <div class="ppe-item" id="ppe-vest">
+        <div class="ppe-left">
+          <div class="ppe-icon">🦺</div>
+          <div>
+            <div class="ppe-name">Жилет</div>
+            <div class="ppe-sub" id="sub-vest">ожидание</div>
+          </div>
+        </div>
+        <div class="ppe-status-icon" id="icon-vest">—</div>
+      </div>
+      <div class="ppe-item" id="ppe-zone">
+        <div class="ppe-left">
+          <div class="ppe-icon">⚠️</div>
+          <div>
+            <div class="ppe-name">Опасная зона</div>
+            <div class="ppe-sub" id="sub-zone">ожидание</div>
+          </div>
+        </div>
+        <div class="ppe-status-icon" id="icon-zone">—</div>
+      </div>
+      <div class="ppe-item" id="ppe-gesture">
+        <div class="ppe-left">
+          <div class="ppe-icon">🤙</div>
+          <div>
+            <div class="ppe-name">Жест «ОК»</div>
+            <div class="ppe-sub" id="sub-gesture">ожидание</div>
+          </div>
+        </div>
+        <div class="ppe-status-icon" id="icon-gesture">—</div>
+      </div>
+    </div>
+
+    <div class="panel-section">
+      <div class="section-label">Счётчик людей</div>
+      <div class="counter-grid">
+        <div class="counter-item">
+          <div class="counter-num" id="cntTotal">0</div>
+          <div class="counter-label">Всего</div>
+        </div>
+        <div class="counter-item">
+          <div class="counter-num green" id="cntOk">0</div>
+          <div class="counter-label">Допущено</div>
+        </div>
+        <div class="counter-item">
+          <div class="counter-num red" id="cntViolations">0</div>
+          <div class="counter-label">Нарушений</div>
+        </div>
+        <div class="counter-item">
+          <div class="counter-num" id="cntLogs">0</div>
+          <div class="counter-label">Записей</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel-section">
+      <div class="section-label">Система</div>
+      <div class="metric-row">
+        <div class="metric-name">CPU</div>
+        <div class="metric-bar-wrap"><div class="metric-bar" id="barCpu" style="width:0%"></div></div>
+        <div class="metric-val" id="valCpu">–</div>
+      </div>
+      <div class="metric-row">
+        <div class="metric-name">RAM</div>
+        <div class="metric-bar-wrap"><div class="metric-bar" id="barRam" style="width:0%;background:var(--green)"></div></div>
+        <div class="metric-val" id="valRam">–</div>
+      </div>
+      <div class="metric-row">
+        <div class="metric-name">FPS</div>
+        <div class="metric-bar-wrap"><div class="metric-bar" id="barFps" style="width:0%;background:var(--yellow)"></div></div>
+        <div class="metric-val" id="valFps">–</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- CENTER -->
+  <div class="center-panel">
+    <div class="video-area">
+      <div class="corner tl"></div>
+      <div class="corner tr"></div>
+      <div class="corner bl"></div>
+      <div class="corner br"></div>
+
+      <img id="liveFeed" alt="Live Feed" src="">
+      <div class="feed-placeholder" id="feedPlaceholder">
+        <div class="big">📷</div>
+        Запустите детекцию для отображения видео
+      </div>
+
+      <div id="gestureIndicator">✓ ЖЕСТ «ОК» РАСПОЗНАН</div>
+      <div id="accessBanner"></div>
+    </div>
+
+    <div class="bottom-bar">
+      <div class="upload-zone">
+        <form id="uploadForm" enctype="multipart/form-data" style="display:flex;align-items:center;gap:8px;flex:1">
+          <input type="file" name="file" accept="image/*,video/*" id="fileInput">
+          <button type="submit" class="btn-upload">🔍 Обработать файл</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT -->
+  <div class="right-panel">
+    <div class="events-header">
+      <div class="section-label" style="margin:0">События</div>
+      <span style="font-family:var(--mono);font-size:.65rem;color:var(--text-dim)" id="eventCount">0 записей</span>
+    </div>
+    <div id="logBox">
+      <div class="empty-state">Ожидание событий...</div>
+    </div>
+    <div class="log-actions">
+      <button class="btn-secondary" onclick="clearLogs()">🗑 Очистить</button>
+      <button class="btn-secondary" onclick="exportLogs()">💾 Экспорт</button>
+    </div>
+  </div>
+
+</div>
+
+<!-- UPLOAD RESULT OVERLAY -->
+<div id="uploadResult">
+  <div class="upload-result-inner">
+    <button class="close-overlay" onclick="closeOverlay()">✕</button>
+    <img id="uploadedImage" alt="Result">
+    <video id="uploadedVideo" controls></video>
+  </div>
 </div>
 
 <script>
-const uploadForm = document.getElementById("uploadForm");
-const uploadedImage = document.getElementById("uploadedImage");
-const uploadedVideo = document.getElementById("uploadedVideo");
-const uploadResult = document.getElementById("uploadResult");
+// ── CLOCK ────────────────────────────────────
+function updateClock() {
+  const now = new Date();
+  document.getElementById('clockTime').textContent =
+    now.toLocaleTimeString('ru-RU');
+  document.getElementById('clockDate').textContent =
+    now.toLocaleDateString('ru-RU');
+}
+setInterval(updateClock, 1000);
+updateClock();
 
-uploadForm.addEventListener("submit", function(e) {
-    e.preventDefault();
+// ── FAKE SYSTEM METRICS (замени на реальные если есть API) ──
+function updateMetrics() {
+  const cpu = 30 + Math.random() * 40;
+  const ram = 50 + Math.random() * 20;
+  const fps = 20 + Math.random() * 10;
 
-    const formData = new FormData(uploadForm);
-    fetch("/upload", {
-        method: "POST",
-        body: formData
-    })
-    .then(res => res.blob())
-    .then(blob => {
-        const url = URL.createObjectURL(blob);
-        const fileType = formData.get("file").type;
+  document.getElementById('barCpu').style.width  = cpu + '%';
+  document.getElementById('valCpu').textContent  = Math.round(cpu) + '%';
+  document.getElementById('barRam').style.width  = ram + '%';
+  document.getElementById('valRam').textContent  = Math.round(ram) + '%';
+  document.getElementById('barFps').style.width  = (fps / 30 * 100) + '%';
+  document.getElementById('valFps').textContent  = Math.round(fps);
+}
+setInterval(updateMetrics, 2000);
+updateMetrics();
 
-        uploadedImage.style.display = "none";
-        uploadedVideo.style.display = "none";
-
-        if (fileType.startsWith("image")) {
-            uploadedImage.src = url;
-            uploadedImage.style.display = "block";
-        } else if (fileType.startsWith("video")) {
-            uploadedVideo.src = url;
-            uploadedVideo.style.display = "block";
-        }
-    })
-    .catch(err => {
-        console.error("Upload failed:", err);
-        uploadResult.innerHTML = "<p style='color:red;'>❌ Detection failed. Check server logs.</p>";
-    });
-});   
-
-const img = document.getElementById("liveFeed");
-const feedPlaceholder = document.getElementById("feedPlaceholder");
-const status = document.getElementById("statusMessage");
-const logBox = document.getElementById("logBox");
-const startBtn = document.getElementById("startBtn");
-const stopBtn = document.getElementById("stopBtn");
-
-let logInterval;
+// ── FEED CONTROL ─────────────────────────────
+const img             = document.getElementById('liveFeed');
+const feedPlaceholder = document.getElementById('feedPlaceholder');
+const statusPill      = document.getElementById('statusPill');
+const statusText      = document.getElementById('statusText');
+const liveLabel       = document.getElementById('liveLabel');
+const liveDot         = document.getElementById('liveDot');
 let isRunning = false;
-let logEntries = [];
+let logInterval;
+
+function setStatus(state, text) {
+  statusPill.className = state;
+  statusText.textContent = text;
+}
 
 function startFeed() {
-    if (isRunning) return;
-    
-    startBtn.disabled = true;
-    status.innerText = "🔄 Starting detection...";
-    status.className = "status-transition"; // Yellow for transition state
-    
-    fetch("/start", { method: "POST" })
-        .then(response => {
-            if (!response.ok) {
-                throw new Error('Failed to start detection');
-            }
-            return response.json();
-        })
-        .then(data => {
-            img.src = "/video_feed?" + new Date().getTime();
-            img.style.display = "block";
-            feedPlaceholder.style.display = "none";
-            status.innerText = "📡 Live detection active...";
-            status.className = "status-active"; // Set to active class
-            isRunning = true;
-            startBtn.disabled = false;
-            stopBtn.disabled = false;
-            
-            // Start fetching logs immediately and then every 1 second
-            fetchLog();
-            logInterval = setInterval(fetchLog, 1000);
-        })
-        .catch(error => {
-            console.error('Error starting detection:', error);
-            status.innerText = "❌ Failed to start detection";
-            status.className = "status-inactive"; // Set to inactive class
-            startBtn.disabled = false;
-        });
+  if (isRunning) return;
+  document.getElementById('startBtn').disabled = true;
+  setStatus('loading', 'Запуск...');
+
+  fetch('/start', { method: 'POST' })
+    .then(r => r.json())
+    .then(() => {
+      img.src = '/video_feed?' + Date.now();
+      img.style.display = 'block';
+      feedPlaceholder.style.display = 'none';
+      setStatus('active', 'Детекция активна');
+      liveLabel.textContent = 'LIVE';
+      liveDot.style.background = 'var(--red)';
+      isRunning = true;
+      document.getElementById('startBtn').disabled = false;
+      fetchLog();
+      logInterval = setInterval(fetchLog, 1000);
+    })
+    .catch(() => {
+      setStatus('inactive', 'Ошибка запуска');
+      document.getElementById('startBtn').disabled = false;
+    });
 }
 
 function stopFeed() {
-    if (!isRunning) return;
-    
-    stopBtn.disabled = true;
-    status.innerText = "🔄 Stopping detection...";
-    status.style.color = "#ffc107"; // Yellow for stopping
-    
-    fetch("/stop", { method: "POST" })
-        .then(response => {
-            if (!response.ok) {
-                throw new Error('Failed to stop detection');
-            }
-            return response.json();
-        })
-        .then(data => {
-            img.src = "";
-            img.style.display = "none";
-            feedPlaceholder.style.display = "block";
-            status.innerText = "🛑 Detection stopped.";
-            status.className = "status-inactive"; // Set to inactive class
-            isRunning = false;
-            startBtn.disabled = false;
-            stopBtn.disabled = false;
-            
-            if (logInterval) {
-                clearInterval(logInterval);
-                logInterval = null;
-            }
-        })
-        .catch(error => {
-            console.error('Error stopping detection:', error);
-            status.innerText = "❌ Failed to stop detection";
-            status.className = "status-inactive"; // Set to inactive class
-            stopBtn.disabled = false;
-        });
+  if (!isRunning) return;
+  document.getElementById('stopBtn').disabled = true;
+  setStatus('loading', 'Остановка...');
+
+  fetch('/stop', { method: 'POST' })
+    .then(r => r.json())
+    .then(() => {
+      img.src = '';
+      img.style.display = 'none';
+      feedPlaceholder.style.display = 'block';
+      setStatus('inactive', 'Остановлено');
+      liveLabel.textContent = 'OFFLINE';
+      isRunning = false;
+      document.getElementById('stopBtn').disabled = false;
+      clearInterval(logInterval);
+      resetPPEStatus();
+    })
+    .catch(() => {
+      setStatus('inactive', 'Ошибка');
+      document.getElementById('stopBtn').disabled = false;
+    });
 }
 
-function parseLogEntry(logEntry) {
-    // If it's already a parsed object (from the new backend), just return it
-    if (typeof logEntry === 'object' && logEntry !== null) {
-        return {
-            timestamp: logEntry.timestamp,
-            text: logEntry.message,
-            category: logEntry.category,
-            id: Date.now() + Math.random()
-        };
-    }
-    
-    // Fallback for old string format (shouldn't be needed with the new backend)
-    const timestamp = new Date().toLocaleTimeString();
-    let category = 'normal';
-    let processedText = typeof logEntry === 'string' ? logEntry : JSON.stringify(logEntry);
-    
-    // Simple detection for violations in string format
-    if (processedText.includes('❌ No Helmet') || processedText.includes('❌ No Mask')) {
-        category = 'violation';
-    } else if (processedText.includes('Person(s) detected')) {
-        category = 'detection';
-    }
-    
-    return {
-        timestamp: timestamp,
-        text: processedText,
-        category: category,
-        id: Date.now() + Math.random()
-    };
+// ── PPE STATUS ────────────────────────────────
+function setPPE(id, ok, subText) {
+  const item = document.getElementById('ppe-' + id);
+  const icon = document.getElementById('icon-' + id);
+  const sub  = document.getElementById('sub-' + id);
+  item.className = 'ppe-item ' + (ok === null ? '' : ok ? 'ok' : 'fail');
+  icon.textContent = ok === null ? '—' : ok ? '✅' : '❌';
+  sub.textContent  = subText;
 }
 
+function resetPPEStatus() {
+  ['helmet','mask','vest','zone','gesture'].forEach(id => setPPE(id, null, 'ожидание'));
+}
+
+function updatePPEFromLog(logs) {
+  if (!logs || logs.length === 0) return;
+  const last = logs[0];
+  const msg  = last.message || '';
+
+  // Каска: ищем явные маркеры
+  const hasHelmet  = msg.includes('К ') && !msg.includes('!К');
+  const hasMask    = msg.includes('М ') && !msg.includes('!М');
+  const hasVest    = msg.includes('Ж')  && !msg.includes('!Ж');
+  const inDanger   = msg.includes('ОПАСНАЯ ЗОНА');
+  const hasPass    = msg.includes('ПРОПУСК');
+  const hasPerson  = msg.includes('Чел.');
+
+  if (!hasPerson) {
+    resetPPEStatus();
+    return;
+  }
+
+  setPPE('helmet',  hasHelmet, hasHelmet ? 'обнаружена'    : 'не обнаружена');
+  setPPE('mask',    hasMask,   hasMask   ? 'обнаружена'    : 'не обнаружена');
+  setPPE('vest',    hasVest,   hasVest   ? 'обнаружен'     : 'не обнаружен');
+  setPPE('zone',    !inDanger, inDanger  ? 'пересечена'    : 'не пересечена');
+  setPPE('gesture', hasPass,   hasPass   ? 'распознан'     : 'ожидание');
+
+  // Access banner
+  const banner = document.getElementById('accessBanner');
+  if (hasPass) {
+    banner.className = 'granted';
+    banner.textContent = '✓ ДОСТУП РАЗРЕШЁН — ДОБРО ПОЖАЛОВАТЬ!';
+    setTimeout(() => { banner.className = ''; banner.textContent = ''; }, 4000);
+  } else if (last.category === 'нарушение' || last.category === 'violation') {
+    banner.className = 'denied';
+    banner.textContent = '✕ НАРУШЕНИЕ — ДОСТУП ЗАПРЕЩЁН';
+    setTimeout(() => { banner.className = ''; banner.textContent = ''; }, 3000);
+  }
+
+  // Gesture indicator
+  const gi = document.getElementById('gestureIndicator');
+  if (hasPass) {
+    gi.style.display = 'block';
+    setTimeout(() => gi.style.display = 'none', 3000);
+  }
+}
+
+// ── LOGS ──────────────────────────────────────
 function fetchLog() {
-    fetch("/detection_log")
-        .then(response => {
-            if (!response.ok) {
-                throw new Error('Network response was not ok');
-            }
-            return response.json();
-        })
-        .then(data => {
-            console.log("Received logs:", data); // Debugging line
-            
-            const logBox = document.getElementById('logBox');
-            if (!data.logs || data.logs.length === 0) {
-                logBox.innerHTML = "<div class='empty-state'>No detections yet...</div>";
-                return;
-            }
-
-            // Clear existing logs
-            logBox.innerHTML = '';
-            
-            // Add new logs (already reversed from server)
-            data.logs.forEach(log => {
-                const entry = document.createElement('div');
-                entry.className = `log-entry ${log.category}`;
-                entry.innerHTML = `
-                    <span class="timestamp">${log.timestamp}</span> - 
-                    <span>${log.message}</span>
-                `;
-                logBox.appendChild(entry);
-            });
-            
-            // Update statistics
-            updateStatistics(data.logs);
-        })
-        .catch(error => {
-            console.error('Error fetching logs:', error);
-            document.getElementById('logBox').innerHTML = `
-                <div class="empty-state" style="color: red;">
-                    Error loading logs. Check console for details.
-                </div>
-            `;
-        });
+  fetch('/detection_log')
+    .then(r => r.json())
+    .then(data => {
+      const logs = data.logs || [];
+      renderLogs(logs);
+      updateCounters(logs);
+      updatePPEFromLog(logs);
+    })
+    .catch(console.error);
 }
 
-function updateStatistics(logs) {
-    document.getElementById('totalDetections').textContent = logs.length;
-    
-    const violationCount = logs.filter(log => log.category === 'violation').length;
-    document.getElementById('violationCount').textContent = violationCount;
-    
-    const peopleCount = logs.reduce((count, log) => {
-        const match = log.message.match(/👷 (\d+) Person\(s\) detected/);
-        return count + (match ? parseInt(match[1]) : 0);
-    }, 0);
-    document.getElementById('personCount').textContent = peopleCount;
+function renderLogs(logs) {
+  const box = document.getElementById('logBox');
+  document.getElementById('eventCount').textContent = logs.length + ' записей';
+  document.getElementById('cntLogs').textContent = logs.length;
+
+  if (logs.length === 0) {
+    box.innerHTML = '<div class="empty-state">Ожидание событий...</div>';
+    return;
+  }
+
+  box.innerHTML = logs.map(log => `
+    <div class="log-entry ${log.category}">
+      <span class="log-time">${log.timestamp}${log.cam_id ? ' · ' + log.cam_id : ''}</span>
+      <span class="log-msg">${log.message}</span>
+    </div>
+  `).join('');
 }
-function displayLogs() {
-    if (logEntries.length === 0) {
-        logBox.innerHTML = "<div class='empty-state'>No detections yet...</div>";
-        return;
-    }
-    
-    logBox.innerHTML = logEntries
-        .map(entry => `
-            <div class="log-entry ${entry.category}">
-                <span class="timestamp">${entry.timestamp}</span> - 
-                <span class="${entry.category === 'violation' ? 'violation-text' : entry.category === 'detection' ? 'person-count' : ''}">${entry.text}</span>
-            </div>
-        `)
-        .join('');
-    
-    // Auto-scroll to top to show latest entries
-    logBox.scrollTop = 0;
+
+function updateCounters(logs) {
+  const violations = logs.filter(l => l.category === 'нарушение' || l.category === 'violation').length;
+  const approved   = logs.filter(l => (l.message || '').includes('ПРОПУСК')).length;
+
+  // Людей из последнего лога
+  let people = 0;
+  if (logs.length > 0) {
+    const m = (logs[0].message || '').match(/Людей[:\s]+(\d+)/);
+    if (m) people = parseInt(m[1]);
+  }
+
+  document.getElementById('cntTotal').textContent      = people;
+  document.getElementById('cntOk').textContent         = approved;
+  document.getElementById('cntViolations').textContent = violations;
 }
 
 function clearLogs() {
-    logEntries = [];
-    displayLogs();
+  document.getElementById('logBox').innerHTML = '<div class="empty-state">Ожидание событий...</div>';
+  document.getElementById('cntLogs').textContent = '0';
+  document.getElementById('eventCount').textContent = '0 записей';
 }
 
 function exportLogs() {
-    // Show loading state
-    const exportBtn = document.querySelector('button[onclick="exportLogs()"]');
-    const originalText = exportBtn.innerHTML;
-    exportBtn.innerHTML = '⏳ Preparing export...';
-    exportBtn.disabled = true;
-
-    // Create iframe for download (works better with special chars)
-    const iframe = document.createElement('iframe');
-    iframe.style.display = 'none';
-    iframe.src = '/export_logs?' + new Date().getTime();
-    
-    iframe.onload = function() {
-        exportBtn.innerHTML = originalText;
-        exportBtn.disabled = false;
-        document.body.removeChild(iframe);
-    };
-    
-    document.body.appendChild(iframe);
-    
-    // Fallback timeout
-    setTimeout(() => {
-        exportBtn.innerHTML = originalText;
-        exportBtn.disabled = false;
-    }, 5000);
+  const btn = document.querySelector('.btn-secondary[onclick="exportLogs()"]');
+  btn.textContent = '⏳ Подготовка...';
+  btn.disabled = true;
+  const iframe = document.createElement('iframe');
+  iframe.style.display = 'none';
+  iframe.src = '/export_logs?' + Date.now();
+  iframe.onload = () => {
+    btn.textContent = '💾 Экспорт';
+    btn.disabled = false;
+    document.body.removeChild(iframe);
+  };
+  document.body.appendChild(iframe);
+  setTimeout(() => { btn.textContent = '💾 Экспорт'; btn.disabled = false; }, 5000);
 }
 
-// Initialize button states
-window.addEventListener('load', function() {
-    startBtn.disabled = false;
-    stopBtn.disabled = false;
+// ── UPLOAD ────────────────────────────────────
+document.getElementById('uploadForm').addEventListener('submit', function(e) {
+  e.preventDefault();
+  const formData = new FormData(this);
+  const fileType = formData.get('file').type;
+
+  fetch('/upload', { method: 'POST', body: formData })
+    .then(r => r.blob())
+    .then(blob => {
+      const url = URL.createObjectURL(blob);
+      const result   = document.getElementById('uploadResult');
+      const imgEl    = document.getElementById('uploadedImage');
+      const videoEl  = document.getElementById('uploadedVideo');
+
+      imgEl.style.display   = 'none';
+      videoEl.style.display = 'none';
+
+      if (fileType.startsWith('image')) {
+        imgEl.src = url; imgEl.style.display = 'block';
+      } else {
+        videoEl.src = url; videoEl.style.display = 'block';
+      }
+      result.classList.add('show');
+    })
+    .catch(err => console.error('Upload error:', err));
 });
 
-// Test connection periodically when not running
-setInterval(() => {
-    if (!isRunning) {
-        fetchLog();
-    }
-}, 5000);
+function closeOverlay() {
+  document.getElementById('uploadResult').classList.remove('show');
+}
+
+// Периодическое обновление когда не запущено
+setInterval(() => { if (!isRunning) fetchLog(); }, 5000);
 </script>
 </body>
 </html>

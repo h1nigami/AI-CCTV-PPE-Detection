@@ -53,3 +53,4 @@ def run_detection(frame, model):
         "vests":   get_boxes_by_class(boxes, classes, names, "Защитный жилет"),
         "cones":   get_boxes_by_class(boxes, classes, names, "Конус безопасности"),
     }
+
