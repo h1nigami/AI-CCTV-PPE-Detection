@@ -172,12 +172,11 @@ def generate_live_feed():
                     if not has_helmet: missing.append("нет каски")
                     if not has_vest: missing.append("нет жилета")
                     if not has_mask: missing.append("нет маски")
-                    status = f"Все СИЗ на месте" if fully_equipped else f"Нарушения: {(", ").join(missing)}"
                     all_statuses = []
                     for i, pb in enumerate(detected["persons"]):
-                        hh = any(has_item_on_person(pbox, h) for h in detected["helmets"])
-                        hv = any(has_item_on_person(pbox, v) for v in detected["vests"])
-                        hm = any(has_item_on_person(pbox, m) for m in detected["masks"])
+                        hh = any(has_item_on_person(pb, h) for h in detected["helmets"])
+                        hv = any(has_item_on_person(pb, v) for v in detected["vests"])
+                        hm = any(has_item_on_person(pb, m) for m in detected["masks"])
                         miss = ", ".join(
                             n for f, n in [(hh, "каска"), (hv, "жилет"), (hm, "маска")] if not f
                         )
