@@ -1,11 +1,11 @@
 import time
 import threading
-from dataclasses import dataclass, field
-from typing import List, Dict, Optional, Tuple
-from config import APPROVAL_DURATION, PERSON_ID_GRID, MAX_LOG_SIZE
-
-GESTURE_DISPLAY_DURATION = 3
-PRINT_DISPLAY_DURATION   = 3
+from dataclasses import dataclass
+from typing import List, Dict, Tuple
+from config import (
+    APPROVAL_DURATION, PERSON_ID_GRID,
+    MAX_LOG_SIZE, GESTURE_DISPLAY_DURATION, PRINT_DISPLAY_DURATION
+)
 
 
 @dataclass
@@ -18,16 +18,15 @@ class LogEntry:
 
 
 class DetectionState:
-    """Весь изменяемый стейт приложения в одном месте"""
 
     def __init__(self):
-        self._lock            = threading.Lock()
-        self.live_active      = False
-        self.camera_released  = True
-        self._log:      List[LogEntry]         = []
-        self._approved: Dict[Tuple, float]     = {}
-        self._gesture_until: float             = 0
-        self._print_until:   float             = 0
+        self._lock           = threading.Lock()
+        self.live_active     = False
+        self.camera_released = True
+        self._log:      List[LogEntry]              = []
+        self._approved: Dict[Tuple, float]          = {}
+        self._gesture_until: float                  = 0
+        self._print_until:   float                  = 0
 
     # ── Лог ──────────────────────────────────
 
@@ -45,15 +44,15 @@ class DetectionState:
         with self._lock:
             self._log.clear()
 
-    # ── Пропуска ─────────────────────────────
+    # ── Пропуска (с cam_id чтобы не путать людей с разных камер) ──
 
-    def _person_id(self, person_box) -> Tuple:
+    def _person_id(self, person_box, cam_id: str) -> Tuple:
         cx = int((person_box[0] + person_box[2]) / 2)
         cy = int((person_box[1] + person_box[3]) / 2)
-        return (cx // PERSON_ID_GRID, cy // PERSON_ID_GRID)
+        return (cam_id, cx // PERSON_ID_GRID, cy // PERSON_ID_GRID)
 
-    def is_approved(self, person_box) -> bool:
-        pid = self._person_id(person_box)
+    def is_approved(self, person_box, cam_id: str) -> bool:
+        pid = self._person_id(person_box, cam_id)
         with self._lock:
             expire = self._approved.get(pid)
             if expire is None:
@@ -63,17 +62,17 @@ class DetectionState:
             del self._approved[pid]
             return False
 
-    def approve(self, person_box):
-        pid = self._person_id(person_box)
+    def approve(self, person_box, cam_id: str):
+        pid = self._person_id(person_box, cam_id)
         with self._lock:
             self._approved[pid] = time.time() + APPROVAL_DURATION
-        print(f"Пропуск выдан: ID {pid} на {APPROVAL_DURATION} сек.")
+        print(f"Пропуск выдан: {pid} на {APPROVAL_DURATION} сек.")
 
     def clear_approved(self):
         with self._lock:
             self._approved.clear()
 
-    # ── Жест ОК ──────────────────────────────
+    # ── Жест ──────────────────────────────────
 
     def set_gesture_detected(self):
         with self._lock:
@@ -83,7 +82,7 @@ class DetectionState:
         with self._lock:
             return time.time() < self._gesture_until
 
-    # ── Печать ───────────────────────────────
+    # ── Печать ────────────────────────────────
 
     def set_print_triggered(self):
         with self._lock:

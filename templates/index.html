@@ -8,20 +8,20 @@
   @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;500;600;700&family=Exo+2:wght@300;400;600;700&display=swap');
 
   :root {
-    --bg:        #080d14;
-    --panel:     #0d1520;
-    --panel2:    #111c2b;
-    --border:    #1a3a5c;
-    --accent:    #00e5ff;
-    --green:     #00ff88;
-    --red:       #ff3355;
-    --yellow:    #ffd600;
-    --orange:    #ff6d00;
-    --text:      #c8dff0;
-    --text-dim:  #4a6a8a;
-    --mono:      'Share Tech Mono', monospace;
-    --ui:        'Rajdhani', sans-serif;
-    --body:      'Exo 2', sans-serif;
+    --bg:       #080d14;
+    --panel:    #0d1520;
+    --panel2:   #111c2b;
+    --border:   #1a3a5c;
+    --accent:   #00e5ff;
+    --green:    #00ff88;
+    --red:      #ff3355;
+    --yellow:   #ffd600;
+    --orange:   #ff6d00;
+    --text:     #c8dff0;
+    --text-dim: #4a6a8a;
+    --mono:     'Share Tech Mono', monospace;
+    --ui:       'Rajdhani', sans-serif;
+    --body:     'Exo 2', sans-serif;
   }
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -34,34 +34,27 @@
     overflow-x: hidden;
   }
 
-  /* ── HEADER ─────────────────────────────── */
+  /* HEADER */
   header {
-    display: flex;
-    align-items: center;
+    display: flex; align-items: center;
     justify-content: space-between;
     padding: 10px 24px;
     background: var(--panel);
     border-bottom: 1px solid var(--border);
     position: sticky; top: 0; z-index: 100;
   }
-
   .logo {
     display: flex; align-items: center; gap: 10px;
-    font-family: var(--ui); font-weight: 700; font-size: 1.15rem;
-    letter-spacing: 2px; color: var(--accent);
+    font-family: var(--ui); font-weight: 700;
+    font-size: 1.15rem; letter-spacing: 2px; color: var(--accent);
   }
   .logo svg { width: 28px; height: 28px; }
-
   .header-title {
     font-family: var(--ui); font-weight: 600;
     font-size: 0.95rem; letter-spacing: 3px;
     color: var(--text-dim); text-transform: uppercase;
   }
-
-  .header-right {
-    display: flex; align-items: center; gap: 20px;
-  }
-
+  .header-right { display: flex; align-items: center; gap: 20px; }
   .live-badge {
     display: flex; align-items: center; gap: 6px;
     font-family: var(--mono); font-size: 0.75rem;
@@ -69,39 +62,31 @@
   }
   .live-dot {
     width: 8px; height: 8px; border-radius: 50%;
-    background: var(--red);
-    box-shadow: 0 0 6px var(--red);
+    background: var(--red); box-shadow: 0 0 6px var(--red);
     animation: blink 1.2s ease-in-out infinite;
   }
-  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
-
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
   .clock {
     font-family: var(--mono); font-size: 0.85rem;
     color: var(--accent); letter-spacing: 1px;
     text-align: right; line-height: 1.4;
   }
 
-  /* ── LAYOUT ─────────────────────────────── */
+  /* LAYOUT */
   .dashboard {
     display: grid;
     grid-template-columns: 240px 1fr 280px;
-    gap: 0;
     height: calc(100vh - 53px);
   }
 
-  /* ── LEFT PANEL ─────────────────────────── */
+  /* LEFT */
   .left-panel {
     background: var(--panel);
     border-right: 1px solid var(--border);
     display: flex; flex-direction: column;
     overflow-y: auto;
   }
-
-  .panel-section {
-    border-bottom: 1px solid var(--border);
-    padding: 16px;
-  }
-
+  .panel-section { border-bottom: 1px solid var(--border); padding: 16px; }
   .section-label {
     font-family: var(--ui); font-weight: 700;
     font-size: 0.65rem; letter-spacing: 3px;
@@ -112,55 +97,40 @@
   .section-label::before {
     content:''; display:inline-block;
     width:3px; height:10px;
-    background: var(--accent);
-    border-radius: 2px;
+    background: var(--accent); border-radius: 2px;
   }
 
-  /* PPE status items */
+  /* PPE items */
   .ppe-item {
     display: flex; align-items: center;
     justify-content: space-between;
-    padding: 10px 12px;
-    margin-bottom: 8px;
+    padding: 10px 12px; margin-bottom: 8px;
     background: var(--panel2);
     border: 1px solid var(--border);
-    border-radius: 6px;
-    transition: border-color .3s;
+    border-radius: 6px; transition: border-color .3s;
   }
   .ppe-item.ok   { border-color: #00ff8844; }
   .ppe-item.fail { border-color: #ff335544; }
-  .ppe-item.warn { border-color: #ffd60044; }
-
   .ppe-left { display: flex; align-items: center; gap: 10px; }
   .ppe-icon { font-size: 1.3rem; }
-  .ppe-name {
-    font-family: var(--ui); font-weight: 600;
-    font-size: 0.9rem; color: var(--text);
-    line-height: 1;
-  }
-  .ppe-sub {
-    font-size: 0.7rem; color: var(--text-dim);
-    font-family: var(--mono); margin-top: 2px;
-  }
+  .ppe-name { font-family: var(--ui); font-weight: 600; font-size: 0.9rem; line-height: 1; }
+  .ppe-sub  { font-size: 0.7rem; color: var(--text-dim); font-family: var(--mono); margin-top: 2px; }
   .ppe-status-icon { font-size: 1.1rem; }
 
-  /* Counter */
+  /* Counters */
   .counter-grid {
     display: grid; grid-template-columns: 1fr 1fr;
-    gap: 8px;
+    gap: 8px; margin-bottom: 10px;
   }
   .counter-item {
-    background: var(--panel2);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 12px 10px;
-    text-align: center;
+    background: var(--panel2); border: 1px solid var(--border);
+    border-radius: 6px; padding: 12px 10px; text-align: center;
   }
   .counter-num {
     font-family: var(--mono); font-size: 2rem;
     color: var(--accent); line-height: 1;
   }
-  .counter-num.red  { color: var(--red); }
+  .counter-num.red   { color: var(--red); }
   .counter-num.green { color: var(--green); }
   .counter-label {
     font-size: 0.65rem; letter-spacing: 1px;
@@ -168,61 +138,45 @@
     margin-top: 4px; font-family: var(--ui);
   }
 
-  /* System metrics */
-  .metric-row {
-    display: flex; align-items: center;
-    justify-content: space-between;
-    margin-bottom: 10px;
-  }
-  .metric-name {
-    font-family: var(--mono); font-size: 0.75rem;
-    color: var(--text-dim); width: 60px;
-  }
-  .metric-bar-wrap {
-    flex: 1; height: 5px; margin: 0 10px;
-    background: var(--border); border-radius: 3px;
-    overflow: hidden;
-  }
-  .metric-bar {
-    height: 100%; border-radius: 3px;
-    background: var(--accent);
-    transition: width .8s ease;
-  }
-  .metric-val {
-    font-family: var(--mono); font-size: 0.75rem;
-    color: var(--text); width: 35px; text-align: right;
+  /* People icons */
+  .people-icons-wrap {
+    padding: 10px; background: var(--panel2);
+    border: 1px solid var(--border); border-radius: 6px;
+    min-height: 52px; display: flex; flex-wrap: wrap;
+    gap: 6px; align-items: center;
   }
 
-  /* Controls */
+  /* Metrics */
+  .metric-row {
+    display: flex; align-items: center;
+    justify-content: space-between; margin-bottom: 10px;
+  }
+  .metric-name { font-family: var(--mono); font-size: 0.75rem; color: var(--text-dim); width: 60px; }
+  .metric-bar-wrap { flex: 1; height: 5px; margin: 0 10px; background: var(--border); border-radius: 3px; overflow: hidden; }
+  .metric-bar { height: 100%; border-radius: 3px; background: var(--accent); transition: width .8s ease; }
+  .metric-val { font-family: var(--mono); font-size: 0.75rem; color: var(--text); width: 35px; text-align: right; }
+
+  /* Buttons */
   .btn {
     font-family: var(--ui); font-weight: 600;
     font-size: 0.85rem; letter-spacing: 1px;
     border: none; border-radius: 5px;
     padding: 9px 16px; cursor: pointer;
-    text-transform: uppercase;
-    transition: all .2s;
+    text-transform: uppercase; transition: all .2s;
     width: 100%; margin-bottom: 8px;
   }
-  .btn-start {
-    background: linear-gradient(135deg, #00e5ff22, #00e5ff11);
-    border: 1px solid var(--accent);
-    color: var(--accent);
-  }
+  .btn-start { background: linear-gradient(135deg,#00e5ff22,#00e5ff11); border: 1px solid var(--accent); color: var(--accent); }
   .btn-start:hover { background: #00e5ff22; box-shadow: 0 0 12px #00e5ff44; }
-  .btn-stop {
-    background: linear-gradient(135deg, #ff335522, #ff335511);
-    border: 1px solid var(--red);
-    color: var(--red);
-  }
-  .btn-stop:hover { background: #ff335522; box-shadow: 0 0 12px #ff335544; }
-  .btn:disabled { opacity: .35; cursor: not-allowed; box-shadow: none; }
-
+  .btn-stop  { background: linear-gradient(135deg,#ff335522,#ff335511); border: 1px solid var(--red);   color: var(--red); }
+  .btn-stop:hover  { background: #ff335522; box-shadow: 0 0 12px #ff335544; }
+  .btn:disabled { opacity:.35; cursor:not-allowed; box-shadow:none; }
   .btn-secondary {
-    background: transparent;
-    border: 1px solid var(--border);
-    color: var(--text-dim);
-    font-size: 0.75rem; padding: 6px 12px;
+    background: transparent; border: 1px solid var(--border);
+    color: var(--text-dim); font-size: 0.75rem; padding: 6px 12px;
     width: auto; margin: 0 4px 0 0;
+    font-family: var(--ui); font-weight: 600;
+    border-radius: 4px; cursor: pointer;
+    transition: all .2s; text-transform: uppercase;
   }
   .btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
 
@@ -233,243 +187,156 @@
     font-family: var(--mono); font-size: 0.72rem;
     letter-spacing: 1px; margin-top: 8px;
     border: 1px solid var(--border);
-    color: var(--text-dim);
-    transition: all .3s;
+    color: var(--text-dim); transition: all .3s;
   }
-  #statusPill.active   { border-color: var(--green); color: var(--green); background: #00ff8811; }
-  #statusPill.inactive { border-color: var(--red);   color: var(--red);   background: #ff335511; }
+  #statusPill.active   { border-color: var(--green);  color: var(--green);  background: #00ff8811; }
+  #statusPill.inactive { border-color: var(--red);    color: var(--red);    background: #ff335511; }
   #statusPill.loading  { border-color: var(--yellow); color: var(--yellow); background: #ffd60011; }
-  .pill-dot {
-    width: 6px; height: 6px; border-radius: 50%;
-    background: currentColor;
-  }
+  .pill-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 
-  /* ── CENTER ─────────────────────────────── */
-  .center-panel {
-    display: flex; flex-direction: column;
-    background: var(--bg);
-  }
-
+  /* CENTER */
+  .center-panel { display: flex; flex-direction: column; background: var(--bg); }
   .video-area {
     flex: 1; position: relative;
-    display: flex; align-items: center; justify-content: center;
     background: #050a10;
     border-bottom: 1px solid var(--border);
     overflow: hidden;
   }
 
-  #liveFeed {
-    width: 100%; height: 100%;
-    object-fit: contain;
-    display: none;
+  /* Camera grid */
+  .camera-grid { display: grid; width: 100%; height: 100%; gap: 2px; background: #000; }
+  .camera-grid.cams-1 { grid-template-columns: 1fr; grid-template-rows: 1fr; }
+  .camera-grid.cams-2 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr; }
+  .camera-grid.cams-3 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
+  .camera-grid.cams-3 .cam-cell:last-child { grid-column: 1 / -1; }
+  .camera-grid.cams-4 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
+  .camera-grid.cams-5,
+  .camera-grid.cams-6 { grid-template-columns: 1fr 1fr 1fr; grid-template-rows: 1fr 1fr; }
+  .camera-grid.cams-7,
+  .camera-grid.cams-8,
+  .camera-grid.cams-9 { grid-template-columns: 1fr 1fr 1fr; grid-template-rows: 1fr 1fr 1fr; }
+
+  .cam-cell { position: relative; overflow: hidden; background: #050a10; min-height: 0; cursor: pointer; }
+  .cam-cell img { width: 100%; height: 100%; object-fit: contain; display: block; border: none; border-radius: 0; box-shadow: none; background: #000; }
+  .cam-label {
+    position: absolute; top: 6px; left: 6px;
+    background: #00000088; border: 1px solid var(--border);
+    border-radius: 3px; padding: 2px 8px;
+    font-family: var(--mono); font-size: 0.65rem;
+    color: var(--accent); letter-spacing: 1px; pointer-events: none;
   }
+  .cam-cell.fullscreen { position: absolute; inset: 0; z-index: 10; }
 
   .feed-placeholder {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
     text-align: center; color: var(--text-dim);
-    font-family: var(--mono); font-size: 0.8rem;
-    letter-spacing: 1px;
+    font-family: var(--mono); font-size: 0.8rem; letter-spacing: 1px;
   }
   .feed-placeholder .big { font-size: 3rem; margin-bottom: 12px; opacity: .3; }
 
-  /* Corner overlays */
-  .corner { position: absolute; width: 20px; height: 20px; }
-  .corner.tl { top:12px; left:12px; border-top: 2px solid var(--accent); border-left: 2px solid var(--accent); }
-  .corner.tr { top:12px; right:12px; border-top: 2px solid var(--accent); border-right: 2px solid var(--accent); }
-  .corner.bl { bottom:12px; left:12px; border-bottom: 2px solid var(--accent); border-left: 2px solid var(--accent); }
-  .corner.br { bottom:12px; right:12px; border-bottom: 2px solid var(--accent); border-right: 2px solid var(--accent); }
+  .corner { position: absolute; width: 20px; height: 20px; z-index: 5; }
+  .corner.tl { top:12px;    left:12px;  border-top:    2px solid var(--accent); border-left:   2px solid var(--accent); }
+  .corner.tr { top:12px;    right:12px; border-top:    2px solid var(--accent); border-right:  2px solid var(--accent); }
+  .corner.bl { bottom:12px; left:12px;  border-bottom: 2px solid var(--accent); border-left:   2px solid var(--accent); }
+  .corner.br { bottom:12px; right:12px; border-bottom: 2px solid var(--accent); border-right:  2px solid var(--accent); }
 
-  /* Access banner */
   #accessBanner {
-    display: none;
-    position: absolute; bottom: 0; left: 0; right: 0;
-    padding: 14px 24px;
-    text-align: center;
+    display: none; position: absolute; bottom: 0; left: 0; right: 0;
+    padding: 14px 24px; text-align: center; z-index: 6;
     font-family: var(--ui); font-weight: 700;
-    font-size: 1.4rem; letter-spacing: 4px;
-    text-transform: uppercase;
+    font-size: 1.4rem; letter-spacing: 4px; text-transform: uppercase;
   }
-  #accessBanner.granted {
-    background: linear-gradient(90deg, #00ff8800, #00ff8833, #00ff8800);
-    color: var(--green);
-    border-top: 1px solid #00ff8866;
-    display: block;
-  }
-  #accessBanner.denied {
-    background: linear-gradient(90deg, #ff335500, #ff335533, #ff335500);
-    color: var(--red);
-    border-top: 1px solid #ff335566;
-    display: block;
-  }
+  #accessBanner.granted { background: linear-gradient(90deg,#00ff8800,#00ff8833,#00ff8800); color: var(--green); border-top: 1px solid #00ff8866; display: block; }
+  #accessBanner.denied  { background: linear-gradient(90deg,#ff335500,#ff335533,#ff335500); color: var(--red);   border-top: 1px solid #ff335566; display: block; }
 
-  /* Gesture indicator */
   #gestureIndicator {
-    display: none;
-    position: absolute; bottom: 70px; left: 50%;
-    transform: translateX(-50%);
-    background: #00e5ff22;
-    border: 1px solid var(--accent);
-    border-radius: 20px;
-    padding: 6px 20px;
+    display: none; position: absolute; bottom: 70px; left: 50%;
+    transform: translateX(-50%); z-index: 6;
+    background: #00e5ff22; border: 1px solid var(--accent);
+    border-radius: 20px; padding: 6px 20px;
     font-family: var(--mono); font-size: 0.8rem;
     color: var(--accent); letter-spacing: 2px;
   }
 
-  /* Bottom bar */
-  .bottom-bar {
-    padding: 10px 16px;
-    background: var(--panel);
-    border-top: 1px solid var(--border);
-    display: flex; align-items: center;
-    justify-content: space-between;
-    gap: 12px;
+  .video-area::after {
+    content:''; position: absolute; inset: 0;
+    background: repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,229,255,.015) 2px,rgba(0,229,255,.015) 4px);
+    pointer-events: none; z-index: 4;
   }
 
-  /* Upload */
-  .upload-zone {
-    display: flex; align-items: center; gap: 8px; flex: 1;
+  /* Bottom bar */
+  .bottom-bar {
+    padding: 10px 16px; background: var(--panel);
+    border-top: 1px solid var(--border);
+    display: flex; align-items: center; gap: 12px;
   }
+  .upload-zone { display: flex; align-items: center; gap: 8px; flex: 1; }
   .upload-zone input[type=file] {
-    flex: 1;
-    font-family: var(--mono); font-size: 0.72rem;
-    color: var(--text-dim);
-    background: var(--panel2);
-    border: 1px solid var(--border);
-    border-radius: 4px; padding: 5px 10px;
+    flex: 1; font-family: var(--mono); font-size: 0.72rem;
+    color: var(--text-dim); background: var(--panel2);
+    border: 1px solid var(--border); border-radius: 4px; padding: 5px 10px;
   }
   .upload-zone input[type=file]::-webkit-file-upload-button {
-    background: var(--panel2); border: none;
-    color: var(--text-dim); cursor: pointer;
-    font-family: var(--body);
+    background: var(--panel2); border: none; color: var(--text-dim); cursor: pointer;
   }
   .btn-upload {
-    font-family: var(--ui); font-weight: 600;
-    font-size: 0.78rem; letter-spacing: 1px;
-    background: transparent;
-    border: 1px solid var(--border);
-    color: var(--text-dim);
-    border-radius: 4px; padding: 6px 14px;
-    cursor: pointer; text-transform: uppercase;
-    transition: all .2s; white-space: nowrap;
+    font-family: var(--ui); font-weight: 600; font-size: 0.78rem; letter-spacing: 1px;
+    background: transparent; border: 1px solid var(--border); color: var(--text-dim);
+    border-radius: 4px; padding: 6px 14px; cursor: pointer;
+    text-transform: uppercase; transition: all .2s; white-space: nowrap;
   }
   .btn-upload:hover { border-color: var(--accent); color: var(--accent); }
 
-  /* ── RIGHT PANEL ─────────────────────────── */
+  /* RIGHT */
   .right-panel {
-    background: var(--panel);
-    border-left: 1px solid var(--border);
-    display: flex; flex-direction: column;
-    overflow: hidden;
+    background: var(--panel); border-left: 1px solid var(--border);
+    display: flex; flex-direction: column; overflow: hidden;
   }
-
   .events-header {
-    padding: 14px 16px 10px;
-    border-bottom: 1px solid var(--border);
-    display: flex; align-items: center;
-    justify-content: space-between;
+    padding: 14px 16px 10px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
   }
-
   #logBox {
-    flex: 1; overflow-y: auto;
-    padding: 8px;
-    scrollbar-width: thin;
-    scrollbar-color: var(--border) transparent;
+    flex: 1; overflow-y: auto; padding: 8px;
+    scrollbar-width: thin; scrollbar-color: var(--border) transparent;
   }
   #logBox::-webkit-scrollbar { width: 4px; }
   #logBox::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 
   .log-entry {
-    padding: 9px 10px;
-    margin-bottom: 6px;
-    border-radius: 5px;
-    border-left: 3px solid;
-    background: var(--panel2);
-    animation: fadeIn .3s ease;
+    padding: 9px 10px; margin-bottom: 6px;
+    border-radius: 5px; border-left: 3px solid;
+    background: var(--panel2); animation: fadeIn .3s ease;
   }
   @keyframes fadeIn { from{opacity:0;transform:translateY(-4px)} to{opacity:1;transform:none} }
-
   .log-entry.нарушение { border-color: var(--red);    background: #ff335510; }
   .log-entry.внимание  { border-color: var(--yellow); background: #ffd60010; }
   .log-entry.норма     { border-color: var(--green);  background: #00ff8810; }
   .log-entry.violation { border-color: var(--red);    background: #ff335510; }
   .log-entry.normal    { border-color: var(--green);  background: #00ff8810; }
+  .log-time  { font-family: var(--mono); font-size: 0.68rem; color: var(--text-dim); display: block; margin-bottom: 3px; }
+  .log-msg   { font-size: 0.78rem; line-height: 1.4; color: var(--text); }
+  .empty-state { text-align: center; padding: 40px 20px; color: var(--text-dim); font-family: var(--mono); font-size: 0.75rem; letter-spacing: 1px; }
+  .log-actions { padding: 10px 12px; border-top: 1px solid var(--border); display: flex; gap: 8px; }
 
-  .log-time {
-    font-family: var(--mono); font-size: 0.68rem;
-    color: var(--text-dim); display: block; margin-bottom: 3px;
-  }
-  .log-msg {
-    font-size: 0.78rem; line-height: 1.4;
-    color: var(--text); font-family: var(--body);
-  }
-
-  .empty-state {
-    text-align: center; padding: 40px 20px;
-    color: var(--text-dim); font-family: var(--mono);
-    font-size: 0.75rem; letter-spacing: 1px;
-  }
-
-  .log-actions {
-    padding: 10px 12px;
-    border-top: 1px solid var(--border);
-    display: flex; gap: 8px;
-  }
-
-  /* Upload result overlay */
-  #uploadResult {
-    display: none;
-    position: fixed; inset: 0; z-index: 200;
-    background: #000000cc;
-    align-items: center; justify-content: center;
-  }
+  /* Upload overlay */
+  #uploadResult { display: none; position: fixed; inset: 0; z-index: 200; background: #000000cc; align-items: center; justify-content: center; }
   #uploadResult.show { display: flex; }
-  .upload-result-inner {
-    background: var(--panel);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 20px; max-width: 90vw; max-height: 90vh;
-    position: relative; overflow: auto;
-  }
-  .close-overlay {
-    position: absolute; top: 10px; right: 14px;
-    background: none; border: none;
-    color: var(--text-dim); font-size: 1.4rem;
-    cursor: pointer;
-  }
-  #uploadedImage, #uploadedVideo {
-    max-width: 100%; max-height: 75vh;
-    border-radius: 6px; display: none;
-  }
+  .upload-result-inner { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 20px; max-width: 90vw; max-height: 90vh; position: relative; overflow: auto; }
+  .close-overlay { position: absolute; top: 10px; right: 14px; background: none; border: none; color: var(--text-dim); font-size: 1.4rem; cursor: pointer; }
+  #uploadedImage, #uploadedVideo { max-width: 100%; max-height: 75vh; border-radius: 6px; display: none; }
 
-  /* Scan line effect on video */
-  .video-area::after {
-    content: '';
-    position: absolute; inset: 0;
-    background: repeating-linear-gradient(
-      0deg,
-      transparent,
-      transparent 2px,
-      rgba(0,229,255,0.015) 2px,
-      rgba(0,229,255,0.015) 4px
-    );
-    pointer-events: none;
-  }
-
-  /* Responsive */
-  @media (max-width: 1100px) {
-    .dashboard { grid-template-columns: 200px 1fr 240px; }
-  }
-  @media (max-width: 800px) {
-    .dashboard { grid-template-columns: 1fr; grid-template-rows: auto 1fr auto; height: auto; }
-    .left-panel, .right-panel { height: 300px; }
-  }
+  @media (max-width: 1100px) { .dashboard { grid-template-columns: 200px 1fr 240px; } }
+  @media (max-width: 800px)  { .dashboard { grid-template-columns: 1fr; grid-template-rows: auto 1fr auto; height: auto; } .left-panel, .right-panel { height: 300px; } }
 </style>
 </head>
 <body>
 
-<!-- HEADER -->
 <header>
   <div class="logo">
-    <svg viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <svg viewBox="0 0 28 28" fill="none">
       <rect x="2" y="2" width="24" height="24" rx="4" stroke="#00e5ff" stroke-width="1.5"/>
       <circle cx="14" cy="12" r="5" stroke="#00e5ff" stroke-width="1.5"/>
       <path d="M6 22c0-4 3.6-7 8-7s8 3 8 7" stroke="#00e5ff" stroke-width="1.5" stroke-linecap="round"/>
@@ -479,7 +346,7 @@
   <div class="header-title">Видеоаналитика в реальном времени</div>
   <div class="header-right">
     <div class="live-badge">
-      <div class="live-dot" id="liveDot"></div>
+      <div class="live-dot"></div>
       <span id="liveLabel">OFFLINE</span>
     </div>
     <div class="clock">
@@ -489,7 +356,6 @@
   </div>
 </header>
 
-<!-- DASHBOARD -->
 <div class="dashboard">
 
   <!-- LEFT -->
@@ -508,52 +374,32 @@
     <div class="panel-section">
       <div class="section-label">Статус проверки</div>
       <div class="ppe-item" id="ppe-helmet">
-        <div class="ppe-left">
-          <div class="ppe-icon">⛑️</div>
-          <div>
-            <div class="ppe-name">Каска</div>
-            <div class="ppe-sub" id="sub-helmet">ожидание</div>
-          </div>
+        <div class="ppe-left"><div class="ppe-icon">⛑️</div>
+          <div><div class="ppe-name">Каска</div><div class="ppe-sub" id="sub-helmet">ожидание</div></div>
         </div>
         <div class="ppe-status-icon" id="icon-helmet">—</div>
       </div>
       <div class="ppe-item" id="ppe-mask">
-        <div class="ppe-left">
-          <div class="ppe-icon">😷</div>
-          <div>
-            <div class="ppe-name">Маска</div>
-            <div class="ppe-sub" id="sub-mask">ожидание</div>
-          </div>
+        <div class="ppe-left"><div class="ppe-icon">😷</div>
+          <div><div class="ppe-name">Маска</div><div class="ppe-sub" id="sub-mask">ожидание</div></div>
         </div>
         <div class="ppe-status-icon" id="icon-mask">—</div>
       </div>
       <div class="ppe-item" id="ppe-vest">
-        <div class="ppe-left">
-          <div class="ppe-icon">🦺</div>
-          <div>
-            <div class="ppe-name">Жилет</div>
-            <div class="ppe-sub" id="sub-vest">ожидание</div>
-          </div>
+        <div class="ppe-left"><div class="ppe-icon">🦺</div>
+          <div><div class="ppe-name">Жилет</div><div class="ppe-sub" id="sub-vest">ожидание</div></div>
         </div>
         <div class="ppe-status-icon" id="icon-vest">—</div>
       </div>
       <div class="ppe-item" id="ppe-zone">
-        <div class="ppe-left">
-          <div class="ppe-icon">⚠️</div>
-          <div>
-            <div class="ppe-name">Опасная зона</div>
-            <div class="ppe-sub" id="sub-zone">ожидание</div>
-          </div>
+        <div class="ppe-left"><div class="ppe-icon">⚠️</div>
+          <div><div class="ppe-name">Опасная зона</div><div class="ppe-sub" id="sub-zone">ожидание</div></div>
         </div>
         <div class="ppe-status-icon" id="icon-zone">—</div>
       </div>
       <div class="ppe-item" id="ppe-gesture">
-        <div class="ppe-left">
-          <div class="ppe-icon">👌</div>
-          <div>
-            <div class="ppe-name">Жест «ОК»</div>
-            <div class="ppe-sub" id="sub-gesture">ожидание</div>
-          </div>
+        <div class="ppe-left"><div class="ppe-icon">🤙</div>
+          <div><div class="ppe-name">Жест «ОК»</div><div class="ppe-sub" id="sub-gesture">ожидание</div></div>
         </div>
         <div class="ppe-status-icon" id="icon-gesture">—</div>
       </div>
@@ -570,6 +416,11 @@
           <div class="counter-num green" id="cntOk">0</div>
           <div class="counter-label">Допущено</div>
         </div>
+      </div>
+      <div class="people-icons-wrap" id="peopleIcons">
+        <span style="color:var(--text-dim);font-family:var(--mono);font-size:.7rem">нет людей</span>
+      </div>
+      <div class="counter-grid" style="margin-top:8px;margin-bottom:0">
         <div class="counter-item">
           <div class="counter-num red" id="cntViolations">0</div>
           <div class="counter-label">Нарушений</div>
@@ -604,26 +455,23 @@
 
   <!-- CENTER -->
   <div class="center-panel">
-    <div class="video-area">
+    <div class="video-area" id="videoArea">
       <div class="corner tl"></div>
       <div class="corner tr"></div>
       <div class="corner bl"></div>
       <div class="corner br"></div>
-
-      <img id="liveFeed" alt="Live Feed" src="">
+      <div id="cameraGrid" class="camera-grid"></div>
       <div class="feed-placeholder" id="feedPlaceholder">
         <div class="big">📷</div>
         Запустите детекцию для отображения видео
       </div>
-
       <div id="gestureIndicator">✓ ЖЕСТ «ОК» РАСПОЗНАН</div>
       <div id="accessBanner"></div>
     </div>
-
     <div class="bottom-bar">
       <div class="upload-zone">
         <form id="uploadForm" enctype="multipart/form-data" style="display:flex;align-items:center;gap:8px;flex:1">
-          <input type="file" name="file" accept="image/*,video/*" id="fileInput">
+          <input type="file" name="file" accept="image/*,video/*">
           <button type="submit" class="btn-upload">🔍 Обработать файл</button>
         </form>
       </div>
@@ -636,9 +484,7 @@
       <div class="section-label" style="margin:0">События</div>
       <span style="font-family:var(--mono);font-size:.65rem;color:var(--text-dim)" id="eventCount">0 записей</span>
     </div>
-    <div id="logBox">
-      <div class="empty-state">Ожидание событий...</div>
-    </div>
+    <div id="logBox"><div class="empty-state">Ожидание событий...</div></div>
     <div class="log-actions">
       <button class="btn-secondary" onclick="clearLogs()">🗑 Очистить</button>
       <button class="btn-secondary" onclick="exportLogs()">💾 Экспорт</button>
@@ -647,7 +493,6 @@
 
 </div>
 
-<!-- UPLOAD RESULT OVERLAY -->
 <div id="uploadResult">
   <div class="upload-result-inner">
     <button class="close-overlay" onclick="closeOverlay()">✕</button>
@@ -657,62 +502,171 @@
 </div>
 
 <script>
-// ── CLOCK ────────────────────────────────────
+// ── CLOCK
 function updateClock() {
-  const now = new Date();
-  document.getElementById('clockTime').textContent =
-    now.toLocaleTimeString('ru-RU');
-  document.getElementById('clockDate').textContent =
-    now.toLocaleDateString('ru-RU');
+  const n = new Date();
+  document.getElementById('clockTime').textContent = n.toLocaleTimeString('ru-RU');
+  document.getElementById('clockDate').textContent = n.toLocaleDateString('ru-RU');
 }
-setInterval(updateClock, 1000);
-updateClock();
+setInterval(updateClock, 1000); updateClock();
 
-// ── FAKE SYSTEM METRICS (замени на реальные если есть API) ──
+// ── METRICS (псевдо — заменить на реальный API если нужно)
 function updateMetrics() {
-  const cpu = 30 + Math.random() * 40;
-  const ram = 50 + Math.random() * 20;
-  const fps = 20 + Math.random() * 10;
-
-  document.getElementById('barCpu').style.width  = cpu + '%';
-  document.getElementById('valCpu').textContent  = Math.round(cpu) + '%';
-  document.getElementById('barRam').style.width  = ram + '%';
-  document.getElementById('valRam').textContent  = Math.round(ram) + '%';
-  document.getElementById('barFps').style.width  = (fps / 30 * 100) + '%';
-  document.getElementById('valFps').textContent  = Math.round(fps);
+  const cpu = 30 + Math.random()*40, ram = 50 + Math.random()*20, fps = 20 + Math.random()*10;
+  document.getElementById('barCpu').style.width = cpu+'%'; document.getElementById('valCpu').textContent = Math.round(cpu)+'%';
+  document.getElementById('barRam').style.width = ram+'%'; document.getElementById('valRam').textContent = Math.round(ram)+'%';
+  document.getElementById('barFps').style.width = (fps/30*100)+'%'; document.getElementById('valFps').textContent = Math.round(fps);
 }
-setInterval(updateMetrics, 2000);
-updateMetrics();
+setInterval(updateMetrics, 2000); updateMetrics();
 
-// ── FEED CONTROL ─────────────────────────────
-const img             = document.getElementById('liveFeed');
+// ── STATE
 const feedPlaceholder = document.getElementById('feedPlaceholder');
 const statusPill      = document.getElementById('statusPill');
-const statusText      = document.getElementById('statusText');
 const liveLabel       = document.getElementById('liveLabel');
-const liveDot         = document.getElementById('liveDot');
-let isRunning = false;
-let logInterval;
+let isRunning     = false;
+let logInterval   = null;
+let activeCameras = [];
+let fullscreenCam = null;
+let selectedCam   = null; // null = все камеры
+let streamControllers = {}; // AbortController для каждого стрима
 
-function setStatus(state, text) {
-  statusPill.className = state;
-  statusText.textContent = text;
+function setStatus(s, t) { statusPill.className = s; document.getElementById('statusText').textContent = t; }
+
+// ── CAMERA GRID
+function buildCameraGrid(cameras) {
+  const grid = document.getElementById('cameraGrid');
+  grid.className = 'camera-grid cams-' + Math.min(cameras.length, 9);
+  grid.innerHTML = '';
+  cameras.forEach(camId => {
+    const cell  = document.createElement('div');
+    cell.className = 'cam-cell'; cell.id = 'cell-' + camId;
+    const img   = document.createElement('img');
+    img.id = 'img-' + camId; img.alt = camId;
+    img.style.width = '100%'; img.style.height = '100%'; img.style.objectFit = 'contain';
+    const label = document.createElement('div');
+    label.className = 'cam-label'; label.textContent = camId.toUpperCase();
+    // Индикатор ошибки
+    const errLabel = document.createElement('div');
+    errLabel.id = 'err-' + camId; errLabel.className = 'cam-label';
+    errLabel.style.color = 'var(--red)'; errLabel.style.display = 'none';
+    errLabel.textContent = 'Нет сигнала';
+    cell.appendChild(img); cell.appendChild(label); cell.appendChild(errLabel);
+    cell.addEventListener('click', () => toggleFullscreen(camId));
+    grid.appendChild(cell);
+    // Запускаем стрим для этой камеры
+    startCameraStream(camId);
+  });
 }
 
+// ── STREAM с auto-reconnect ─────────────────────────────────
+function startCameraStream(camId) {
+  const img = document.getElementById('img-' + camId);
+  const err = document.getElementById('err-' + camId);
+  if (!img) return;
+
+  let reconnectDelay = 1000;
+  let stopped = false;
+
+  function connect() {
+    if (stopped) return;
+    const controller = new AbortController();
+    streamControllers[camId] = controller;
+
+    fetch('/video_feed/' + camId, { signal: controller.signal })
+      .then(response => {
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        const reader = response.body.getReader();
+        reconnectDelay = 1000; // сброс задержки при успехе
+        if (err) err.style.display = 'none';
+
+        function readChunk() {
+          return reader.read().then(({ done, value }) => {
+            if (done) return; // стрим завершился — reconnect
+            // Парсим multipart JPEG
+            const data = new TextDecoder().decode(value);
+            // Ищем JPEG данные
+            const jpegStart = value.indexOf(0xFF);
+            if (jpegStart >= 0) {
+              const blob = new Blob([value.slice(jpegStart)], { type: 'image/jpeg' });
+              img.src = URL.createObjectURL(blob);
+            }
+            return readChunk();
+          });
+        }
+        return readChunk();
+      })
+      .catch(e => {
+        if (stopped) return;
+        if (err) { err.style.display = 'block'; err.textContent = 'Переподключение...'; }
+        // Auto-reconnect с экспоненциальной задержкой
+        reconnectDelay = Math.min(reconnectDelay * 2, 10000);
+        setTimeout(connect, reconnectDelay);
+      });
+  }
+
+  connect();
+
+  // Сохраняем функцию остановки
+  streamControllers[camId + '_stop'] = () => { stopped = true; };
+}
+
+function stopAllStreams() {
+  Object.keys(streamControllers).forEach(key => {
+    if (key.endsWith('_stop')) {
+      streamControllers[key]();
+    } else {
+      try { streamControllers[key].abort(); } catch(e) {}
+    }
+  });
+  streamControllers = {};
+}
+
+function toggleFullscreen(camId) {
+  const grid = document.getElementById('cameraGrid');
+  const cell = document.getElementById('cell-' + camId);
+  if (fullscreenCam === camId) {
+    cell.classList.remove('fullscreen');
+    grid.querySelectorAll('.cam-cell').forEach(c => c.style.display = '');
+    fullscreenCam = null; selectedCam = null;
+  } else {
+    grid.querySelectorAll('.cam-cell').forEach(c => {
+      c.style.display = c.id === 'cell-' + camId ? '' : 'none';
+    });
+    cell.classList.add('fullscreen');
+    fullscreenCam = camId; selectedCam = camId;
+  }
+}
+
+function clearCameraGrid() {
+  stopAllStreams();
+  const grid = document.getElementById('cameraGrid');
+  grid.innerHTML = ''; grid.className = 'camera-grid';
+  fullscreenCam = null; selectedCam = null;
+}
+
+// ── FEED CONTROL
 function startFeed() {
   if (isRunning) return;
   document.getElementById('startBtn').disabled = true;
   setStatus('loading', 'Запуск...');
-
   fetch('/start', { method: 'POST' })
     .then(r => r.json())
     .then(() => {
-      img.src = '/video_feed?' + Date.now();
-      img.style.display = 'block';
+      fetch('/cameras')
+        .then(r => r.json())
+        .then(data => {
+          activeCameras = data.cameras || ['cam1'];
+          buildCameraGrid(activeCameras);
+        })
+        .catch(() => {
+          activeCameras = ['cam1'];
+          buildCameraGrid(activeCameras);
+          const img = document.querySelector('#cell-cam1 img');
+          if (img) img.src = '/video_feed?' + Date.now();
+        });
       feedPlaceholder.style.display = 'none';
       setStatus('active', 'Детекция активна');
       liveLabel.textContent = 'LIVE';
-      liveDot.style.background = 'var(--red)';
       isRunning = true;
       document.getElementById('startBtn').disabled = false;
       fetchLog();
@@ -728,13 +682,12 @@ function stopFeed() {
   if (!isRunning) return;
   document.getElementById('stopBtn').disabled = true;
   setStatus('loading', 'Остановка...');
-
+  stopAllStreams();
   fetch('/stop', { method: 'POST' })
     .then(r => r.json())
     .then(() => {
-      img.src = '';
-      img.style.display = 'none';
-      feedPlaceholder.style.display = 'block';
+      clearCameraGrid();
+      feedPlaceholder.style.display = 'flex';
       setStatus('inactive', 'Остановлено');
       liveLabel.textContent = 'OFFLINE';
       isRunning = false;
@@ -748,67 +701,56 @@ function stopFeed() {
     });
 }
 
-// ── PPE STATUS ────────────────────────────────
-function setPPE(id, ok, subText) {
-  const item = document.getElementById('ppe-' + id);
-  const icon = document.getElementById('icon-' + id);
-  const sub  = document.getElementById('sub-' + id);
-  item.className = 'ppe-item ' + (ok === null ? '' : ok ? 'ok' : 'fail');
-  icon.textContent = ok === null ? '—' : ok ? '✅' : '❌';
-  sub.textContent  = subText;
-}
+// Остановка при закрытии/обновлении страницы
+window.addEventListener('beforeunload', () => {
+  if (isRunning) {
+    stopAllStreams();
+    // sendBeacon — синхронный, не блокирует закрытие
+    navigator.sendBeacon('/stop');
+  }
+});
 
+// ── PPE
+function setPPE(id, ok, sub) {
+  document.getElementById('ppe-'  + id).className    = 'ppe-item ' + (ok === null ? '' : ok ? 'ok' : 'fail');
+  document.getElementById('icon-' + id).textContent  = ok === null ? '—' : ok ? '✅' : '❌';
+  document.getElementById('sub-'  + id).textContent  = sub;
+}
 function resetPPEStatus() {
   ['helmet','mask','vest','zone','gesture'].forEach(id => setPPE(id, null, 'ожидание'));
 }
 
 function updatePPEFromLog(logs) {
-  if (!logs || logs.length === 0) return;
-  const last = logs[0];
-  const msg  = last.message || '';
-
-  // Каска: ищем явные маркеры
-  const hasHelmet  = msg.includes('К ') && !msg.includes('!К');
-  const hasMask    = msg.includes('М ') && !msg.includes('!М');
-  const hasVest    = msg.includes('Ж')  && !msg.includes('!Ж');
-  const inDanger   = msg.includes('ОПАСНАЯ ЗОНА');
-  const hasPass    = msg.includes('ПРОПУСК');
-  const hasPerson  = msg.includes('Чел.');
-
-  if (!hasPerson) {
-    resetPPEStatus();
-    return;
-  }
-
-  setPPE('helmet',  hasHelmet, hasHelmet ? 'обнаружена'    : 'не обнаружена');
-  setPPE('mask',    hasMask,   hasMask   ? 'обнаружена'    : 'не обнаружена');
-  setPPE('vest',    hasVest,   hasVest   ? 'обнаружен'     : 'не обнаружен');
-  setPPE('zone',    !inDanger, inDanger  ? 'пересечена'    : 'не пересечена');
-  setPPE('gesture', hasPass,   hasPass   ? 'распознан'     : 'ожидание');
-
-  // Access banner
+  if (!logs || logs.length === 0) { resetPPEStatus(); return; }
+  const src = selectedCam ? logs.find(l => l.cam_id === selectedCam) : logs[0];
+  if (!src || !src.message.includes('Чел.')) { resetPPEStatus(); return; }
+  const msg = src.message;
+  const hasHelmet = msg.includes('К ')  && !msg.includes('!К');
+  const hasMask   = msg.includes('М ')  && !msg.includes('!М');
+  const hasVest   = msg.includes('Ж')   && !msg.includes('!Ж');
+  const inDanger  = msg.includes('ОПАСНАЯ ЗОНА');
+  const hasPass   = msg.includes('ПРОПУСК');
+  setPPE('helmet',  hasHelmet, hasHelmet ? 'обнаружена'  : 'не обнаружена');
+  setPPE('mask',    hasMask,   hasMask   ? 'обнаружена'  : 'не обнаружена');
+  setPPE('vest',    hasVest,   hasVest   ? 'обнаружен'   : 'не обнаружен');
+  setPPE('zone',    !inDanger, inDanger  ? 'пересечена'  : 'не пересечена');
+  setPPE('gesture', hasPass,   hasPass   ? 'распознан'   : 'ожидание');
   const banner = document.getElementById('accessBanner');
   if (hasPass) {
-    banner.className = 'granted';
-    banner.textContent = '✓ ДОСТУП РАЗРЕШЁН — ДОБРО ПОЖАЛОВАТЬ!';
+    banner.className = 'granted'; banner.textContent = '✓ ДОСТУП РАЗРЕШЁН — ДОБРО ПОЖАЛОВАТЬ!';
     setTimeout(() => { banner.className = ''; banner.textContent = ''; }, 4000);
-  } else if (last.category === 'нарушение' || last.category === 'violation') {
-    banner.className = 'denied';
-    banner.textContent = '✕ НАРУШЕНИЕ — ДОСТУП ЗАПРЕЩЁН';
+  } else if (src.category === 'нарушение' || src.category === 'violation') {
+    banner.className = 'denied'; banner.textContent = '✕ НАРУШЕНИЕ — ДОСТУП ЗАПРЕЩЁН';
     setTimeout(() => { banner.className = ''; banner.textContent = ''; }, 3000);
   }
-
-  // Gesture indicator
   const gi = document.getElementById('gestureIndicator');
-  if (hasPass) {
-    gi.style.display = 'block';
-    setTimeout(() => gi.style.display = 'none', 3000);
-  }
+  if (hasPass) { gi.style.display = 'block'; setTimeout(() => gi.style.display = 'none', 3000); }
 }
 
-// ── LOGS ──────────────────────────────────────
+// ── LOGS
 function fetchLog() {
-  fetch('/detection_log')
+  const url = selectedCam ? '/detection_log?cam_id=' + selectedCam : '/detection_log';
+  fetch(url)
     .then(r => r.json())
     .then(data => {
       const logs = data.logs || [];
@@ -820,93 +762,107 @@ function fetchLog() {
 }
 
 function renderLogs(logs) {
-  const box = document.getElementById('logBox');
   document.getElementById('eventCount').textContent = logs.length + ' записей';
-  document.getElementById('cntLogs').textContent = logs.length;
-
-  if (logs.length === 0) {
-    box.innerHTML = '<div class="empty-state">Ожидание событий...</div>';
-    return;
-  }
-
+  document.getElementById('cntLogs').textContent    = logs.length;
+  const box = document.getElementById('logBox');
+  if (logs.length === 0) { box.innerHTML = '<div class="empty-state">Ожидание событий...</div>'; return; }
   box.innerHTML = logs.map(log => `
     <div class="log-entry ${log.category}">
-      <span class="log-time">${log.timestamp}${log.cam_id ? ' · ' + log.cam_id : ''}</span>
+      <span class="log-time">${log.timestamp}${log.cam_id ? ' · ' + log.cam_id.toUpperCase() : ''}</span>
       <span class="log-msg">${log.message}</span>
-    </div>
-  `).join('');
+    </div>`).join('');
 }
 
 function updateCounters(logs) {
   const violations = logs.filter(l => l.category === 'нарушение' || l.category === 'violation').length;
-  const approved   = logs.filter(l => (l.message || '').includes('ПРОПУСК')).length;
 
-  // Людей из последнего лога
-  let people = 0;
-  if (logs.length > 0) {
-    const m = (logs[0].message || '').match(/Людей[:\s]+(\d+)/);
-    if (m) people = parseInt(m[1]);
+  // Последний лог по каждой камере
+  const latestByCam = {};
+  logs.forEach(l => { if (!latestByCam[l.cam_id]) latestByCam[l.cam_id] = l; });
+
+  let totalPeople = 0, totalApproved = 0;
+  Object.values(latestByCam).forEach(log => {
+    const m = (log.message || '').match(/Людей[:\s]+(\d+)/);
+    if (m) totalPeople += parseInt(m[1]);
+    const p = (log.message || '').match(/ПРОПУСК/g);
+    if (p) totalApproved += p.length;
+  });
+
+  document.getElementById('cntTotal').textContent      = totalPeople;
+  document.getElementById('cntOk').textContent         = totalApproved;
+  document.getElementById('cntViolations').textContent = violations;
+
+  // Иконки — из выбранной камеры или первой
+  const srcLog = selectedCam ? latestByCam[selectedCam] : Object.values(latestByCam)[0];
+  const icons  = document.getElementById('peopleIcons');
+  const people = srcLog ? parseInt((srcLog.message||'').match(/Людей[:\s]+(\d+)/)?.[1]||0) : 0;
+
+  if (people === 0) {
+    icons.innerHTML = '<span style="color:var(--text-dim);font-family:var(--mono);font-size:.7rem">нет людей</span>';
+    return;
   }
 
-  document.getElementById('cntTotal').textContent      = people;
-  document.getElementById('cntOk').textContent         = approved;
-  document.getElementById('cntViolations').textContent = violations;
+  const msg = srcLog?.message || '';
+  icons.innerHTML = '';
+  for (let i = 0; i < people; i++) {
+    const part    = msg.split('Чел.' + (i+1))[1] || '';
+    const approved = part.includes('ПРОПУСК');
+    const danger   = part.includes('ОПАСНАЯ');
+    const viol     = part.includes('!К') || part.includes('!М') || part.includes('!Ж');
+    let color, title;
+    if (approved)          { color='var(--green)';  title='Допущен'; }
+    else if (danger&&viol) { color='var(--red)';    title='Зона + нарушение СИЗ'; }
+    else if (danger)       { color='var(--orange)'; title='В опасной зоне'; }
+    else if (viol)         { color='var(--yellow)'; title='Нет СИЗ'; }
+    else                   { color='var(--accent)'; title='OK'; }
+    icons.innerHTML += `
+      <div title="Чел.${i+1}: ${title}" style="display:flex;flex-direction:column;align-items:center;gap:2px;cursor:default">
+        <svg width="26" height="26" viewBox="0 0 28 28" fill="none">
+          <circle cx="14" cy="9" r="5" fill="${color}" opacity=".9"/>
+          <path d="M4 24c0-5.5 4.5-9 10-9s10 3.5 10 9" stroke="${color}" stroke-width="2" stroke-linecap="round" fill="none" opacity=".9"/>
+        </svg>
+        <span style="font-family:var(--mono);font-size:.6rem;color:${color}">${i+1}</span>
+      </div>`;
+  }
 }
 
 function clearLogs() {
   document.getElementById('logBox').innerHTML = '<div class="empty-state">Ожидание событий...</div>';
-  document.getElementById('cntLogs').textContent = '0';
+  document.getElementById('cntLogs').textContent   = '0';
   document.getElementById('eventCount').textContent = '0 записей';
 }
 
 function exportLogs() {
   const btn = document.querySelector('.btn-secondary[onclick="exportLogs()"]');
-  btn.textContent = '⏳ Подготовка...';
-  btn.disabled = true;
+  btn.textContent = '⏳ Подготовка...'; btn.disabled = true;
   const iframe = document.createElement('iframe');
-  iframe.style.display = 'none';
-  iframe.src = '/export_logs?' + Date.now();
-  iframe.onload = () => {
-    btn.textContent = '💾 Экспорт';
-    btn.disabled = false;
-    document.body.removeChild(iframe);
-  };
+  iframe.style.display = 'none'; iframe.src = '/export_logs?' + Date.now();
+  iframe.onload = () => { btn.textContent = '💾 Экспорт'; btn.disabled = false; document.body.removeChild(iframe); };
   document.body.appendChild(iframe);
   setTimeout(() => { btn.textContent = '💾 Экспорт'; btn.disabled = false; }, 5000);
 }
 
-// ── UPLOAD ────────────────────────────────────
+// ── UPLOAD
 document.getElementById('uploadForm').addEventListener('submit', function(e) {
   e.preventDefault();
-  const formData = new FormData(this);
-  const fileType = formData.get('file').type;
-
-  fetch('/upload', { method: 'POST', body: formData })
+  const fd = new FormData(this), ft = fd.get('file').type;
+  fetch('/upload', { method:'POST', body:fd })
     .then(r => r.blob())
     .then(blob => {
       const url = URL.createObjectURL(blob);
-      const result   = document.getElementById('uploadResult');
-      const imgEl    = document.getElementById('uploadedImage');
-      const videoEl  = document.getElementById('uploadedVideo');
-
-      imgEl.style.display   = 'none';
-      videoEl.style.display = 'none';
-
-      if (fileType.startsWith('image')) {
-        imgEl.src = url; imgEl.style.display = 'block';
-      } else {
-        videoEl.src = url; videoEl.style.display = 'block';
-      }
-      result.classList.add('show');
+      const res = document.getElementById('uploadResult');
+      const im  = document.getElementById('uploadedImage');
+      const vi  = document.getElementById('uploadedVideo');
+      im.style.display = 'none'; vi.style.display = 'none';
+      if (ft.startsWith('image')) { im.src = url; im.style.display = 'block'; }
+      else { vi.src = url; vi.style.display = 'block'; }
+      res.classList.add('show');
     })
-    .catch(err => console.error('Upload error:', err));
+    .catch(console.error);
 });
 
-function closeOverlay() {
-  document.getElementById('uploadResult').classList.remove('show');
-}
+function closeOverlay() { document.getElementById('uploadResult').classList.remove('show'); }
 
-// Периодическое обновление когда не запущено
 setInterval(() => { if (!isRunning) fetchLog(); }, 5000);
 </script>
 </body>
