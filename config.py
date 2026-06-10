@@ -1,42 +1,44 @@
-# ─── Модели ───────────────────────────────────
-MODEL_PATH       = "models/best.pt"
-POSE_MODEL_PATH  = "models/yolov8n-pose.pt"
+from pathlib import Path
 
-# ─── Камера ───────────────────────────────────
-CAMERA_SOURCE    = "rtsp://192.168.0.124:554/stream1"
+BASE_DIR = Path(__file__).parent
 
-# ─── Детекция ─────────────────────────────────
-CONF_THRESH      = 0.75
-MAX_LOG_SIZE     = 20
+MODEL_PATH      = BASE_DIR / "models" / "best.pt"
+POSE_MODEL_PATH = BASE_DIR / "models/yolov8n-pose.pt"
 
-# ─── Опасная зона ─────────────────────────────
-MIN_CONES        = 2
-ZONE_EXPAND_PX   = 20
+CAMERAS = {
+    "отдел маркетинга": "rtsp://192.168.0.110:554/user=admin_password=tlJwpbo6_channel=1_stream=0.sdp?real_stream",
+    "cam2": "rtsp://192.168.0.108:554/user=admin_password=tlJwpbo6_channel=1_stream=0.sdp?real_stream",
+    "отдел продаж": "rtsp://192.168.0.76:554/stream1",
+    "холл": "rtsp://192.168.0.103:554/user=admin_password=tlJwpbo6_channel=1_stream=0.sdp?real_stream",
 
-# ─── Жест ОК ──────────────────────────────────
-HAND_CROP_RATIO  = 0.25
-DEFECT_DEPTH_MIN = 15
-DEFECT_MIN       = 1
-DEFECT_MAX       = 3
-MIN_HAND_AREA    = 500
-TOP_RATIO        = 0.4
+}
 
-# ─── Пропуск ──────────────────────────────────
-APPROVAL_DURATION = 300   # секунд
-PERSON_ID_GRID    = 50    # пикселей
+CONF_THRESH       = 0.75
+MAX_LOG_SIZE      = 100
+MIN_CONES         = 2
+ZONE_EXPAND_PX    = 20
+TOP_RATIO         = 0.4
+HAND_CROP_RATIO   = 0.25
+DEFECT_DEPTH_MIN  = 15
+DEFECT_MIN        = 1
+DEFECT_MAX        = 3
+MIN_HAND_AREA     = 500
+APPROVAL_DURATION = 300
+PERSON_ID_GRID    = 50
+GESTURE_DISPLAY_DURATION = 3
+PRINT_DISPLAY_DURATION   = 3
 
-# ─── Шрифты ───────────────────────────────────
 FONT_PATHS = [
-    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-    "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-    "C:/Windows/Fonts/arial.ttf",
-    "/System/Library/Fonts/Helvetica.ttc",
+    Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+    Path("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"),
+    Path("C:/Windows/Fonts/arial.ttf"),
+    Path("/System/Library/Fonts/Helvetica.ttc"),
+    BASE_DIR / "fonts" / "DejaVuSans.ttf",
 ]
 FONT_SIZE_SMALL  = 14
 FONT_SIZE_NORMAL = 18
 FONT_SIZE_LARGE  = 22
 
-# ─── Цвета BGR ────────────────────────────────
 COLOR_GREEN  = (0, 255, 0)
 COLOR_ORANGE = (0, 165, 255)
 COLOR_RED    = (0, 0, 255)
@@ -44,7 +46,6 @@ COLOR_YELLOW = (0, 255, 255)
 COLOR_GOLD   = (0, 215, 255)
 COLOR_WHITE  = (255, 255, 255)
 
-# ─── Названия классов ─────────────────────────
 CLASS_NAMES = {
     0: "Каска",
     1: "Маска",
@@ -57,3 +58,5 @@ CLASS_NAMES = {
     8: "Техника",
     9: "Транспорт"
 }
+
+PRINTER_NAME = "Argox OS-2130D PPLA"

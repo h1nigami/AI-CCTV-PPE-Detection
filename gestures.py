@@ -141,4 +141,4 @@ def detect_raised_hand(frame, person_box, pose_model) -> bool:
     left_raised  = left_wrist[1]  < nose[1]
     right_raised = right_wrist[1] < nose[1]
 
-    return left_raised and right_raised
+    return left_raised or right_raised

@@ -1,8 +1,36 @@
+# Медиа-файлы
 *.jpg
 *.png
 *.mp4
+*.avi
+*.mov
+*.webp
+
+# Python
 __pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.venv/
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.idea/
+.vscode/
+
+# Проектные папки (не нужны в образе)
 results/
 violation_logs/
 assets/
-.venv
+data/
+uploads/
+
+# Документация
+*.md
+LICENSE
+Procfile

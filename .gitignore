@@ -1,2 +1,5 @@
 *.jpg
 venv
+.idea
+.claude
+__pycache__

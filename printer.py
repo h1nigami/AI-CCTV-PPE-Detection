@@ -23,26 +23,38 @@ def _load_font(size: int):
 
 
 def _build_print_image(frame, person_statuses: list) -> Image.Image:
-    font_large  = _load_font(28)
-    font_normal = _load_font(20)
+    font_large  = _load_font(20)
+    font_normal = _load_font(14)
+
+    # 40x50 мм при 203 DPI (стандарт термопринтеров)
+    LABEL_W = 320  # 40 мм
+    LABEL_H = 400  # 50 мм
+
+    # Масштабируем кадр под верхнюю часть этикетки
+    line_h    = 18
+    panel_h   = 50 + len(person_statuses) * line_h
+    img_h     = LABEL_H - panel_h
 
     frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     img       = Image.fromarray(frame_rgb)
-    w, h      = img.size
+    img       = img.resize((LABEL_W, img_h), Image.LANCZOS)
 
-    line_h  = 30
-    panel_h = 80 + len(person_statuses) * line_h
-    result  = Image.new("RGB", (w, h + panel_h), (30, 30, 30))
+    result = Image.new("RGB", (LABEL_W, LABEL_H), (30, 30, 30))
     result.paste(img, (0, 0))
 
     draw = ImageDraw.Draw(result)
     now  = datetime.now().strftime("%d.%m.%Y  %H:%M:%S")
-    draw.text((20, h + 10), f"Дата/время: {now}",
-              font=font_large, fill=(255, 255, 255))
 
+    # Разделитель
+    draw.rectangle([(0, img_h), (LABEL_W, img_h + 2)], fill=(0, 229, 255))
+
+    # Дата/время
+    draw.text((10, img_h + 6), now, font=font_large, fill=(255, 255, 255))
+
+    # Статусы людей
     for idx, status in enumerate(person_statuses):
         color = (80, 255, 80) if "Все СИЗ" in status else (255, 80, 80)
-        draw.text((20, h + 50 + idx * line_h),
+        draw.text((10, img_h + 28 + idx * line_h),
                   f"Чел.{idx+1}: {status}",
                   font=font_normal, fill=color)
 

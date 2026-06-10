@@ -82,9 +82,22 @@ python app.py
 
 ### Docker
 ```bash
-docker build -t safety-detection .
-docker run -d --name safety -p 8000:8000 -v ./models:/app/models safety-detection
+# Сборка образа
+docker build -t ppe-detection .
+
+# Запуск контейнера
+docker run -d --name detection -p 8000:8000 ppe-detection
+
+# Просмотр логов
+docker logs -f detection
+
+# Остановка
+docker stop detection && docker rm detection
 ```
+
+> **⚠️ RTSP в Docker на Windows (WSL2)**
+> RTSP-камеры в подсети `192.168.x.x` могут быть недоступны из контейнера из-за NAT WSL2.
+> Если камеры не подключаются — запускайте приложение локально (`python app.py`).
 
 ---
 
