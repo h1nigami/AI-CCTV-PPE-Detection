@@ -558,66 +558,27 @@ function buildCameraGrid(cameras) {
   });
 }
 
-// ── STREAM с auto-reconnect ─────────────────────────────────
+// ── STREAM ────────────────────────────────────────────────
 function startCameraStream(camId) {
   const img = document.getElementById('img-' + camId);
   const err = document.getElementById('err-' + camId);
   if (!img) return;
 
-  let reconnectDelay = 1000;
-  let stopped = false;
-
-  function connect() {
-    if (stopped) return;
-    const controller = new AbortController();
-    streamControllers[camId] = controller;
-
-    fetch('/video_feed/' + camId, { signal: controller.signal })
-      .then(response => {
-        if (!response.ok) throw new Error('HTTP ' + response.status);
-        const reader = response.body.getReader();
-        reconnectDelay = 1000; // сброс задержки при успехе
-        if (err) err.style.display = 'none';
-
-        function readChunk() {
-          return reader.read().then(({ done, value }) => {
-            if (done) return; // стрим завершился — reconnect
-            // Парсим multipart JPEG
-            const data = new TextDecoder().decode(value);
-            // Ищем JPEG данные
-            const jpegStart = value.indexOf(0xFF);
-            if (jpegStart >= 0) {
-              const blob = new Blob([value.slice(jpegStart)], { type: 'image/jpeg' });
-              img.src = URL.createObjectURL(blob);
-            }
-            return readChunk();
-          });
-        }
-        return readChunk();
-      })
-      .catch(e => {
-        if (stopped) return;
-        if (err) { err.style.display = 'block'; err.textContent = 'Переподключение...'; }
-        // Auto-reconnect с экспоненциальной задержкой
-        reconnectDelay = Math.min(reconnectDelay * 2, 10000);
-        setTimeout(connect, reconnectDelay);
-      });
+  function setOnline() {
+    if (err) err.style.display = 'none';
+  }
+  function setOffline() {
+    if (err) { err.style.display = 'block'; err.textContent = 'Нет сигнала'; }
   }
 
-  connect();
-
-  // Сохраняем функцию остановки
-  streamControllers[camId + '_stop'] = () => { stopped = true; };
+  img.onload = setOnline;
+  img.onerror = setOffline;
+  img.src = '/video_feed/' + camId + '?' + Date.now();
+  streamControllers[camId + '_stop'] = () => { img.src = ''; };
 }
 
 function stopAllStreams() {
-  Object.keys(streamControllers).forEach(key => {
-    if (key.endsWith('_stop')) {
-      streamControllers[key]();
-    } else {
-      try { streamControllers[key].abort(); } catch(e) {}
-    }
-  });
+  Object.values(streamControllers).forEach(stop => stop());
   streamControllers = {};
 }
 
