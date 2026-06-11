@@ -74,15 +74,27 @@ class CameraCapture:
     def _is_rtsp(self):
         return self.source.startswith("rtsp://")
 
+    def _has_nvidia_decoder(self):
+        """Проверяет наличие NVIDIA аппаратного декодера (Jetson)"""
+        try:
+            return subprocess.run(
+                ['gst-inspect-1.0', 'nvv4l2decoder'],
+                capture_output=True, timeout=5
+            ).returncode == 0
+        except:
+            return False
+
     def _loop(self):
         if self._is_rtsp():
-            # Пробуем GStreamer первым (лучше для ARM64/Jetson)
-            if self._has_gstreamer() and self._test_gstreamer():
-                print(f"[{self.source}] используем GStreamer")
-                self._loop_gstreamer()
+            if self._has_nvidia_decoder():
+                print(f"[{self.source}] NVIDIA декодер найден, пробуем GStreamer")
+                if self._test_gstreamer():
+                    self._loop_gstreamer()
+                    return
+                print(f"[{self.source}] GStreamer не сработал, ffmpeg")
             else:
                 print(f"[{self.source}] используем ffmpeg subprocess")
-                self._loop_ffmpeg()
+            self._loop_ffmpeg()
         else:
             self._loop_opencv()
 
