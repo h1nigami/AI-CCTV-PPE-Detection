@@ -187,13 +187,13 @@ def detection_worker(cam_id: str):
     raw_buf = frame_buffers[cam_id]
     out_buf = annotated_buffers[cam_id]
 
-    min_interval = 1.0
+    min_interval = 0.05
 
     while state.live_active:
         t0 = time.time()
         frame = raw_buf.read()
         if frame is None:
-            time.sleep(min_interval)
+            time.sleep(0.01)
             continue
 
         try:
@@ -308,4 +308,4 @@ def detection_loop():
             except Exception as e:
                 print(f"[{cam_id}] Ошибка детекции: {e}")
                 traceback.print_exc()
-        time.sleep(1.0)
+        time.sleep(0.05)
