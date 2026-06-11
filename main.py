@@ -33,13 +33,15 @@ pose_model.to(DEVICE)
 state = DetectionState()
 
 # ── Буфер и захват для каждой камеры ──
-frame_buffers: dict[str, FrameBuffer]    = {}
-camera_captures: dict[str, CameraCapture] = {}
+frame_buffers: dict[str, FrameBuffer]     = {}
+annotated_buffers: dict[str, FrameBuffer] = {}
+camera_captures: dict[str, CameraCapture]  = {}
 
 for cam_id, url in CAMERAS.items():
     buf = FrameBuffer()
-    frame_buffers[cam_id]    = buf
-    camera_captures[cam_id]  = CameraCapture(buffer=buf, source=url)
+    frame_buffers[cam_id]     = buf
+    annotated_buffers[cam_id] = FrameBuffer()
+    camera_captures[cam_id]   = CameraCapture(buffer=buf, source=url)
 
 # ── Потоки детекции ──
 detection_threads: dict[str, threading.Thread] = {}
@@ -182,16 +184,18 @@ def process_frame(frame, cam_id: str):
 # ─────────────────────────────────────────────
 
 def detection_worker(cam_id: str):
-    buf = frame_buffers[cam_id]
+    raw_buf = frame_buffers[cam_id]
+    out_buf = annotated_buffers[cam_id]
 
     while state.live_active:
-        buf.wait(timeout=1.0)
-        frame = buf.read()
+        raw_buf.wait(timeout=1.0)
+        frame = raw_buf.read()
         if frame is None:
             continue
 
         try:
-            _, message, category = process_frame(frame.copy(), cam_id)
+            annotated, message, category = process_frame(frame.copy(), cam_id)
+            out_buf.write(annotated)
 
             state.add_log(LogEntry(
                 id        = str(datetime.now().timestamp()),
@@ -206,28 +210,25 @@ def detection_worker(cam_id: str):
             print(f"[{cam_id}] Ошибка детекции: {e}")
             traceback.print_exc()
 
-        time.sleep(1)
-
 
 # ─────────────────────────────────────────────
 #  Live feed — один генератор на камеру
 # ─────────────────────────────────────────────
 
 def generate_live_feed(cam_id: str = "cam1"):
-    buf = frame_buffers.get(cam_id)
-    if buf is None:
+    ann_buf = annotated_buffers.get(cam_id)
+    if ann_buf is None:
         return
 
     consecutive_errors = 0
     while state.live_active:
-        buf.wait(timeout=1.0)
-        frame = buf.read()
+        ann_buf.wait(timeout=2.0)
+        frame = ann_buf.read()
         if frame is None:
             continue
 
         try:
-            annotated, _, _ = process_frame(frame.copy(), cam_id)
-            ret, buffer = cv2.imencode('.jpg', annotated)
+            ret, buffer = cv2.imencode('.jpg', frame)
             if not ret:
                 continue
             consecutive_errors = 0
