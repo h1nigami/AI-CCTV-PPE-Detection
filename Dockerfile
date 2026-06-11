@@ -59,4 +59,4 @@ COPY . .
 RUN mkdir -p uploads models
 
 EXPOSE 8000
-CMD ["python", "-u", "app.py"]
+CMD ["python3", "-u", "app.py"]
