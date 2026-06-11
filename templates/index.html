@@ -558,27 +558,32 @@ function buildCameraGrid(cameras) {
   });
 }
 
-// ── STREAM ────────────────────────────────────────────────
+// ── STREAM (polling одного JPEG вместо multipart стрима) ──
+const POLL_INTERVAL = 2000;
+
 function startCameraStream(camId) {
   const img = document.getElementById('img-' + camId);
   const err = document.getElementById('err-' + camId);
   if (!img) return;
 
-  function setOnline() {
-    if (err) err.style.display = 'none';
-  }
-  function setOffline() {
-    if (err) { err.style.display = 'block'; err.textContent = 'Нет сигнала'; }
+  function refresh() {
+    if (!isRunning) return;
+    img.src = '/video_frame/' + camId + '?' + Date.now();
   }
 
-  img.onload = setOnline;
-  img.onerror = setOffline;
-  img.src = '/video_feed/' + camId + '?' + Date.now();
-  streamControllers[camId + '_stop'] = () => { img.src = ''; };
+  img.onload = function() { if (err) err.style.display = 'none'; };
+  img.onerror = function() { if (err) { err.style.display = 'block'; err.textContent = 'Нет сигнала'; } };
+  refresh();
+  const intervalId = setInterval(refresh, POLL_INTERVAL);
+  streamControllers[camId + '_interval'] = intervalId;
+  streamControllers[camId + '_stop'] = function() {
+    clearInterval(intervalId);
+    img.src = '';
+  };
 }
 
 function stopAllStreams() {
-  Object.values(streamControllers).forEach(stop => stop());
+  Object.values(streamControllers).forEach(stop => { if (typeof stop === 'function') stop(); });
   streamControllers = {};
 }
 

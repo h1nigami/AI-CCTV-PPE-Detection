@@ -308,4 +308,4 @@ def detection_loop():
             except Exception as e:
                 print(f"[{cam_id}] Ошибка детекции: {e}")
                 traceback.print_exc()
-        time.sleep(0.5)
+        time.sleep(1.0)
