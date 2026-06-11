@@ -197,7 +197,7 @@ AI-CCTV-PPE-Detection/
 ## 🔧 Производительность
 
 - **Последовательная детекция** — камеры обрабатываются по одной в цикле, а не параллельно (4 потока перегружали CPU Jetson до 221%)
-- **Polling JPEG** — `/video_frame/<cam_id>` отдаёт одиночный JPEG, фронтенд опрашивает раз в 2с. Вместо `multipart/x-mixed-replace`, который блокировал пул Waitress
+- **Polling JPEG** — `/video_frame/<cam_id>` отдаёт одиночный JPEG, фронтенд опрашивает каждые 100мс (10 FPS). Настраивается через `POLL_INTERVAL` в `index.html`.
 - **FFmpeg PID cleanup** — при переподключении к RTSP старый процесс ffmpeg корректно завершается (`_stop_ffmpeg` в `camera.py`)
 - **CPU на Jetson** — ~50-60% при 3-4 активных камерах, против 221% с параллельными потоками
 - **GPU (CUDA)** — детекция YOLO на Jetson работает через CUDA (флаг `--runtime nvidia`). Без GPU используется CPU (~1-2 FPS)
