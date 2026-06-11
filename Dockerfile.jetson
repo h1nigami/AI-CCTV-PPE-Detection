@@ -1,13 +1,23 @@
 # ============================================================
 # Dockerfile для NVIDIA Jetson (ARM64 + GPU + CUDA)
 # ============================================================
-# Сборка: docker build -t ppe-detection -f Dockerfile.jetson .
-# Запуск: docker run --network host --runtime nvidia -d ppe-detection
+# Сборка (на самом Jetson):
+#   docker build -t ppe-detection -f Dockerfile.jetson .
+#
+# Запуск:
+#   docker run --network host --runtime nvidia -d ppe-detection
+#
+# Теги для разных JetPack:
+#   JetPack 5.1.1 (.x)  → r35.4.1
+#   JetPack 5.1.2 (.x)  → r35.5.0
+#   JetPack 6.0         → r36.3.0
+#
+# Сменить тег: --build-arg L4T_TAG=r36.3.0
 # ============================================================
 
-ARG L4T_IMAGE=nvcr.io/nvidia/l4t-pytorch:r35.4.1-pth2.1.3
+ARG L4T_TAG=r35.4.1
 
-FROM ${L4T_IMAGE}
+FROM dustynv/l4t-pytorch:${L4T_TAG}
 
 WORKDIR /app
 
@@ -27,10 +37,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gstreamer1.0-libav \
     libgstreamer1.0-dev \
     libgstreamer-plugins-base1.0-dev \
-    python3-pip \
     && rm -rf /var/lib/apt/lists/*
 
-# PyTorch уже предустановлен в l4t-pytorch (c CUDA)
+# PyTorch + CUDA уже предустановлены в l4t-pytorch
 # Ставим только остальные зависимости
 COPY requirements.txt .
 
