@@ -44,12 +44,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 
 RUN pip install --no-cache-dir --timeout=300 \
-    ultralytics==8.4.60 \
-    opencv-python-headless==4.11.0.86 \
-    flask==2.3.3 \
-    waitress==2.1.2 \
-    pillow \
-    "numpy<2.0"
+    ultralytics \
+    opencv-python-headless \
+    flask \
+    waitress \
+    pillow
 
 # ── Код приложения ─────────────────────────────────────────
 COPY . .
