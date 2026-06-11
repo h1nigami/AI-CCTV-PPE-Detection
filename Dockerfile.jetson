@@ -8,6 +8,11 @@ FROM dustynv/l4t-pytorch:${L4T_TAG:-r36.4.0}
 
 WORKDIR /app
 
+# ── Системные зависимости ──────────────────────────────────────
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
 # ── Установка Python-зависимостей ─────────────────────────────
 # --ignore-installed blinker нужен, т.к. distutils‑пакет blinker 1.4
 #   не позволяет pip выполнить clean‑uninstall. Ставим свежий blinker.
