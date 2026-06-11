@@ -1,16 +1,11 @@
 from pathlib import Path
-
 BASE_DIR = Path(__file__).parent
 
 MODEL_PATH      = BASE_DIR / "models" / "best.pt"
 POSE_MODEL_PATH = BASE_DIR / "models/yolov8n-pose.pt"
 
 CAMERAS = {
-    "отдел маркетинга": "rtsp://192.168.0.110:554/user=admin_password=tlJwpbo6_channel=1_stream=0.sdp?real_stream",
-    "cam2": "rtsp://192.168.0.108:554/user=admin_password=tlJwpbo6_channel=1_stream=0.sdp?real_stream",
-    "отдел продаж": "rtsp://192.168.0.76:554/stream1",
-    "холл": "rtsp://192.168.0.103:554/user=admin_password=tlJwpbo6_channel=1_stream=0.sdp?real_stream",
-
+    "cam": 701,
 }
 
 CONF_THRESH       = 0.75
