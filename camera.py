@@ -244,10 +244,7 @@ class CameraCapture:
         cmd = [
             'ffmpeg',
             '-rtsp_transport', 'tcp',
-            '-timeout', '5000000',      # 5 секунд таймаут (ffmpeg 7.x: -timeout вместо -stimeout)
-            '-reconnect', '1',
-            '-reconnect_streamed', '1',
-            '-reconnect_delay_max', '5',
+            '-timeout', '5000000',
             '-i', self.source,
             '-an',
             '-f', 'rawvideo',
