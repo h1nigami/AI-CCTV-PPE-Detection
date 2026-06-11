@@ -5,7 +5,7 @@ MODEL_PATH      = BASE_DIR / "models" / "best.pt"
 POSE_MODEL_PATH = BASE_DIR / "models/yolov8n-pose.pt"
 
 CAMERAS = {
-    "cam": 701,
+    "cam": 0,
 }
 
 CONF_THRESH       = 0.75
