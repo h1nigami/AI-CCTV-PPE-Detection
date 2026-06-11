@@ -183,16 +183,19 @@ def process_frame(frame, cam_id: str):
 #  Detection worker — один на камеру
 # ─────────────────────────────────────────────
 
+FPS_LIMIT = 1.0 / 3  # макс 3 кадра/с на камеру
+
 def detection_worker(cam_id: str):
     raw_buf = frame_buffers[cam_id]
     out_buf = annotated_buffers[cam_id]
 
     while state.live_active:
-        raw_buf.wait(timeout=1.0)
+        raw_buf.wait(timeout=FPS_LIMIT)
         frame = raw_buf.read()
         if frame is None:
             continue
 
+        t0 = time.time()
         try:
             annotated, message, category = process_frame(frame.copy(), cam_id)
             out_buf.write(annotated)
@@ -209,6 +212,10 @@ def detection_worker(cam_id: str):
         except Exception as e:
             print(f"[{cam_id}] Ошибка детекции: {e}")
             traceback.print_exc()
+
+        elapsed = time.time() - t0
+        if elapsed < FPS_LIMIT:
+            time.sleep(FPS_LIMIT - elapsed)
 
 
 # ─────────────────────────────────────────────
