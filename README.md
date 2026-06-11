@@ -54,10 +54,10 @@ models/
 Все настройки в `config.py`:
 
 ```python
-# Камеры
+# Камеры: RTSP URL или число — индекс локальной камеры (/dev/videoN)
 CAMERAS = {
     "cam1": "rtsp://admin:password@192.168.1.100:554/stream1",
-    "cam2": "rtsp://admin:password@192.168.1.101:554/stream1",
+    "usb": 0,  # /dev/video0
 }
 
 # Порог уверенности детекции
@@ -96,10 +96,16 @@ docker build --network host \
   --build-arg L4T_TAG=r36.4.0 \
   -t ppe-detection -f Dockerfile.jetson .
 
-docker run --network host --runtime nvidia -d --name ppe-detection ppe-detection
+# USB-камера: пробросить /dev/video*
+docker run --network host --runtime nvidia \
+  --device /dev/video0:/dev/video0 \
+  --device /dev/video1:/dev/video1 \
+  -d --name ppe-detection ppe-detection
 ```
 
 > `--network host` обязателен для доступа к RTSP-камерам в локальной сети.
+> `--runtime nvidia` включает GPU (CUDA) на Jetson.
+> `--device /dev/videoN` пробрасывает USB/CSI-камеру в контейнер.
 > На **Windows Docker Desktop** host-сеть недоступна — запускайте локально (`python app.py`).
 
 #### Просмотр логов
@@ -133,6 +139,8 @@ docker buildx prune -af
 | `ffmpeg: not found` | `apt-get install ffmpeg` |
 | `The "timeout" option is deprecated` — ffmpeg на L4T трактует `-timeout` как listen-режим | Замена на `-stimeout` в `camera.py` |
 | `python: executable file not found` | `CMD ["python3", ...]` вместо `python` |
+| USB-вебкамера не открывается через `cv2.VideoCapture` на Jetson | OpenCV на L4T несовместим с V4L2 для UVC-устройств. Автоматический fallback на `ffmpeg -f v4l2` в `camera.py:_loop_opencv` |
+| В контейнере нет `/dev/video0` | Пробросить устройство: `--device /dev/video0:/dev/video0` |
 
 ---
 
@@ -169,6 +177,8 @@ AI-CCTV-PPE-Detection/
 - **Polling JPEG** — `/video_frame/<cam_id>` отдаёт одиночный JPEG, фронтенд опрашивает раз в 2с. Вместо `multipart/x-mixed-replace`, который блокировал пул Waitress
 - **FFmpeg PID cleanup** — при переподключении к RTSP старый процесс ffmpeg корректно завершается (`_stop_ffmpeg` в `camera.py`)
 - **CPU на Jetson** — ~50-60% при 3-4 активных камерах, против 221% с параллельными потоками
+- **GPU (CUDA)** — детекция YOLO на Jetson работает через CUDA (флаг `--runtime nvidia`). Без GPU используется CPU (~1-2 FPS)
+- **Цикл детекции** — `time.sleep(0.05)` между итерациями вместо 1с, что убирает искусственное ограничение до 1 FPS
 
 ---
 
