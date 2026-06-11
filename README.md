@@ -92,10 +92,11 @@ docker run -d --name ppe-detector -p 8000:8000 ppe-detection
 ```bash
 # Проверить версию JetPack: dpkg -l | grep nvidia-l4t-core
 # JetPack 5.1.x → r35.4.1, JetPack 6.0 → r36.3.0
-docker build -t ppe-detection -f Dockerfile.jetson \
-  --build-arg L4T_TAG=r35.4.1 .
+docker build --network host \
+  --build-arg L4T_TAG=r36.4.0 \
+  -t ppe-detection -f Dockerfile.jetson .
 
-docker run --network host --runtime nvidia -d --name ppe-detector ppe-detection
+docker run --network host --runtime nvidia -d --name ppe-detection ppe-detection
 ```
 
 > `--network host` обязателен для доступа к RTSP-камерам в локальной сети.
@@ -103,13 +104,35 @@ docker run --network host --runtime nvidia -d --name ppe-detector ppe-detection
 
 #### Просмотр логов
 ```bash
-docker logs -f ppe-detector
+docker logs -f ppe-detection
 ```
 
 #### Остановка
 ```bash
-docker stop ppe-detector && docker rm ppe-detector
+docker stop ppe-detection && docker rm ppe-detection
 ```
+
+#### Обслуживание на Jetson
+
+Очистка неиспользуемых образов и кэша сборки (экономит ~30+ ГБ):
+```bash
+docker container prune -f
+docker image prune -af
+docker buildx prune -af
+```
+
+---
+
+### 🔧 Особенности сборки на Jetson
+
+| Проблема | Решение |
+|---|---|
+| `Errno -2 Name or service not known` при pip install | `PIP_INDEX_URL="https://pypi.org/simple"` (образ `dustynv/l4t-pytorch` по умолчанию использует `jetson.webredirect.org`, который не резолвится внутри build-контейнера) |
+| `Cannot uninstall blinker 1.4` (distutils) | `pip install --ignore-installed blinker==1.9.0` перед установкой Flask |
+| `NumPy ABI mismatch` — torch собран с numpy 1.x | Отдельный `RUN pip install "numpy<2"` после основных пакетов |
+| `ffmpeg: not found` | `apt-get install ffmpeg` |
+| `The "timeout" option is deprecated` — ffmpeg на L4T трактует `-timeout` как listen-режим | Замена на `-stimeout` в `camera.py` |
+| `python: executable file not found` | `CMD ["python3", ...]` вместо `python` |
 
 ---
 
@@ -132,9 +155,20 @@ AI-CCTV-PPE-Detection/
 │   └── index.html
 ├── uploads/
 ├── requirements.txt
-├── Dockerfile
-├── Dockerfile.jetson
+├── Dockerfile              # x86_64 (Windows / Linux)
+├── Dockerfile.jetson       # ARM64 + GPU (NVIDIA Jetson)
 ```
+
+---
+
+---
+
+## 🔧 Производительность
+
+- **Последовательная детекция** — камеры обрабатываются по одной в цикле, а не параллельно (4 потока перегружали CPU Jetson до 221%)
+- **Polling JPEG** — `/video_frame/<cam_id>` отдаёт одиночный JPEG, фронтенд опрашивает раз в 2с. Вместо `multipart/x-mixed-replace`, который блокировал пул Waitress
+- **FFmpeg PID cleanup** — при переподключении к RTSP старый процесс ffmpeg корректно завершается (`_stop_ffmpeg` в `camera.py`)
+- **CPU на Jetson** — ~50-60% при 3-4 активных камерах, против 221% с параллельными потоками
 
 ---
 
