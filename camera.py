@@ -142,8 +142,8 @@ class CameraCapture:
             f'appsink drop=true max-buffers=1 emit-signals=true sync=false'
         )
 
-        cap = cv2.VideoCapture(pipeline, cv2.CAP_GSTREAMER)
-        if not cap.isOpened():
+        self._cap = cv2.VideoCapture(pipeline, cv2.CAP_GSTREAMER)
+        if not self._cap.isOpened():
             print(f"[{self.source}] GStreamer не открылся, пробуем ffmpeg")
             self._loop_ffmpeg()
             return
@@ -153,15 +153,15 @@ class CameraCapture:
 
         while self._running:
             try:
-                ret, frame = cap.read()
+                ret, frame = self._cap.read()
                 if not ret or frame is None:
                     fail_count += 1
                     if fail_count > 10:
                         print(f"[{self.source}] GStreamer потеря кадров, переподключение")
-                        cap.release()
+                        self._cap.release()
                         time.sleep(2)
-                        cap = cv2.VideoCapture(pipeline, cv2.CAP_GSTREAMER)
-                        if not cap.isOpened():
+                        self._cap = cv2.VideoCapture(pipeline, cv2.CAP_GSTREAMER)
+                        if not self._cap.isOpened():
                             break
                         fail_count = 0
                     time.sleep(0.5)
@@ -173,8 +173,6 @@ class CameraCapture:
             except Exception as e:
                 print(f"[{self.source}] GStreamer ошибка: {e}")
                 time.sleep(1)
-
-        cap.release()
 
     def _detect_decoder(self):
         """Определяет лучший доступный H.264 декодер"""
@@ -205,12 +203,26 @@ class CameraCapture:
 
     # ── FFmpeg subprocess ──────────────────────────────────────
 
+    def _stop_ffmpeg(self):
+        """Останавливает текущий ffmpeg процесс, если есть"""
+        if self._cap is not None and isinstance(self._cap, subprocess.Popen):
+            try:
+                self._cap.terminate()
+                self._cap.wait(timeout=3)
+            except:
+                try:
+                    self._cap.kill()
+                except:
+                    pass
+        self._cap = None
+
     def _loop_ffmpeg(self):
         """Читает raw RGB кадры из stdout ffmpeg"""
         fail_count = 0
 
         while self._running:
             try:
+                self._stop_ffmpeg()
                 proc = self._start_ffmpeg()
                 if proc is None:
                     fail_count += 1
@@ -219,30 +231,27 @@ class CameraCapture:
                     time.sleep(wait)
                     continue
 
+                self._cap = proc
                 fail_count = 0
                 w, h = 1280, 720
-                frame_size = w * h * 3  # RGB24
+                frame_size = w * h * 3
 
                 while self._running:
                     raw = proc.stdout.read(frame_size)
 
                     if len(raw) < frame_size:
-                        # FFmpeg завершился или буфер пуст
                         if proc.poll() is not None:
                             err = proc.stderr.read(512).decode('utf-8', errors='replace')
                             print(f"[{self.source}] ffmpeg упал (rc={proc.returncode}): {err[-200:]}")
                             break
-                        # Недостаточно данных — ждём
                         time.sleep(0.05)
                         continue
 
                     frame = np.frombuffer(raw, dtype=np.uint8).reshape((h, w, 3))
 
-                    # Пропускаем пустые/чёрные кадры
                     if frame.mean() < 3:
                         continue
 
-                    # BGR для OpenCV
                     frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
                     self.buffer.write(frame_bgr)
 

@@ -262,13 +262,10 @@ def start_live():
 
         for cam_id in CAMERAS:
             camera_captures[cam_id].start()
-            t = threading.Thread(
-                target=detection_worker,
-                args=(cam_id,),
-                daemon=True
-            )
-            detection_threads[cam_id] = t
-            t.start()
+
+        t = threading.Thread(target=detection_loop, daemon=True)
+        detection_threads["main"] = t
+        t.start()
 
         print(f"Детекция запущена на {len(CAMERAS)} камерах")
 
@@ -279,8 +276,36 @@ def stop_live():
     for cam_id in CAMERAS:
         camera_captures[cam_id].stop()
 
-    for cam_id, t in detection_threads.items():
-        t.join(timeout=2)
+    for t in detection_threads.values():
+        t.join(timeout=3)
 
     detection_threads.clear()
     print("Детекция остановлена")
+
+
+def detection_loop():
+    cam_ids = list(CAMERAS.keys())
+    while state.live_active:
+        for cam_id in cam_ids:
+            if not state.live_active:
+                return
+            raw_buf = frame_buffers[cam_id]
+            out_buf = annotated_buffers[cam_id]
+            frame = raw_buf.read()
+            if frame is None:
+                continue
+            try:
+                annotated, message, category = process_frame(frame.copy(), cam_id)
+                out_buf.write(annotated)
+                state.add_log(LogEntry(
+                    id        = str(datetime.now().timestamp()),
+                    timestamp = datetime.now().strftime('%H:%M:%S'),
+                    message   = message,
+                    category  = category,
+                    cam_id    = cam_id,
+                ))
+                print(message)
+            except Exception as e:
+                print(f"[{cam_id}] Ошибка детекции: {e}")
+                traceback.print_exc()
+        time.sleep(0.5)

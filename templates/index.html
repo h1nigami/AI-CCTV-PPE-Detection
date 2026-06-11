@@ -633,9 +633,11 @@ function startFeed() {
       fetchLog();
       logInterval = setInterval(fetchLog, 1000);
     })
-    .catch(() => {
-      setStatus('inactive', 'Ошибка запуска');
+    .catch(e => {
       document.getElementById('startBtn').disabled = false;
+      setStatus('inactive', 'Ошибка запуска: ' + e.message);
+      const dbg = document.getElementById('debugRaw');
+      if (dbg) dbg.textContent = 'Start Error: ' + e.message;
     });
 }
 
@@ -714,12 +716,18 @@ function fetchLog() {
   fetch(url)
     .then(r => r.json())
     .then(data => {
+      const logBox = document.getElementById('logBox');
+      const debug = document.getElementById('debugRaw');
       const logs = data.logs || [];
+      if (debug) debug.textContent = 'OK, logs=' + logs.length + ' first=' + (logs[0]?.message?.substring(0,60) || '(empty)');
       renderLogs(logs);
       updateCounters(logs);
       updatePPEFromLog(logs);
     })
-    .catch(console.error);
+    .catch(e => {
+      const debug = document.getElementById('debugRaw');
+      if (debug) debug.textContent = 'FETCH ERROR: ' + e.message;
+    });
 }
 
 function renderLogs(logs) {
@@ -826,5 +834,6 @@ function closeOverlay() { document.getElementById('uploadResult').classList.remo
 
 setInterval(() => { if (!isRunning) fetchLog(); }, 5000);
 </script>
+<pre id="debugRaw" style="position:fixed;bottom:0;right:0;z-index:999;background:#000;color:#0f0;padding:8px;font-size:11px;max-width:400px;max-height:100px;overflow:auto;border:1px solid #333;margin:4px;border-radius:4px">debug</pre>
 </body>
 </html>
