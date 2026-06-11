@@ -89,23 +89,46 @@ docker run -d --name ppe-detector -p 8000:8000 ppe-detection
 ```
 
 #### ARM64 + GPU (NVIDIA Jetson)
+
+**Сборка** (полная, с установкой зависимостей):
 ```bash
 # Проверить версию JetPack: dpkg -l | grep nvidia-l4t-core
-# JetPack 5.1.x → r35.4.1, JetPack 6.0 → r36.3.0
+# JetPack 6.x → r36.4.0
 docker build --network host \
   --build-arg L4T_TAG=r36.4.0 \
   -t ppe-detection -f Dockerfile.jetson .
-
-# USB-камера: пробросить /dev/video*
-docker run --network host --runtime nvidia \
-  --device /dev/video0:/dev/video0 \
-  --device /dev/video1:/dev/video1 \
-  -d --name ppe-detection ppe-detection
 ```
 
-> `--network host` обязателен для доступа к RTSP-камерам в локальной сети.
-> `--runtime nvidia` включает GPU (CUDA) на Jetson.
-> `--device /dev/videoN` пробрасывает USB/CSI-камеру в контейнер.
+**Быстрая пересборка** (только код приложения, кэш pip/apt):
+```bash
+# Создать временный Dockerfile
+cat > Dockerfile.hotfix << 'EOF'
+FROM ppe-detection:latest
+COPY . /app/
+EOF
+docker build -t ppe-detection -f Dockerfile.hotfix .
+rm Dockerfile.hotfix
+```
+
+**Запуск** (с GPU и USB-камерой):
+```bash
+docker rm -f ppe-detection 2>/dev/null
+docker run -d --name ppe-detection \
+  --network host \
+  --runtime nvidia \
+  --device /dev/video0:/dev/video0 \
+  --device /dev/video1:/dev/video1 \
+  ppe-detection
+```
+
+**Просмотр логов:**
+```bash
+docker logs -f ppe-detection
+```
+
+> `--network host` — обязателен для доступа к RTSP-камерам в локальной сети.
+> `--runtime nvidia` — включает GPU (CUDA) на Jetson (без него YOLO работает на CPU, ~1 FPS).
+> `--device /dev/videoN` — пробрасывает USB/CSI-камеру в контейнер.
 > На **Windows Docker Desktop** host-сеть недоступна — запускайте локально (`python app.py`).
 
 #### Просмотр логов
