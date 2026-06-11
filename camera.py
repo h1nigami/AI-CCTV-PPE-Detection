@@ -72,6 +72,8 @@ class CameraCapture:
         print("Захват камеры остановлен")
 
     def _is_rtsp(self):
+        if isinstance(self.source, int):
+            return False
         return self.source.startswith("rtsp://")
 
     def _has_nvidia_decoder(self):
