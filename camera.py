@@ -296,13 +296,14 @@ class CameraCapture:
             print(f"[{self.source}] ошибка запуска ffmpeg: {e}")
             return None
 
-    # ── Локальная камера через OpenCV ─────────────────────────
+    # ── Локальная камера ──────────────────────────────────────
 
     def _loop_opencv(self):
         self._cap = cv2.VideoCapture(self.source)
         if not self._cap.isOpened():
-            print(f"Не удалось открыть камеру: {self.source}")
-            self._running = False
+            print(f"Не удалось открыть камеру через OpenCV: {self.source}")
+            print(f"[{self.source}] пробуем ffmpeg subprocess")
+            self._loop_ffmpeg_local()
             return
 
         fail_count = 0
@@ -331,6 +332,67 @@ class CameraCapture:
 
         if self._cap:
             self._cap.release()
+
+    def _loop_ffmpeg_local(self):
+        """Читает кадры из ffmpeg subprocess для локальной камеры (/dev/videoN)"""
+        fail_count = 0
+
+        while self._running:
+            try:
+                self._stop_ffmpeg()
+
+                device = f"/dev/video{self.source}" if isinstance(self.source, int) else self.source
+                cmd = [
+                    'ffmpeg',
+                    '-f', 'v4l2',
+                    '-input_format', 'mjpeg',
+                    '-video_size', '1280x720',
+                    '-i', device,
+                    '-an',
+                    '-f', 'rawvideo',
+                    '-pix_fmt', 'rgb24',
+                    '-s', '1280x720',
+                    '-r', '15',
+                    '-loglevel', 'warning',
+                    '-'
+                ]
+                proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=10**8)
+                time.sleep(2)
+                if proc.poll() is not None:
+                    err = proc.stderr.read(1024).decode('utf-8', errors='replace')
+                    print(f"[{self.source}] ffmpeg упал сразу: {err[-300:]}")
+                    fail_count += 1
+                    wait = min(30, 2 ** min(fail_count, 5))
+                    time.sleep(wait)
+                    continue
+
+                print(f"[{self.source}] ffmpeg v4l2 запущен (PID {proc.pid})")
+                self._cap = proc
+                fail_count = 0
+                w, h = 1280, 720
+                frame_size = w * h * 3
+
+                while self._running:
+                    raw = proc.stdout.read(frame_size)
+                    if len(raw) < frame_size:
+                        if proc.poll() is not None:
+                            err = proc.stderr.read(512).decode('utf-8', errors='replace')
+                            print(f"[{self.source}] ffmpeg упал (rc={proc.returncode}): {err[-200:]}")
+                            break
+                        time.sleep(0.05)
+                        continue
+
+                    frame = np.frombuffer(raw, dtype=np.uint8).reshape((h, w, 3))
+                    if frame.mean() < 3:
+                        continue
+
+                    frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+                    self.buffer.write(frame_bgr)
+
+            except Exception as e:
+                print(f"[{self.source}] ошибка ffmpeg local: {e}")
+                fail_count += 1
+                time.sleep(2)
 
     @property
     def is_running(self):
