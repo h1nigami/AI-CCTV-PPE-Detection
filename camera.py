@@ -265,7 +265,7 @@ class CameraCapture:
         cmd = [
             'ffmpeg',
             '-rtsp_transport', 'tcp',
-            '-timeout', '5000000',
+            '-stimeout', '5000000',
             '-i', self.source,
             '-an',
             '-f', 'rawvideo',
