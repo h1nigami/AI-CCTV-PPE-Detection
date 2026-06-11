@@ -1,58 +1,34 @@
-# ============================================================
-# Dockerfile для NVIDIA Jetson (ARM64 + GPU + CUDA)
-# ============================================================
-# Сборка (на самом Jetson):
-#   docker build -t ppe-detection -f Dockerfile.jetson .
-#
-# Запуск:
-#   docker run --network host --runtime nvidia -d ppe-detection
-#
-# Теги для разных JetPack:
-#   JetPack 5.1.1 (.x)  → r35.4.1
-#   JetPack 5.1.2 (.x)  → r35.5.0
-#   JetPack 6.0         → r36.3.0
-#
-# Сменить тег: --build-arg L4T_TAG=r36.3.0
-# ============================================================
+# ── ARM64 (Jetson) сборка ─────────────────────────────────────
+# База: dustynv/l4t-pytorch:r36.4.0 (L4T R36.4, JetPack 6.x)
+# Предустановлены: PyTorch, CUDA 12.6, torchvision, numpy 1.26.4
+# Ключевое отличие: PIP_INDEX_URL переопределён на PyPI
+# потому что DNS не видит jetson.webredirect.org внутри build‑контейнера
 
-ARG L4T_TAG=r35.4.1
-
-FROM dustynv/l4t-pytorch:${L4T_TAG}
+FROM dustynv/l4t-pytorch:${L4T_TAG:-r36.4.0}
 
 WORKDIR /app
 
-# ── Системные зависимости ──────────────────────────────────
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libgl1 \
-    libglib2.0-0 \
-    libsm6 \
-    libxext6 \
-    libxrender1 \
-    ffmpeg \
-    gstreamer1.0-tools \
-    gstreamer1.0-plugins-base \
-    gstreamer1.0-plugins-good \
-    gstreamer1.0-plugins-bad \
-    gstreamer1.0-plugins-ugly \
-    gstreamer1.0-libav \
-    libgstreamer1.0-dev \
-    libgstreamer-plugins-base1.0-dev \
-    && rm -rf /var/lib/apt/lists/*
+# ── Установка Python-зависимостей ─────────────────────────────
+# --ignore-installed blinker нужен, т.к. distutils‑пакет blinker 1.4
+#   не позволяет pip выполнить clean‑uninstall. Ставим свежий blinker.
+# numpy принудительно возвращаем на 1.x — torch на Jetson собран
+#   с numpy‑ABI 1.x и падает с numpy ≥ 2.
 
-# PyTorch + CUDA уже предустановлены в l4t-pytorch
-# Ставим только остальные зависимости
 COPY requirements.txt .
 
 RUN PIP_INDEX_URL="https://pypi.org/simple" PIP_EXTRA_INDEX_URL="" PIP_TRUSTED_HOST="pypi.org" \
-    pip install --no-cache-dir --timeout=300 --ignore-installed blinker==1.9.0 && \
-    PIP_INDEX_URL="https://pypi.org/simple" PIP_EXTRA_INDEX_URL="" PIP_TRUSTED_HOST="pypi.org" \
+    pip install --no-cache-dir --timeout=300 --ignore-installed blinker==1.9.0
+
+RUN PIP_INDEX_URL="https://pypi.org/simple" PIP_EXTRA_INDEX_URL="" PIP_TRUSTED_HOST="pypi.org" \
     pip install --no-cache-dir --timeout=300 \
         ultralytics \
         opencv-python-headless \
         flask \
         waitress \
-        pillow \
-        "numpy<2.0"
+        pillow
+
+RUN PIP_INDEX_URL="https://pypi.org/simple" PIP_EXTRA_INDEX_URL="" PIP_TRUSTED_HOST="pypi.org" \
+    pip install --no-cache-dir --timeout=300 "numpy<2"
 
 # ── Код приложения ─────────────────────────────────────────
 COPY . .
