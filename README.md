@@ -90,7 +90,11 @@ docker run -d --name ppe-detector -p 8000:8000 ppe-detection
 
 #### ARM64 + GPU (NVIDIA Jetson)
 ```bash
-docker build -t ppe-detection -f Dockerfile.jetson .
+# Проверить версию JetPack: dpkg -l | grep nvidia-l4t-core
+# JetPack 5.1.x → r35.4.1, JetPack 6.0 → r36.3.0
+docker build -t ppe-detection -f Dockerfile.jetson \
+  --build-arg L4T_TAG=r35.4.1 .
+
 docker run --network host --runtime nvidia -d --name ppe-detector ppe-detection
 ```
 
