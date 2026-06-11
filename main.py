@@ -3,6 +3,7 @@ import threading
 import time
 import traceback
 from datetime import datetime
+import torch
 from ultralytics import YOLO
 
 from config import (
@@ -19,9 +20,14 @@ from printer import print_frame
 from state import DetectionState, LogEntry
 
 # ── Модели (одни на всех, YOLO thread-safe при inference) ──
+DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
+print(f"Используется устройство: {DEVICE}")
+
 model      = YOLO(str(MODEL_PATH))
+model.to(DEVICE)
 model.model.names = CLASS_NAMES
 pose_model = YOLO(str(POSE_MODEL_PATH))
+pose_model.to(DEVICE)
 
 # ── Глобальный стейт ──
 state = DetectionState()

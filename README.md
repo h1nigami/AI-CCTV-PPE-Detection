@@ -81,23 +81,31 @@ python app.py
 Открыть в браузере: `http://localhost:8000`
 
 ### Docker
+
+#### x86_64 (Windows / Linux)
 ```bash
-# Сборка образа
-docker build -t ppe-detection .
-
-# Запуск контейнера
-docker run -d --name detection -p 8000:8000 ppe-detection
-
-# Просмотр логов
-docker logs -f detection
-
-# Остановка
-docker stop detection && docker rm detection
+docker build -t ppe-detection -f Dockerfile .
+docker run -d --name ppe-detector -p 8000:8000 ppe-detection
 ```
 
-> **⚠️ RTSP в Docker на Windows (WSL2)**
-> RTSP-камеры в подсети `192.168.x.x` могут быть недоступны из контейнера из-за NAT WSL2.
-> Если камеры не подключаются — запускайте приложение локально (`python app.py`).
+#### ARM64 + GPU (NVIDIA Jetson)
+```bash
+docker build -t ppe-detection -f Dockerfile.jetson .
+docker run --network host --runtime nvidia -d --name ppe-detector ppe-detection
+```
+
+> `--network host` обязателен для доступа к RTSP-камерам в локальной сети.
+> На **Windows Docker Desktop** host-сеть недоступна — запускайте локально (`python app.py`).
+
+#### Просмотр логов
+```bash
+docker logs -f ppe-detector
+```
+
+#### Остановка
+```bash
+docker stop ppe-detector && docker rm ppe-detector
+```
 
 ---
 
@@ -120,7 +128,8 @@ AI-CCTV-PPE-Detection/
 │   └── index.html
 ├── uploads/
 ├── requirements.txt
-└── Dockerfile
+├── Dockerfile
+├── Dockerfile.jetson
 ```
 
 ---
