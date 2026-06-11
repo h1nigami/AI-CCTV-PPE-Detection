@@ -43,12 +43,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Ставим только остальные зависимости
 COPY requirements.txt .
 
-RUN PIP_INDEX_URL="https://pypi.org/simple" PIP_EXTRA_INDEX_URL="" PIP_TRUSTED_HOST="pypi.org" pip install --no-cache-dir --timeout=300 --ignore-installed \
-    ultralytics \
-    opencv-python-headless \
-    flask \
-    waitress \
-    pillow
+RUN PIP_INDEX_URL="https://pypi.org/simple" PIP_EXTRA_INDEX_URL="" PIP_TRUSTED_HOST="pypi.org" \
+    pip install --no-cache-dir --timeout=300 --ignore-installed blinker==1.9.0 && \
+    PIP_INDEX_URL="https://pypi.org/simple" PIP_EXTRA_INDEX_URL="" PIP_TRUSTED_HOST="pypi.org" \
+    pip install --no-cache-dir --timeout=300 \
+        ultralytics \
+        opencv-python-headless \
+        flask \
+        waitress \
+        pillow
 
 # ── Код приложения ─────────────────────────────────────────
 COPY . .
