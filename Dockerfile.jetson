@@ -43,7 +43,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Ставим только остальные зависимости
 COPY requirements.txt .
 
-RUN pip install --no-cache-dir --timeout=300 \
+RUN PIP_EXTRA_INDEX_URL="" pip install --no-cache-dir --timeout=300 \
     ultralytics \
     opencv-python-headless \
     flask \
