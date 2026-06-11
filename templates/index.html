@@ -559,7 +559,7 @@ function buildCameraGrid(cameras) {
 }
 
 // ── STREAM (polling одного JPEG вместо multipart стрима) ──
-const POLL_INTERVAL = 2000;
+const POLL_INTERVAL = 100;
 
 function startCameraStream(camId) {
   const img = document.getElementById('img-' + camId);
