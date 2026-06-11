@@ -5,7 +5,7 @@ from asyncio import threads
 import cv2
 from ultralytics import YOLO
 from flask import Flask, send_file, render_template, Response, request, jsonify
-from main import generate_live_feed, start_live, stop_live, state
+from main import generate_live_feed, start_live, stop_live, state, annotated_buffers
 from config import CAMERAS
 from waitress import serve
 
@@ -33,6 +33,21 @@ def stop():
 def get_cameras():
     return jsonify({"cameras": list(CAMERAS.keys())})
 
+
+@app.route("/video_frame/<cam_id>")
+def video_frame(cam_id):
+    if cam_id not in CAMERAS:
+        return "Камера не найдена", 404
+    ann_buf = annotated_buffers.get(cam_id)
+    if ann_buf is None:
+        return "Буфер не найден", 404
+    frame = ann_buf.read()
+    if frame is None:
+        return b"", 204
+    ret, buffer = cv2.imencode('.jpg', frame)
+    if not ret:
+        return b"", 500
+    return Response(buffer.tobytes(), mimetype='image/jpeg')
 
 # Роут для одной камеры
 @app.route("/video_feed/<cam_id>")
