@@ -51,7 +51,8 @@ RUN PIP_INDEX_URL="https://pypi.org/simple" PIP_EXTRA_INDEX_URL="" PIP_TRUSTED_H
         opencv-python-headless \
         flask \
         waitress \
-        pillow
+        pillow \
+        "numpy<2.0"
 
 # ── Код приложения ─────────────────────────────────────────
 COPY . .
