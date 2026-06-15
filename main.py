@@ -50,11 +50,70 @@ frame_buffers: dict[str, FrameBuffer]     = {}
 annotated_buffers: dict[str, FrameBuffer] = {}
 camera_captures: dict[str, CameraCapture]  = {}
 
+def _init_camera_resources(cam_id: str, url: str | int):
+    """Создаёт буферы и захват для камеры, если ещё не созданы."""
+    if cam_id not in frame_buffers:
+        frame_buffers[cam_id] = FrameBuffer()
+    if cam_id not in annotated_buffers:
+        annotated_buffers[cam_id] = FrameBuffer()
+    if cam_id not in camera_captures:
+        camera_captures[cam_id] = CameraCapture(buffer=frame_buffers[cam_id], source=url)
+
 for cam_id, url in CAMERAS.items():
-    buf = FrameBuffer()
-    frame_buffers[cam_id]     = buf
-    annotated_buffers[cam_id] = FrameBuffer()
-    camera_captures[cam_id]   = CameraCapture(buffer=buf, source=url)
+    _init_camera_resources(cam_id, url)
+
+
+def add_camera(cam_id: str, source: str | int):
+    """Hot-add камеры: создаёт ресурсы и запускает, если детекция активна."""
+    from config import save_cameras
+    CAMERAS[cam_id] = source
+    save_cameras()
+    _init_camera_resources(cam_id, source)
+    if state.live_active:
+        camera_captures[cam_id].start()
+        if face_recognizer is not None:
+            from reid import FaceRecognitionWorker
+            fw = FaceRecognitionWorker(frame_buffers[cam_id], face_recognizer, REID_FRAME_SKIP)
+            fw.start()
+            face_workers[cam_id] = fw
+    print(f"[Камера] Добавлена: {cam_id} → {source}")
+
+
+def remove_camera(cam_id: str):
+    """Hot-remove камеры: останавливает и чистит все ресурсы."""
+    from config import save_cameras
+    if cam_id in camera_captures:
+        camera_captures[cam_id].stop()
+        del camera_captures[cam_id]
+    if cam_id in face_workers:
+        face_workers[cam_id].stop()
+        del face_workers[cam_id]
+    if cam_id in frame_buffers:
+        del frame_buffers[cam_id]
+    if cam_id in annotated_buffers:
+        del annotated_buffers[cam_id]
+    CAMERAS.pop(cam_id, None)
+    save_cameras()
+    print(f"[Камера] Удалена: {cam_id}")
+
+
+def rename_camera(old_id: str, new_id: str) -> bool:
+    """Переименовывает камеру и переносит все ресурсы под новый ключ."""
+    if old_id not in CAMERAS:
+        return False
+    if not new_id or new_id == old_id:
+        return False
+    if new_id in CAMERAS:
+        return False
+    source = CAMERAS.pop(old_id)
+    CAMERAS[new_id] = source
+    for dct in (frame_buffers, annotated_buffers, camera_captures, face_workers):
+        if old_id in dct:
+            dct[new_id] = dct.pop(old_id)
+    save_cameras()
+    print(f"[Камера] Переименована: {old_id} → {new_id}")
+    return True
+
 
 # ── Потоки детекции ──
 detection_threads: dict[str, threading.Thread] = {}
@@ -325,8 +384,9 @@ def start_live():
     state.live_active = True
 
     for cam_id in CAMERAS:
+        _init_camera_resources(cam_id, CAMERAS[cam_id])
         camera_captures[cam_id].start()
-        if face_recognizer is not None:
+        if face_recognizer is not None and cam_id not in face_workers:
             fw = FaceRecognitionWorker(frame_buffers[cam_id], face_recognizer, REID_FRAME_SKIP)
             fw.start()
             face_workers[cam_id] = fw
@@ -343,8 +403,9 @@ def stop_live():
         return
     state.live_active = False
 
-    for cam_id in CAMERAS:
-        camera_captures[cam_id].stop()
+    for cam_id in list(CAMERAS.keys()):
+        if cam_id in camera_captures:
+            camera_captures[cam_id].stop()
 
     for t in list(detection_threads.values()):
         t.join(timeout=2)
@@ -361,12 +422,13 @@ def stop_live():
 
 
 def detection_loop():
-    cam_ids = list(CAMERAS.keys())
     while state.live_active:
         had_any = False
-        for cam_id in cam_ids:
+        for cam_id in list(CAMERAS.keys()):
             if not state.live_active:
                 return
+            if cam_id not in frame_buffers:
+                continue
             raw_buf = frame_buffers[cam_id]
             out_buf = annotated_buffers[cam_id]
             frame = raw_buf.read()

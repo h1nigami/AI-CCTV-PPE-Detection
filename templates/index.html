@@ -554,6 +554,7 @@
         <span id="statusText">Система готова</span>
       </div>
       <button class="gallery-btn" onclick="showGallery()">👤 Управление лицами</button>
+      <button class="gallery-btn" onclick="showCameraManager()" style="margin-top:4px">📷 Управление камерами</button>
     </div>
 
     <div class="panel-section">
@@ -698,6 +699,22 @@
     <div class="modal-footer">
       <span style="font-family:var(--mono);font-size:.65rem;color:var(--text-dim);flex:1" id="galleryCount"></span>
       <button class="gallery-btn" style="width:auto;margin:0" onclick="clearGallery()">🗑 Очистить всё</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Modal: управление камерами ── -->
+<div id="cameraModal" class="modal-overlay">
+  <div class="modal-content">
+    <div class="modal-header">
+      <span>📷 Управление камерами</span>
+      <button class="modal-close" onclick="hideCameraManager()">✕</button>
+    </div>
+    <div class="modal-body" id="cameraModalBody">
+      <div class="gallery-empty">Загрузка...</div>
+    </div>
+    <div class="modal-footer">
+      <span style="font-family:var(--mono);font-size:.65rem;color:var(--text-dim);flex:1" id="cameraCount"></span>
     </div>
   </div>
 </div>
@@ -851,7 +868,7 @@ function startFeed() {
       fetch('/cameras')
         .then(r => r.json())
         .then(data => {
-          activeCameras = data.cameras || ['cam1'];
+          activeCameras = Object.keys(data.cameras || {'cam1': 0});
           buildCameraGrid(activeCameras);
         })
         .catch(() => {
@@ -1239,6 +1256,150 @@ function clearGallery() {
   fetch('/api/reid/clear', {method: 'POST'})
     .then(r => r.json())
     .then(() => loadGallery())
+    .catch(console.error);
+}
+
+// ── CAMERA MANAGER ──
+function showCameraManager() {
+  document.getElementById('cameraModal').classList.add('show');
+  loadCameraManager();
+}
+
+function hideCameraManager() {
+  document.getElementById('cameraModal').classList.remove('show');
+}
+
+function loadCameraManager() {
+  const body = document.getElementById('cameraModalBody');
+  fetch('/cameras')
+    .then(r => r.json())
+    .then(data => {
+      const cams = data.cameras || {};
+      const entries = Object.entries(cams);
+      document.getElementById('cameraCount').textContent = entries.length + ' камер';
+      body.innerHTML = `
+        <div style="margin-bottom:12px;display:flex;gap:6px;flex-wrap:wrap">
+          <input id="newCamName" placeholder="Имя (cam4)" style="flex:1;min-width:80px;background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:6px 8px;font-family:var(--mono);font-size:.75rem;color:var(--text)">
+          <input id="newCamSrc" placeholder="URL / число (0)" style="flex:2;min-width:140px;background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:6px 8px;font-family:var(--mono);font-size:.75rem;color:var(--text)">
+          <button onclick="addCamera()" style="background:var(--panel2);border:1px solid var(--accent);color:var(--accent);border-radius:3px;padding:6px 12px;cursor:pointer;font-family:var(--ui);font-weight:600;font-size:.7rem;text-transform:uppercase">➕ Добавить</button>
+        </div>
+        <div id="camStatus" style="font-family:var(--mono);font-size:.7rem;color:var(--text-dim);margin-bottom:8px"></div>
+        <div id="camList">
+          ${entries.length === 0 ? '<div class="gallery-empty">Нет камер</div>' :
+            entries.map(([name, src]) => `
+              <div class="gallery-item" id="citem-${name}">
+                <div class="g-avatar">${name.charAt(0).toUpperCase()}</div>
+                <div class="g-info">
+                  <div class="g-name">
+                    <span id="cname-${name}" style="color:var(--accent)">${name}</span>
+                    <input id="cinput-${name}" style="display:none;background:var(--bg);border:1px solid var(--accent);border-radius:3px;padding:2px 6px;font-family:var(--mono);font-size:.8rem;color:var(--text);width:120px" value="${name}" onkeydown="if(event.key==='Enter')renameCam('${name}')">
+                  </div>
+                  <div class="g-meta" id="cmeta-${name}" style="font-size:.7rem">${typeof src === 'number' ? '🔌 Локальная камера ' + src : '📡 ' + src}</div>
+                </div>
+                <div class="g-actions">
+                  <button class="g-rename" onclick="startRenameCam('${name}')">✏️</button>
+                  <button class="g-delete" onclick="deleteCamera('${name}')">🗑</button>
+                </div>
+              </div>
+            `).join('')
+          }
+        </div>
+      `;
+    })
+    .catch(err => {
+      body.innerHTML = `<div class="gallery-empty">Ошибка загрузки: ${err}</div>`;
+    });
+}
+
+function addCamera() {
+  const name = document.getElementById('newCamName').value.trim();
+  const src  = document.getElementById('newCamSrc').value.trim();
+  const status = document.getElementById('camStatus');
+  if (!name || !src) { status.textContent = '⚠️ Заполните имя и источник'; return; }
+  fetch('/api/cameras', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({name: name, source: src})
+  })
+    .then(r => {
+      if (!r.ok) return r.json().then(e => { throw new Error(e.error); });
+      return r.json();
+    })
+    .then(() => {
+      document.getElementById('newCamName').value = '';
+      document.getElementById('newCamSrc').value = '';
+      status.textContent = '✅ Камера добавлена';
+      status.style.color = 'var(--green)';
+      // Обновляем сетку и список
+      refreshCamerasAfterChange();
+      loadCameraManager();
+    })
+    .catch(err => {
+      status.textContent = '❌ ' + err.message;
+      status.style.color = 'var(--red)';
+    });
+}
+
+function deleteCamera(name) {
+  if (!confirm('Удалить камеру ' + name + '?')) return;
+  fetch('/api/cameras/' + name, {method: 'DELETE'})
+    .then(r => {
+      if (!r.ok) return r.json().then(e => { throw new Error(e.error); });
+      return r.json();
+    })
+    .then(() => {
+      refreshCamerasAfterChange();
+      loadCameraManager();
+    })
+    .catch(console.error);
+}
+
+function startRenameCam(name) {
+  document.getElementById('cname-' + name).style.display = 'none';
+  const inp = document.getElementById('cinput-' + name);
+  inp.style.display = 'inline';
+  inp.focus();
+  inp.select();
+}
+
+function renameCam(oldName) {
+  const inp = document.getElementById('cinput-' + oldName);
+  const newName = inp.value.trim();
+  if (!newName || newName === oldName) {
+    document.getElementById('cname-' + oldName).style.display = 'inline';
+    inp.style.display = 'none';
+    return;
+  }
+  fetch('/api/cameras/' + oldName + '/rename', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({name: newName})
+  })
+    .then(r => {
+      if (!r.ok) return r.json().then(e => { throw new Error(e.error); });
+      return r.json();
+    })
+    .then(() => {
+      refreshCamerasAfterChange();
+      loadCameraManager();
+    })
+    .catch(err => {
+      alert('Ошибка: ' + err.message);
+      document.getElementById('cname-' + oldName).style.display = 'inline';
+      inp.style.display = 'none';
+    });
+}
+
+function refreshCamerasAfterChange() {
+  fetch('/cameras')
+    .then(r => r.json())
+    .then(data => {
+      activeCameras = Object.keys(data.cameras || {});
+      if (isRunning) {
+        clearCameraGrid();
+        buildCameraGrid(activeCameras);
+      }
+    })
     .catch(console.error);
 }
 </script>

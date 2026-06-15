@@ -1,12 +1,31 @@
+import json
 from pathlib import Path
 BASE_DIR = Path(__file__).parent
 
 MODEL_PATH      = BASE_DIR / "models" / "best.pt"
-POSE_MODEL_PATH = BASE_DIR / "models/yolov8n-pose.pt"
+POSE_MODEL_PATH = BASE_DIR / "models" / "yolov8n-pose.pt"
 
-CAMERAS = {
+CAMERAS: dict[str, str | int] = {
     "cam": 0,
 }
+
+# Загрузка камер из data/cameras.json (переопределяет значения выше)
+_CAMERAS_PATH = BASE_DIR / "data" / "cameras.json"
+try:
+    with open(_CAMERAS_PATH, encoding="utf-8") as _f:
+        _loaded = json.load(_f)
+        if isinstance(_loaded, dict) and _loaded:
+            CAMERAS.clear()
+            CAMERAS.update(_loaded)
+except FileNotFoundError:
+    _CAMERAS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(_CAMERAS_PATH, "w", encoding="utf-8") as _f:
+        json.dump(CAMERAS, _f, ensure_ascii=False, indent=2)
+
+
+def save_cameras():
+    with open(_CAMERAS_PATH, "w", encoding="utf-8") as _f:
+        json.dump(CAMERAS, _f, ensure_ascii=False, indent=2)
 
 CONF_THRESH       = 0.75
 MAX_LOG_SIZE      = 100
