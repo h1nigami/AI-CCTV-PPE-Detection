@@ -1,8 +1,11 @@
 import os
 import uuid
-from asyncio import threads
 
 import cv2
+# Fix for older OpenCV on Jetson (INTER_NEAREST_EXACT missing in apt python3-opencv)
+if not hasattr(cv2, 'INTER_NEAREST_EXACT'):
+    cv2.INTER_NEAREST_EXACT = cv2.INTER_NEAREST
+
 from ultralytics import YOLO
 from flask import Flask, send_file, render_template, Response, request, jsonify
 from main import generate_live_feed, start_live, stop_live, state, annotated_buffers, add_camera, remove_camera, rename_camera, camera_captures, _init_camera_resources

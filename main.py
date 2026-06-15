@@ -1,3 +1,4 @@
+from __future__ import annotations
 import cv2
 import threading
 import time
@@ -84,14 +85,14 @@ def remove_camera(cam_id: str):
     from config import save_cameras
     if cam_id in camera_captures:
         camera_captures[cam_id].stop()
-        del camera_captures[cam_id]
+        camera_captures.pop(cam_id)
     if cam_id in face_workers:
         face_workers[cam_id].stop()
-        del face_workers[cam_id]
+        face_workers.pop(cam_id)
     if cam_id in frame_buffers:
-        del frame_buffers[cam_id]
+        frame_buffers.pop(cam_id)
     if cam_id in annotated_buffers:
-        del annotated_buffers[cam_id]
+        annotated_buffers.pop(cam_id)
     CAMERAS.pop(cam_id, None)
     save_cameras()
     print(f"[Камера] Удалена: {cam_id}")
