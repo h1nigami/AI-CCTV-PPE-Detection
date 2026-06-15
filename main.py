@@ -168,8 +168,8 @@ def process_frame(frame, cam_id: str, face_worker=None):
             if fully_equipped and not approved and in_danger:
                 frame = draw_hint(frame, pbox)
 
-            # Строим сообщение лога
-            part = f"{person_name}: "
+            # Строим сообщение лога (с ppe для фронта)
+            part = f"{person_name} [{ppe}]: "
             if approved:
                 part += "ПРОПУСК | Все СИЗ + ОК"
             elif in_danger:
@@ -341,8 +341,8 @@ def stop_live():
 
 def detection_loop():
     cam_ids = list(CAMERAS.keys())
-    frame_idx = 0
     while state.live_active:
+        had_any = False
         for cam_id in cam_ids:
             if not state.live_active:
                 return
@@ -351,6 +351,7 @@ def detection_loop():
             frame = raw_buf.read()
             if frame is None:
                 continue
+            had_any = True
             try:
                 annotated, message, category, global_ids = process_frame(
                     frame.copy(), cam_id, face_worker=face_workers.get(cam_id))
@@ -368,5 +369,5 @@ def detection_loop():
             except Exception as e:
                 print(f"[{cam_id}] Ошибка детекции: {e}")
                 traceback.print_exc()
-        frame_idx += 1
-        time.sleep(0.05)
+        if not had_any:
+            time.sleep(0.01)

@@ -834,7 +834,7 @@ function showNotification(type, title, sub, opts = {}) {
 function updatePPEFromLog(logs) {
   if (!logs || logs.length === 0) { resetPPEStatus(); return; }
   const src = selectedCam ? logs.find(l => l.cam_id === selectedCam) : logs[0];
-  if (!src || !src.message.includes('Чел.')) { resetPPEStatus(); return; }
+  if (!src || !src.message.includes('Людей:')) { resetPPEStatus(); return; }
   const msg = src.message;
   const hasHelmet = msg.includes('К ')  && !msg.includes('!К');
   const hasMask   = msg.includes('М ')  && !msg.includes('!М');
@@ -859,7 +859,7 @@ function updatePPEFromLog(logs) {
   const parts = msg.split(' | ');
   let personName = 'Работник';
   for (const part of parts) {
-    const m = part.match(/^(.+?):\s*(ПРОПУСК|ОПАСНАЯ ЗОНА|Вне зоны)/);
+    const m = part.match(/^([^[]+?)\s*(?:\[.*?\])?\s*:\s*(ПРОПУСК|ОПАСНАЯ ЗОНА|Вне зоны)/);
     if (m) { personName = m[1].trim(); break; }
   }
   const inZone = msg.includes('ОПАСНАЯ ЗОНА');
@@ -928,54 +928,59 @@ function renderLogs(logs) {
 function updateCounters(logs) {
   const violations = logs.filter(l => l.category === 'нарушение' || l.category === 'violation').length;
 
-  // Последний лог по каждой камере
   const latestByCam = {};
   logs.forEach(l => { if (!latestByCam[l.cam_id]) latestByCam[l.cam_id] = l; });
 
   let totalPeople = 0, totalApproved = 0;
   Object.values(latestByCam).forEach(log => {
-    const m = (log.message || '').match(/Людей[:\s]+(\d+)/);
-    if (m) totalPeople += parseInt(m[1]);
-    const p = (log.message || '').match(/ПРОПУСК/g);
-    if (p) totalApproved += p.length;
+    const parts = (log.message || '').split(' | ');
+    const people = parts.filter(p => /^[^[]+?\[.*?\]:/.test(p)).length;
+    totalPeople += people;
+    const a = (log.message || '').match(/ПРОПУСК/g);
+    if (a) totalApproved += a.length;
   });
 
   document.getElementById('cntTotal').textContent      = totalPeople;
   document.getElementById('cntOk').textContent         = totalApproved;
   document.getElementById('cntViolations').textContent = violations;
 
-  // Иконки — из выбранной камеры или первой
+  // Иконки из последнего лога
   const srcLog = selectedCam ? latestByCam[selectedCam] : Object.values(latestByCam)[0];
   const icons  = document.getElementById('peopleIcons');
-  const people = srcLog ? parseInt((srcLog.message||'').match(/Людей[:\s]+(\d+)/)?.[1]||0) : 0;
+  const logParts = (srcLog?.message || '').split(' | ');
+  const personParts = logParts.filter(p => /^[^[]+?\[.*?\]:/.test(p));
 
-  if (people === 0) {
+  if (personParts.length === 0) {
     icons.innerHTML = '<span style="color:var(--text-dim);font-family:var(--mono);font-size:.7rem">нет людей</span>';
     return;
   }
 
-  const msg = srcLog?.message || '';
   icons.innerHTML = '';
-  for (let i = 0; i < people; i++) {
-    const part    = msg.split('Чел.' + (i+1))[1] || '';
+  personParts.forEach((part, i) => {
+    const ppeMatch = part.match(/\[(.*?)\]/);
+    const ppeStr = ppeMatch ? ppeMatch[1] + ' ' : '';
     const approved = part.includes('ПРОПУСК');
     const danger   = part.includes('ОПАСНАЯ');
-    const viol     = part.includes('!К') || part.includes('!М') || part.includes('!Ж');
+    const viol     = ppeStr.includes('!К') || ppeStr.includes('!М') || ppeStr.includes('!Ж');
+    const nameMatch = part.match(/^([^[]+?)\s*\[/);
+    const name = nameMatch ? nameMatch[1].trim() : `Чел.${i+1}`;
+
     let color, title;
     if (approved)          { color='var(--green)';  title='Допущен'; }
     else if (danger&&viol) { color='var(--red)';    title='Зона + нарушение СИЗ'; }
     else if (danger)       { color='var(--orange)'; title='В опасной зоне'; }
     else if (viol)         { color='var(--yellow)'; title='Нет СИЗ'; }
     else                   { color='var(--accent)'; title='OK'; }
+
     icons.innerHTML += `
-      <div title="Чел.${i+1}: ${title}" style="display:flex;flex-direction:column;align-items:center;gap:2px;cursor:default">
+      <div title="${name}: ${title}" style="display:flex;flex-direction:column;align-items:center;gap:2px;cursor:default">
         <svg width="26" height="26" viewBox="0 0 28 28" fill="none">
           <circle cx="14" cy="9" r="5" fill="${color}" opacity=".9"/>
           <path d="M4 24c0-5.5 4.5-9 10-9s10 3.5 10 9" stroke="${color}" stroke-width="2" stroke-linecap="round" fill="none" opacity=".9"/>
         </svg>
         <span style="font-family:var(--mono);font-size:.6rem;color:${color}">${i+1}</span>
       </div>`;
-  }
+  });
 }
 
 function clearLogs() {
