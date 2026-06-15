@@ -33,7 +33,7 @@ pose_model.to(DEVICE)
 # ── Re-ID (распознавание лиц) ──
 face_recognizer = None
 try:
-    from reid import FaceRecognizer
+    from reid import FaceRecognizer, FaceRecognitionWorker, match_faces_to_persons
     face_recognizer = FaceRecognizer(model_name='buffalo_l', det_size=REID_DET_SIZE)
 except Exception as e:
     print(f"[ReID] InsightFace не загружен: {e}. Re-ID отключён.")
@@ -41,9 +41,6 @@ except Exception as e:
 # ── Глобальный стейт ──
 state = DetectionState()
 state.init_gallery(REID_GALLERY_PATH)
-
-# Счётчик кадров — запускаем распознавание лиц не каждый кадр
-_frame_count = 0
 
 # ── Буфер и захват для каждой камеры ──
 frame_buffers: dict[str, FrameBuffer]     = {}
@@ -59,20 +56,20 @@ for cam_id, url in CAMERAS.items():
 # ── Потоки детекции ──
 detection_threads: dict[str, threading.Thread] = {}
 
+# ── Асинхронное распознавание лиц ──
+face_workers: dict[str, FaceRecognitionWorker] = {}
+
 
 # ─────────────────────────────────────────────
 #  Общая обработка одного кадра
 # ─────────────────────────────────────────────
 
-def process_frame(frame, cam_id: str, face_rec=None, frame_idx: int = 0):
+def process_frame(frame, cam_id: str, face_worker=None):
     """
     Детектирует СИЗ, опасную зону, жесты.
     Возвращает (annotated_frame, log_message, category, [global_ids]).
     """
-    # Запускаем рекогнайшн не каждый кадр
-    use_face = face_rec is not None and (frame_idx % REID_FRAME_SKIP == 0)
-
-    detected = run_detection(frame, model, face_recognizer=face_rec if use_face else None)
+    detected = run_detection(frame, model)
     danger_zone = get_danger_zone(detected["cones"])
 
     # ── Рисуем зону и СИЗ боксы ──
@@ -110,9 +107,14 @@ def process_frame(frame, cam_id: str, face_rec=None, frame_idx: int = 0):
     if detected["persons"]:
         msg_parts.append(f"Людей: {persons_count}")
 
+        # Асинхронное распознавание лиц
+        face_embeddings = None
+        if face_worker is not None:
+            face_data = face_worker.get_faces()
+            face_embeddings = match_faces_to_persons(detected["persons"], face_data)
+
         for idx, pbox in enumerate(detected["persons"]):
-            # Глобальный ID через лицо
-            face_emb = (detected["face_embeddings"] or [None])[idx] if detected.get("face_embeddings") else None
+            face_emb = (face_embeddings or [None])[idx] if face_embeddings else None
             global_id = state.get_global_id(idx, cam_id, face_embedding=face_emb, person_box=pbox)
             global_ids.append(global_id)
 
@@ -132,17 +134,23 @@ def process_frame(frame, cam_id: str, face_rec=None, frame_idx: int = 0):
                     approved = True
                     state.set_gesture_detected()
 
+            if not fully_equipped and not approved:
+                if detect_ok_gesture(frame, pbox, pose_model):
+                    frame = put_text(frame, "ОДЕНЬТЕ СИЗ",
+                         (frame.shape[1]//2 - 150, frame.shape[0]//2),
+                         color=(0,215,255), font=FONT_LARGE)
+
             # Поднятая рука → печать
-            if detect_raised_hand(frame, pbox, pose_model):
-                all_statuses = []
-                for pb in detected["persons"]:
-                    hh = any(has_item_on_person(pb, h) for h in detected["helmets"])
-                    mm = any(has_item_on_person(pb, m) for m in detected["masks"])
-                    vv = any(has_item_on_person(pb, v) for v in detected["vests"])
-                    miss = ", ".join(n for f,n in [(hh,"каска"),(mm,"маска"),(vv,"жилет")] if not f)
-                    all_statuses.append("Все СИЗ" if not miss else f"Нет: {miss}")
-                if print_frame(frame, all_statuses):
-                    state.set_print_triggered()
+            #if detect_raised_hand(frame, pbox, pose_model):
+            #    all_statuses = []
+            #    for pb in detected["persons"]:
+            #        hh = any(has_item_on_person(pb, h) for h in detected["helmets"])
+            #        mm = any(has_item_on_person(pb, m) for m in detected["masks"])
+            #        vv = any(has_item_on_person(pb, v) for v in detected["vests"])
+            #        miss = ", ".join(n for f,n in [(hh,"каска"),(mm,"маска"),(vv,"жилет")] if not f)
+            #        all_statuses.append("Все СИЗ" if not miss else f"Нет: {miss}")
+            #    if print_frame(frame, all_statuses):
+            #        state.set_print_triggered()
 
             if approved:   approved_count += 1
             elif not fully_equipped: violation_count += 1
@@ -180,14 +188,14 @@ def process_frame(frame, cam_id: str, face_rec=None, frame_idx: int = 0):
         msg_parts.append(f"Зона активна ({len(detected['cones'])} конуса)")
 
     # Панель статистики
-    frame = draw_stats_panel(
-        frame,
-        persons_count    = persons_count,
-        approved_count   = approved_count,
-        violation_count  = violation_count,
-        gesture_detected = state.is_gesture_active(),
-        x=20, y=20
-    )
+    #frame = draw_stats_panel(
+        #frame,
+        #persons_count    = persons_count,
+        #approved_count   = approved_count,
+        #violation_count  = violation_count,
+        #gesture_detected = state.is_gesture_active(),
+        #x=20, y=20
+    #)
 
     if state.is_print_active():
         frame = put_text(frame, "ОТПРАВЛЕНО НА ПЕЧАТЬ",
@@ -223,7 +231,7 @@ def detection_worker(cam_id: str):
 
         try:
             annotated, message, category, global_ids = process_frame(
-                frame.copy(), cam_id, face_rec=face_recognizer, frame_idx=frame_idx)
+                frame.copy(), cam_id, face_worker=face_workers.get(cam_id))
             frame_idx += 1
             out_buf.write(annotated)
 
@@ -297,6 +305,10 @@ def start_live():
 
     for cam_id in CAMERAS:
         camera_captures[cam_id].start()
+        if face_recognizer is not None:
+            fw = FaceRecognitionWorker(frame_buffers[cam_id], face_recognizer, REID_FRAME_SKIP)
+            fw.start()
+            face_workers[cam_id] = fw
 
     t = threading.Thread(target=detection_loop, daemon=True)
     detection_threads["main"] = t
@@ -317,6 +329,11 @@ def stop_live():
         t.join(timeout=2)
 
     detection_threads.clear()
+
+    for fw in list(face_workers.values()):
+        fw.stop()
+    face_workers.clear()
+
     for buf in annotated_buffers.values():
         buf.clear()
     print("Детекция остановлена")
@@ -336,7 +353,7 @@ def detection_loop():
                 continue
             try:
                 annotated, message, category, global_ids = process_frame(
-                    frame.copy(), cam_id, face_rec=face_recognizer, frame_idx=frame_idx)
+                    frame.copy(), cam_id, face_worker=face_workers.get(cam_id))
                 out_buf.write(annotated)
                 gid = global_ids[0] if global_ids else 0
                 state.add_log(LogEntry(

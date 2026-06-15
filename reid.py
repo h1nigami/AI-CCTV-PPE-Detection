@@ -183,38 +183,96 @@ class FaceRecognizer:
         self.app.prepare(ctx_id=0, det_size=det_size)
         print(f"[ReID] InsightFace {model_name} loaded (CUDA)")
 
-    def get_embeddings(self, frame: np.ndarray, person_boxes: List[np.ndarray]) -> List[Optional[np.ndarray]]:
-        if not person_boxes:
-            return []
-
+    def detect_faces(self, frame: np.ndarray) -> List[Tuple[np.ndarray, np.ndarray]]:
+        """Возвращает список (bbox, embedding) для всех лиц в кадре."""
         faces = self.app.get(frame)
-        if not faces:
-            return [None] * len(person_boxes)
+        result = []
+        for face in faces:
+            emb = face.embedding.astype(np.float32)
+            emb = emb / (np.linalg.norm(emb) + 1e-8)
+            result.append((face.bbox.astype(np.float32), emb))
+        return result
 
-        embeddings = []
-        for pbox in person_boxes:
-            px1, py1, px2, py2 = map(int, pbox)
-            best_face = None
-            best_overlap = 0
 
-            for face in faces:
-                fx1, fy1, fx2, fy2 = map(int, face.bbox)
-                ix1, iy1 = max(px1, fx1), max(py1, fy1)
-                ix2, iy2 = min(px2, fx2), min(py2, fy2)
-                if ix2 > ix1 and iy2 > iy1:
-                    inter = (ix2 - ix1) * (iy2 - iy1)
-                    face_area = (fx2 - fx1) * (fy2 - fy1)
-                    if face_area > 0:
-                        overlap = inter / face_area
-                        if overlap > best_overlap:
-                            best_overlap = overlap
-                            best_face = face
+class FaceRecognitionWorker:
+    """Асинхронно распознаёт лица в отдельном потоке.
 
-            if best_face is not None and best_face.embedding is not None:
-                emb = best_face.embedding.astype(np.float32)
-                emb = emb / (np.linalg.norm(emb) + 1e-8)
-                embeddings.append(emb)
-            else:
-                embeddings.append(None)
+    Читает кадры из raw_buffer (FrameBuffer), прогоняет через InsightFace
+    и сохраняет результаты. Основной поток детекции забирает их без блокировки.
+    """
+    def __init__(self, raw_buffer, face_recognizer: FaceRecognizer,
+                 frame_skip: int = 3):
+        self._buf = raw_buffer
+        self._rec = face_recognizer
+        self._frame_skip = frame_skip
+        self._latest_faces: List[Tuple[np.ndarray, np.ndarray]] = []
+        self._lock = threading.Lock()
+        self._running = False
+        self._thread: Optional[threading.Thread] = None
 
-        return embeddings
+    def start(self):
+        if self._running:
+            return
+        self._running = True
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def stop(self):
+        self._running = False
+        if self._thread:
+            self._thread.join(timeout=2)
+
+    def get_faces(self) -> List[Tuple[np.ndarray, np.ndarray]]:
+        """Последние лица: список (bbox, embedding)."""
+        with self._lock:
+            return list(self._latest_faces)
+
+    def _run(self):
+        frame_idx = 0
+        while self._running:
+            frame = self._buf.read()
+            if frame is None:
+                time.sleep(0.01)
+                continue
+            if frame_idx % self._frame_skip == 0:
+                try:
+                    self._latest_faces = self._rec.detect_faces(frame)
+                except Exception as e:
+                    print(f"[FaceRecognitionWorker] Ошибка: {e}")
+            frame_idx += 1
+
+
+def match_faces_to_persons(
+    person_boxes: List[np.ndarray],
+    face_data: List[Tuple[np.ndarray, np.ndarray]]
+) -> List[Optional[np.ndarray]]:
+    """Матчит YOLO person_boxes с face_data (bbox, embedding) по overlap.
+
+    Для каждого person_box выбирает лицо с максимальным overlap'ом.
+    Возвращает список эмбеддингов (None, если лицо не найдено).
+    """
+    if not face_data or not person_boxes:
+        return [None] * len(person_boxes) if person_boxes else []
+
+    embeddings = []
+    for pbox in person_boxes:
+        px1, py1, px2, py2 = map(int, pbox)
+        best_emb = None
+        best_overlap = 0.0
+
+        for face_bbox, emb in face_data:
+            fx1, fy1, fx2, fy2 = map(int, face_bbox)
+            ix1, iy1 = max(px1, fx1), max(py1, fy1)
+            ix2, iy2 = min(px2, fx2), min(py2, fy2)
+            if ix2 > ix1 and iy2 > iy1:
+                inter = (ix2 - ix1) * (iy2 - iy1)
+                face_area = (fx2 - fx1) * (fy2 - fy1)
+                if face_area > 0:
+                    overlap = inter / face_area
+                    if overlap > best_overlap:
+                        best_overlap = overlap
+                        best_emb = emb
+
+        embeddings.append(best_emb)
+
+    return embeddings
