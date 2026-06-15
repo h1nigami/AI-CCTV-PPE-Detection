@@ -124,8 +124,12 @@ def process_frame(frame, cam_id: str, face_worker=None):
             if track_id < 0:
                 track_id = idx  # fallback — позиция в кадре
 
-            face_emb = (face_embeddings or [None])[idx] if face_embeddings else None
-            global_id = state.get_global_id(track_id, cam_id, face_embedding=face_emb, person_box=pbox)
+            face_info = (face_embeddings or [(None, 0.0)])[idx] if face_embeddings else (None, 0.0)
+            face_emb, face_quality = face_info
+            global_id = state.get_global_id(track_id, cam_id,
+                                            face_embedding=face_emb,
+                                            quality=face_quality,
+                                            person_box=pbox)
             global_ids.append(global_id)
 
             has_helmet = any(has_item_on_person(pbox, h) for h in detected["helmets"])

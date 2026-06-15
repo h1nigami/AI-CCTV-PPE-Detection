@@ -145,6 +145,18 @@ def reid_list():
         return jsonify({"error": "Re-ID не активен"}), 400
     return jsonify({"persons": state.gallery.list_all()})
 
+@app.route("/api/reid/persons/<int:global_id>/rename", methods=["POST"])
+def reid_rename(global_id: int):
+    if state.gallery is None:
+        return jsonify({"error": "Re-ID не активен"}), 400
+    data = request.get_json()
+    name = (data.get("name") or "").strip()
+    if not name:
+        return jsonify({"error": "Имя не может быть пустым"}), 400
+    if state.gallery.rename(global_id, name):
+        return jsonify({"status": "renamed", "global_id": global_id, "name": name})
+    return jsonify({"error": "Не найдено"}), 404
+
 @app.route("/api/reid/persons/<int:global_id>", methods=["DELETE"])
 def reid_delete(global_id: int):
     if state.gallery is None:

@@ -107,23 +107,35 @@ class DetectionState:
 
     def get_global_id(self, track_id: int, cam_id: str,
                       face_embedding: Optional[np.ndarray] = None,
-                      person_box=None) -> int:
+                      quality: float = 0.0, person_box=None) -> int:
         key = (cam_id, track_id)
         now = time.time()
         with self._reid_lock:
-            # Известный трек — продлеваем last_seen и возвращаем ID
+            # ЕСТЬ ЛИЦО — ВСЕГДА проверяем галерею (биометрия приоритетнее трека)
+            if face_embedding is not None and self._gallery is not None:
+                gallery_id = self._gallery.match_or_register(
+                    face_embedding, cam_id, quality=quality)
+
+                if key in self._track_to_global:
+                    old_id = self._track_to_global[key]
+                    if old_id != gallery_id:
+                        print(f"[ReID] Track {key}: face mismatch! "
+                              f"global_id {old_id} -> {gallery_id}")
+                self._track_to_global[key] = gallery_id
+                self._track_last_seen[key] = now
+                return gallery_id
+
+            # НЕТ ЛИЦА — используем трек-маппинг если есть
             if key in self._track_to_global:
                 self._track_last_seen[key] = now
                 return self._track_to_global[key]
 
-            if face_embedding is not None and self._gallery is not None:
-                global_id = self._gallery.match_or_register(face_embedding, cam_id)
-            else:
-                global_id = hash(key) & 0x7FFFFFFF
-                if global_id not in self._fallback_names:
-                    name = self._assign_fallback_name()
-                    self._fallback_names[global_id] = name
-                    print(f"[ReID] Новый: {name} (ID={global_id}, камера {cam_id}, без лица)")
+            # НОВЫЙ ТРЕК БЕЗ ЛИЦА — присваиваем fallback имя
+            global_id = hash(key) & 0x7FFFFFFF
+            if global_id not in self._fallback_names:
+                name = self._assign_fallback_name()
+                self._fallback_names[global_id] = name
+                print(f"[ReID] Новый: {name} (ID={global_id}, камера {cam_id}, без лица)")
 
             self._track_to_global[key] = global_id
             self._track_last_seen[key] = now

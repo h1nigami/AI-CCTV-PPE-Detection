@@ -66,6 +66,16 @@ class FaceGallery:
     def _cosine_sim(self, a: np.ndarray, b: np.ndarray) -> float:
         return float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b) + 1e-8))
 
+    def _adaptive_threshold(self, quality: float) -> float:
+        if quality >= 0.8:
+            return 0.48
+        elif quality >= 0.6:
+            return 0.55
+        elif quality >= 0.4:
+            return 0.62
+        else:
+            return 0.72
+
     def _assign_name(self) -> str:
         used = {d.get('name', '') for d in self._gallery.values()}
         available = [n for n in RUSSIAN_NAMES if n not in used]
@@ -73,10 +83,12 @@ class FaceGallery:
             return f"Гость_{self._next_id}"
         return random.choice(available)
 
-    def match_or_register(self, embedding: np.ndarray, cam_id: str) -> int:
+    def match_or_register(self, embedding: np.ndarray, cam_id: str,
+                          quality: float = 0.5) -> int:
+        threshold = self._adaptive_threshold(quality)
         with self._lock:
             best_id = None
-            best_sim = self.sim_threshold
+            best_sim = threshold
 
             for gid, data in self._gallery.items():
                 mean_emb = np.mean(data['embeddings'], axis=0)
@@ -104,8 +116,19 @@ class FaceGallery:
                 'name': name,
             }
             self._save()
-            print(f"[ReID] Новый: {name} (ID={new_id}, камера {cam_id}, sim={best_sim:.3f})")
+            q_label = {0.48:'отл',0.55:'хор',0.62:'ср',0.72:'плох'}.get(threshold, '?')
+            print(f"[ReID] Новый: {name} (ID={new_id}, камера {cam_id}, "
+                  f"sim={best_sim:.3f}, кач={quality:.2f} [{q_label}])")
             return new_id
+
+    def rename(self, global_id: int, new_name: str) -> bool:
+        with self._lock:
+            if global_id not in self._gallery:
+                return False
+            self._gallery[global_id]['name'] = new_name
+            self._save()
+            print(f"[ReID] Переименован global_id={global_id} -> {new_name}")
+            return True
 
     def get_name(self, global_id: int) -> str:
         with self._lock:
@@ -183,14 +206,23 @@ class FaceRecognizer:
         self.app.prepare(ctx_id=0, det_size=det_size)
         print(f"[ReID] InsightFace {model_name} loaded (CUDA)")
 
-    def detect_faces(self, frame: np.ndarray) -> List[Tuple[np.ndarray, np.ndarray]]:
-        """Возвращает список (bbox, embedding) для всех лиц в кадре."""
+    def detect_faces(self, frame: np.ndarray) -> List[Tuple[np.ndarray, np.ndarray, float]]:
+        """Возвращает список (bbox, embedding, quality) для всех лиц в кадре."""
         faces = self.app.get(frame)
         result = []
+        h, w = frame.shape[:2]
         for face in faces:
             emb = face.embedding.astype(np.float32)
             emb = emb / (np.linalg.norm(emb) + 1e-8)
-            result.append((face.bbox.astype(np.float32), emb))
+            bbox = face.bbox.astype(np.float32)
+            # Quality = детекция (0-1) × размер лица (0-1)
+            det_score = getattr(face, 'det_score', 0.5)
+            fx1, fy1, fx2, fy2 = bbox
+            face_size = min((fx2 - fx1) / w, (fy2 - fy1) / h)
+            size_score = min(1.0, face_size / 0.15)  # 15% кадра = отлично
+            quality = det_score * 0.6 + size_score * 0.4
+            quality = min(1.0, max(0.1, quality))
+            result.append((bbox, emb, quality))
         return result
 
 
@@ -205,7 +237,7 @@ class FaceRecognitionWorker:
         self._buf = raw_buffer
         self._rec = face_recognizer
         self._frame_skip = frame_skip
-        self._latest_faces: List[Tuple[np.ndarray, np.ndarray]] = []
+        self._latest_faces: List[Tuple[np.ndarray, np.ndarray, float]] = []
         self._lock = threading.Lock()
         self._running = False
         self._thread: Optional[threading.Thread] = None
@@ -222,8 +254,8 @@ class FaceRecognitionWorker:
         if self._thread:
             self._thread.join(timeout=2)
 
-    def get_faces(self) -> List[Tuple[np.ndarray, np.ndarray]]:
-        """Последние лица: список (bbox, embedding)."""
+    def get_faces(self) -> List[Tuple[np.ndarray, np.ndarray, float]]:
+        """Последние лица: список (bbox, embedding, quality)."""
         with self._lock:
             return list(self._latest_faces)
 
@@ -244,23 +276,24 @@ class FaceRecognitionWorker:
 
 def match_faces_to_persons(
     person_boxes: List[np.ndarray],
-    face_data: List[Tuple[np.ndarray, np.ndarray]]
-) -> List[Optional[np.ndarray]]:
-    """Матчит YOLO person_boxes с face_data (bbox, embedding) по overlap.
+    face_data: List[Tuple[np.ndarray, np.ndarray, float]]
+) -> List[Tuple[Optional[np.ndarray], float]]:
+    """Матчит YOLO person_boxes с face_data (bbox, embedding, quality) по overlap.
 
     Для каждого person_box выбирает лицо с максимальным overlap'ом.
-    Возвращает список эмбеддингов (None, если лицо не найдено).
+    Возвращает список (embedding, quality). Quality = 0 если лица нет.
     """
     if not face_data or not person_boxes:
-        return [None] * len(person_boxes) if person_boxes else []
+        return [(None, 0.0)] * len(person_boxes) if person_boxes else []
 
-    embeddings = []
+    results = []
     for pbox in person_boxes:
         px1, py1, px2, py2 = map(int, pbox)
         best_emb = None
+        best_quality = 0.0
         best_overlap = 0.0
 
-        for face_bbox, emb in face_data:
+        for face_bbox, emb, quality in face_data:
             fx1, fy1, fx2, fy2 = map(int, face_bbox)
             ix1, iy1 = max(px1, fx1), max(py1, fy1)
             ix2, iy2 = min(px2, fx2), min(py2, fy2)
@@ -272,7 +305,8 @@ def match_faces_to_persons(
                     if overlap > best_overlap:
                         best_overlap = overlap
                         best_emb = emb
+                        best_quality = quality
 
-        embeddings.append(best_emb)
+        results.append((best_emb, best_quality))
 
-    return embeddings
+    return results
