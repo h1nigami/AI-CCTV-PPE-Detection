@@ -6,6 +6,9 @@ POSE_MODEL_PATH = BASE_DIR / "models/yolov8n-pose.pt"
 
 CAMERAS = {
     "cam": 0,
+    "cam1":"rtsp://192.168.0.103:554/user=admin_password=tlJwpbo6_channel=1_stream=0.sdp?real_stream",
+    "cam2":"rtsp://192.168.0.110:554/user=admin_password=tlJwpbo6_channel=1_stream=0.sdp?real_stream",
+    "cam3":"rtsp://192.168.0.108:554/user=admin_password=tlJwpbo6_channel=1_stream=0.sdp?real_stream"
 }
 
 CONF_THRESH       = 0.75

@@ -225,6 +225,13 @@
     font-family: var(--mono); font-size: 0.65rem;
     color: var(--accent); letter-spacing: 1px; pointer-events: none;
   }
+  .cam-counter {
+    position: absolute; bottom: 6px; left: 6px;
+    background: #000000aa; border: 1px solid var(--border);
+    border-radius: 3px; padding: 2px 8px;
+    font-family: var(--mono); font-size: 0.65rem;
+    color: var(--green); letter-spacing: 1px; pointer-events: none;
+  }
   .cam-cell.fullscreen { position: absolute; inset: 0; z-index: 10; }
 
   /* Spinner загрузки в ячейке камеры */
@@ -644,7 +651,11 @@ function buildCameraGrid(cameras) {
     errLabel.id = 'err-' + camId; errLabel.className = 'cam-label';
     errLabel.style.color = 'var(--red)'; errLabel.style.display = 'none';
     errLabel.textContent = 'Нет сигнала';
-    cell.appendChild(img); cell.appendChild(spinner); cell.appendChild(label); cell.appendChild(errLabel);
+    // Счётчик людей на камере
+    const counter = document.createElement('div');
+    counter.className = 'cam-counter'; counter.id = 'counter-' + camId;
+    counter.textContent = '0 чел.';
+    cell.appendChild(img); cell.appendChild(spinner); cell.appendChild(label); cell.appendChild(counter); cell.appendChild(errLabel);
     cell.addEventListener('click', () => toggleFullscreen(camId));
     grid.appendChild(cell);
     // Запускаем стрим для этой камеры
@@ -799,6 +810,10 @@ function setPPE(id, ok, sub) {
 }
 function resetPPEStatus() {
   ['helmet','mask','vest','zone','gesture'].forEach(id => setPPE(id, null, 'ожидание'));
+  document.querySelectorAll('.cam-counter').forEach(el => {
+    el.textContent = '0 чел.';
+    el.style.color = 'var(--text-dim)';
+  });
 }
 
 // ── NOTIFICATIONS ──
@@ -863,10 +878,6 @@ function updatePPEFromLog(logs) {
     _lastLogIds[camId] = log.id;
 
     const m = log.message;
-    const hasPassHere = m.includes('ПРОПУСК');
-    const hh = m.includes('К ')  && !m.includes('!К');
-    const hm = m.includes('М ')  && !m.includes('!М');
-    const hv = m.includes('Ж')   && !m.includes('!Ж');
 
     // Имя человека
     const parts = m.split(' | ');
@@ -876,19 +887,19 @@ function updatePPEFromLog(logs) {
       if (match) { pName = match[1].trim(); break; }
     }
 
-    // 1. Жест ОК → пропуск
+    // Только по жесту ОК
+    if (!m.includes('ЖЕСТ-ОК')) continue;
+
+    const hasPassHere = m.includes('ПРОПУСК');
+    const missing = [];
+    if (!m.includes('К ') || m.includes('!К')) missing.push('⛑️ Каска');
+    if (!m.includes('М ') || m.includes('!М')) missing.push('😷 Маска');
+    if (!m.includes('Ж')  || m.includes('!Ж')) missing.push('🦺 Жилет');
+
     if (hasPassHere) {
       showNotification('granted', '✅ ЖЕСТ «ОК» РАСПОЗНАН',
         `${pName} — доступ разрешён!`, 5000);
-      continue;
-    }
-
-    // 2. Не хватает СИЗ
-    const missing = [];
-    if (!hh) missing.push('⛑️ Каска');
-    if (!hm) missing.push('😷 Маска');
-    if (!hv) missing.push('🦺 Жилет');
-    if (missing.length > 0) {
+    } else {
       showNotification('missing', '⚠️ НЕ ХВАТАЕТ СИЗ',
         `${pName}: ${missing.join(' · ')}`, 4000);
     }
@@ -928,12 +939,25 @@ function updateCounters(logs) {
   logs.forEach(l => { if (!latestByCam[l.cam_id]) latestByCam[l.cam_id] = l; });
 
   let totalPeople = 0, totalApproved = 0;
-  Object.values(latestByCam).forEach(log => {
+  Object.entries(latestByCam).forEach(([camId, log]) => {
     const parts = (log.message || '').split(' | ');
     const people = parts.filter(p => /^[^[]+?\[.*?\]:/.test(p)).length;
     totalPeople += people;
     const a = (log.message || '').match(/ПРОПУСК/g);
     if (a) totalApproved += a.length;
+
+    // Обновляем счётчик людей на ячейке камеры
+    const el = document.getElementById('counter-' + camId);
+    if (el) {
+      el.textContent = people + ' чел.';
+      el.style.color = people > 0 ? 'var(--green)' : 'var(--text-dim)';
+    }
+  });
+
+  // Сбрасываем счётчики для камер без логов
+  document.querySelectorAll('.cam-counter').forEach(el => {
+    const camId = el.id.replace('counter-', '');
+    if (!latestByCam[camId]) el.textContent = '0 чел.';
   });
 
   document.getElementById('cntTotal').textContent      = totalPeople;
@@ -983,6 +1007,10 @@ function clearLogs() {
   document.getElementById('logBox').innerHTML = '<div class="empty-state">Ожидание событий...</div>';
   document.getElementById('cntLogs').textContent   = '0';
   document.getElementById('eventCount').textContent = '0 записей';
+  document.querySelectorAll('.cam-counter').forEach(el => {
+    el.textContent = '0 чел.';
+    el.style.color = 'var(--text-dim)';
+  });
 }
 
 function exportLogs() {

@@ -26,6 +26,9 @@ from config import (
     REID_MAX_AGE_DAYS
 )
 
+# Через сколько секунд без появления трек-маппинг освобождается
+TRACK_EXPIRY = 60.0
+
 
 @dataclass
 class LogEntry:
@@ -53,6 +56,7 @@ class DetectionState:
         # Re-ID
         self._gallery = None
         self._track_to_global: Dict[Tuple[str, int], int] = {}  # (cam_id, track_id) -> global_id
+        self._track_last_seen: Dict[Tuple[str, int], float] = {}  # (cam_id, track_id) -> last_seen_timestamp
         self._fallback_names: Dict[int, str] = {}  # global_id -> имя без лица
         self._used_fallback: set = set()
 
@@ -105,8 +109,11 @@ class DetectionState:
                       face_embedding: Optional[np.ndarray] = None,
                       person_box=None) -> int:
         key = (cam_id, track_id)
+        now = time.time()
         with self._reid_lock:
+            # Известный трек — продлеваем last_seen и возвращаем ID
             if key in self._track_to_global:
+                self._track_last_seen[key] = now
                 return self._track_to_global[key]
 
             if face_embedding is not None and self._gallery is not None:
@@ -119,11 +126,24 @@ class DetectionState:
                     print(f"[ReID] Новый: {name} (ID={global_id}, камера {cam_id}, без лица)")
 
             self._track_to_global[key] = global_id
+            self._track_last_seen[key] = now
             return global_id
+
+    def cleanup_stale_tracks(self):
+        now = time.time()
+        with self._reid_lock:
+            stale = [k for k, t in self._track_last_seen.items()
+                     if now - t > TRACK_EXPIRY]
+            for k in stale:
+                del self._track_to_global[k]
+                del self._track_last_seen[k]
+            if stale:
+                print(f"[ReID] Очищено {len(stale)} устаревших треков")
 
     def clear_tracks(self):
         with self._reid_lock:
             self._track_to_global.clear()
+            self._track_last_seen.clear()
             self._fallback_names.clear()
             self._used_fallback.clear()
 

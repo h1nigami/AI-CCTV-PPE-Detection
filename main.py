@@ -8,7 +8,7 @@ from ultralytics import YOLO
 
 from config import (
     MODEL_PATH, POSE_MODEL_PATH, CLASS_NAMES, CAMERAS, CONF_THRESH,
-    REID_GALLERY_PATH, REID_DET_SIZE, REID_FRAME_SKIP
+    REID_GALLERY_PATH, REID_DET_SIZE, REID_FRAME_SKIP, REID_MAX_AGE_DAYS
 )
 from camera import FrameBuffer, CameraCapture
 from detection import run_detection, get_danger_zone, has_item_on_person, is_in_danger_zone
@@ -41,6 +41,9 @@ except Exception as e:
 # ── Глобальный стейт ──
 state = DetectionState()
 state.init_gallery(REID_GALLERY_PATH)
+# Очистка старых лиц при старте
+if state.gallery is not None:
+    state.gallery.cleanup_old(REID_MAX_AGE_DAYS)
 
 # ── Буфер и захват для каждой камеры ──
 frame_buffers: dict[str, FrameBuffer]     = {}
@@ -69,6 +72,7 @@ def process_frame(frame, cam_id: str, face_worker=None):
     Детектирует СИЗ, опасную зону, жесты.
     Возвращает (annotated_frame, log_message, category, [global_ids]).
     """
+    state.cleanup_stale_tracks()
     detected = run_detection(frame, model)
     danger_zone = get_danger_zone(detected["cones"])
 
@@ -113,9 +117,15 @@ def process_frame(frame, cam_id: str, face_worker=None):
             face_data = face_worker.get_faces()
             face_embeddings = match_faces_to_persons(detected["persons"], face_data)
 
+        person_track_ids = detected.get("person_track_ids", [])
+
         for idx, pbox in enumerate(detected["persons"]):
+            track_id = person_track_ids[idx] if idx < len(person_track_ids) else -1
+            if track_id < 0:
+                track_id = idx  # fallback — позиция в кадре
+
             face_emb = (face_embeddings or [None])[idx] if face_embeddings else None
-            global_id = state.get_global_id(idx, cam_id, face_embedding=face_emb, person_box=pbox)
+            global_id = state.get_global_id(track_id, cam_id, face_embedding=face_emb, person_box=pbox)
             global_ids.append(global_id)
 
             has_helmet = any(has_item_on_person(pbox, h) for h in detected["helmets"])
@@ -304,6 +314,7 @@ def start_live():
         time.sleep(0.5)
 
     state.clear_log()
+    state.clear_tracks()
     for buf in annotated_buffers.values():
         buf.clear()
 

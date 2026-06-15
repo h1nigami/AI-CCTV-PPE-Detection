@@ -42,18 +42,33 @@ def is_in_danger_zone(person_box, danger_zone) -> bool:
 
 
 def run_detection(frame, model) -> Dict[str, Any]:
-    """Запускает YOLO и возвращает отфильтрованные боксы по классам."""
-    results = model(frame, conf=CONF_THRESH, verbose=False)[0]
+    """Запускает YOLO с трекингом и возвращает отфильтрованные боксы по классам + track_id для людей."""
+    results = model.track(frame, conf=CONF_THRESH, verbose=False,
+                          persist=True, tracker='bytetrack.yaml')[0]
     names   = model.names
     boxes   = results.boxes.xyxy.cpu().numpy()
     classes = results.boxes.cls.cpu().numpy().astype(int)
 
+    # Track ID от ByteTrack (первый кадр может быть None)
+    all_track_ids = None
+    if results.boxes.id is not None:
+        all_track_ids = results.boxes.id.cpu().numpy().astype(int)
+
+    persons = []
+    person_track_ids = []
+    for i, c in enumerate(classes):
+        if names[c] == "Человек":
+            persons.append(boxes[i])
+            tid = int(all_track_ids[i]) if all_track_ids is not None else -1
+            person_track_ids.append(tid)
+
     return {
-        "persons": get_boxes_by_class(boxes, classes, names, "Человек"),
-        "helmets": get_boxes_by_class(boxes, classes, names, "Каска"),
-        "masks":   get_boxes_by_class(boxes, classes, names, "Маска"),
-        "vests":   get_boxes_by_class(boxes, classes, names, "Защитный жилет"),
-        "cones":   get_boxes_by_class(boxes, classes, names, "Конус безопасности"),
+        "persons":          persons,
+        "person_track_ids": person_track_ids,
+        "helmets":          get_boxes_by_class(boxes, classes, names, "Каска"),
+        "masks":            get_boxes_by_class(boxes, classes, names, "Маска"),
+        "vests":            get_boxes_by_class(boxes, classes, names, "Защитный жилет"),
+        "cones":            get_boxes_by_class(boxes, classes, names, "Конус безопасности"),
     }
 
 

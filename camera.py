@@ -86,6 +86,9 @@ class CameraCapture:
         except:
             return False
 
+    def _has_ffmpeg(self):
+        return shutil.which("ffmpeg") is not None
+
     def _loop(self):
         if self._is_rtsp():
             if self._has_nvidia_decoder():
@@ -93,10 +96,14 @@ class CameraCapture:
                 if self._test_gstreamer():
                     self._loop_gstreamer()
                     return
-                print(f"[{self.source}] GStreamer не сработал, ffmpeg")
-            else:
+                print(f"[{self.source}] GStreamer не сработал, пробуем ffmpeg/OpenCV")
+
+            if self._has_ffmpeg():
                 print(f"[{self.source}] используем ffmpeg subprocess")
-            self._loop_ffmpeg()
+                self._loop_ffmpeg()
+            else:
+                print(f"[{self.source}] ffmpeg не найден, пробуем OpenCV для RTSP")
+                self._loop_opencv()
         else:
             self._loop_opencv()
 
