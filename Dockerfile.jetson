@@ -1,33 +1,33 @@
 # ── ARM64 (Jetson) сборка ─────────────────────────────────────
-# База: dustynv/l4t-pytorch:r36.4.0 (L4T R36.4, JetPack 6.x)
-# Предустановлены: PyTorch, CUDA 12.6, torchvision, numpy 1.26.4
-# Ключевое отличие: PIP_INDEX_URL переопределён на PyPI
-# потому что DNS не видит jetson.webredirect.org внутри build‑контейнера
+# База: dustynv/l4t-pytorch:r35.3.1 (L4T R35.3.1, JetPack 5.1.3)
+# Предустановлены: PyTorch, CUDA 11.4, torchvision, numpy 1.x
+# blinker==1.8.2 (1.9.0 требует Python ≥3.9)
+# opencv из apt (не pip) — на aarch64 Python 3.8 wheel багованный
+# PIP_INDEX_URL переопределён на PyPI (jetson.webredirect.org не виден)
 
-FROM dustynv/l4t-pytorch:${L4T_TAG:-r36.4.0}
+FROM dustynv/l4t-pytorch:${L4T_TAG:-r35.3.1}
 
 WORKDIR /app
 
 # ── Системные зависимости ──────────────────────────────────────
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
+    python3-opencv \
     && rm -rf /var/lib/apt/lists/*
 
 # ── Установка Python-зависимостей ─────────────────────────────
 # --ignore-installed blinker нужен, т.к. distutils‑пакет blinker 1.4
-#   не позволяет pip выполнить clean‑uninstall. Ставим свежий blinker.
-# numpy принудительно возвращаем на 1.x — torch на Jetson собран
-#   с numpy‑ABI 1.x и падает с numpy ≥ 2.
+#   не позволяет pip выполнить clean‑uninstall.
+# numpy принудительно на 1.x — torch на Jetson собран с numpy‑ABI 1.x
 
 COPY requirements.txt .
 
 RUN PIP_INDEX_URL="https://pypi.org/simple" PIP_EXTRA_INDEX_URL="" PIP_TRUSTED_HOST="pypi.org" \
-    pip install --no-cache-dir --timeout=300 --ignore-installed blinker==1.9.0
+    pip install --no-cache-dir --timeout=300 --ignore-installed blinker==1.8.2
 
 RUN PIP_INDEX_URL="https://pypi.org/simple" PIP_EXTRA_INDEX_URL="" PIP_TRUSTED_HOST="pypi.org" \
     pip install --no-cache-dir --timeout=300 \
         ultralytics \
-        opencv-python-headless \
         flask \
         waitress \
         pillow
@@ -35,7 +35,7 @@ RUN PIP_INDEX_URL="https://pypi.org/simple" PIP_EXTRA_INDEX_URL="" PIP_TRUSTED_H
 RUN PIP_INDEX_URL="https://pypi.org/simple" PIP_EXTRA_INDEX_URL="" PIP_TRUSTED_HOST="pypi.org" \
     pip install --no-cache-dir --timeout=300 "numpy<2"
 
-# onnxruntime-gpu для Jetson (ARM64 + CUDA 12)
+# onnxruntime-gpu для Jetson (ARM64 + CUDA 11)
 RUN PIP_INDEX_URL="https://pypi.org/simple" PIP_TRUSTED_HOST="pypi.org" \
     pip install --no-cache-dir --timeout=300 \
     --extra-index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-cuda-12/pypi/simple/ \
@@ -55,7 +55,10 @@ RUN PIP_INDEX_URL="https://pypi.org/simple" PIP_EXTRA_INDEX_URL="" PIP_TRUSTED_H
 
 # ── Код приложения ─────────────────────────────────────────
 COPY . .
-RUN mkdir -p uploads models data
+# Удаляем pip-шный opencv (ставили из apt), чистим gapi (циклический импорт)
+RUN rm -rf /usr/local/lib/python*/dist-packages/{cv2,cv2*.dist-info,opencv*} 2>/dev/null; \
+    pip uninstall -y opencv-python opencv-python-headless opencv-contrib-python 2>/dev/null || true; \
+    mkdir -p uploads models data
 
 EXPOSE 8000
 CMD ["python3", "-u", "app.py"]
