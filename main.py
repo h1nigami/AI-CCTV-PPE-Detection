@@ -127,15 +127,22 @@ def process_frame(frame, cam_id: str, face_worker=None):
             fully_equipped = has_helmet and has_mask and has_vest
             missing = [n for f,n in [(has_helmet,"каска"),(has_mask,"маска"),(has_vest,"жилет")] if not f]
 
-            # Жест ОК → пропуск
-            if fully_equipped and not approved:
-                if detect_ok_gesture(frame, pbox, pose_model):
+            ppe = f"{'К' if has_helmet else '!К'} {'М' if has_mask else '!М'} {'Ж' if has_vest else '!Ж'}"
+            person_name = state.get_person_name(global_id, cam_id, face_emb is not None)
+
+            # Жест ОК
+            gesture_ok = (
+                detect_ok_gesture(frame, pbox, pose_model)
+                if not approved and state.can_gesture(global_id)
+                else False
+            )
+            if gesture_ok:
+                state.set_gesture_time(global_id)
+                if fully_equipped:
                     state.approve(pbox, cam_id, global_id=global_id)
                     approved = True
                     state.set_gesture_detected()
-
-            if not fully_equipped and not approved:
-                if detect_ok_gesture(frame, pbox, pose_model):
+                else:
                     frame = put_text(frame, "ОДЕНЬТЕ СИЗ",
                          (frame.shape[1]//2 - 150, frame.shape[0]//2),
                          color=(0,215,255), font=FONT_LARGE)
@@ -155,10 +162,6 @@ def process_frame(frame, cam_id: str, face_worker=None):
             if approved:   approved_count += 1
             elif not fully_equipped: violation_count += 1
 
-            ppe = f"{'К' if has_helmet else '!К'} {'М' if has_mask else '!М'} {'Ж' if has_vest else '!Ж'}"
-
-            # Имя человека (через Re-ID или псевдоним)
-            person_name = state.get_person_name(global_id, cam_id, face_emb is not None)
             if approved:    label = f"{person_name} ПРОПУСК | {ppe}"
             elif in_danger: label = f"{person_name} ОПАСНАЯ ЗОНА | {ppe}"
             else:           label = f"{person_name} Вне зоны | {ppe}"
@@ -172,6 +175,9 @@ def process_frame(frame, cam_id: str, face_worker=None):
             part = f"{person_name} [{ppe}]: "
             if approved:
                 part += "ПРОПУСК | Все СИЗ + ОК"
+            elif gesture_ok:
+                part += "ЖЕСТ-ОК | Нет СИЗ: " + ", ".join(missing)
+                has_any_violation = True
             elif in_danger:
                 part += "ОПАСНАЯ ЗОНА | "
                 part += "Все СИЗ — покажи ОК" if fully_equipped else f"Нет СИЗ: {', '.join(missing)}"

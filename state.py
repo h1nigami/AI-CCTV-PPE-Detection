@@ -21,7 +21,7 @@ FALLBACK_NAMES = [
 ]
 from config import (
     APPROVAL_DURATION, PERSON_ID_GRID,
-    MAX_LOG_SIZE, GESTURE_DISPLAY_DURATION, PRINT_DISPLAY_DURATION,
+    MAX_LOG_SIZE, GESTURE_DISPLAY_DURATION, GESTURE_COOLDOWN, PRINT_DISPLAY_DURATION,
     REID_SIM_THRESHOLD, REID_MAX_EMBEDDINGS, REID_GALLERY_PATH,
     REID_MAX_AGE_DAYS
 )
@@ -48,6 +48,7 @@ class DetectionState:
         self._approved: Dict[int, float]       = {}  # global_id -> expire
         self._gesture_until: float             = 0
         self._print_until: float               = 0
+        self._last_gesture_time: Dict[int, float] = {}  # global_id -> timestamp
 
         # Re-ID
         self._gallery = None
@@ -174,6 +175,15 @@ class DetectionState:
     def is_gesture_active(self) -> bool:
         with self._lock:
             return time.time() < self._gesture_until
+
+    def can_gesture(self, global_id: int) -> bool:
+        with self._lock:
+            last = self._last_gesture_time.get(global_id, 0)
+            return time.time() - last >= GESTURE_COOLDOWN
+
+    def set_gesture_time(self, global_id: int):
+        with self._lock:
+            self._last_gesture_time[global_id] = time.time()
 
     # ── Печать ────────────────────────────────
 

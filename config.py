@@ -21,6 +21,7 @@ MIN_HAND_AREA     = 500
 APPROVAL_DURATION = 300
 PERSON_ID_GRID    = 50
 GESTURE_DISPLAY_DURATION = 3
+GESTURE_COOLDOWN         = 3.0  # сек, повторный жест ОК от того же человека
 PRINT_DISPLAY_DURATION   = 3
 
 FONT_PATHS = [
