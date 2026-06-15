@@ -803,13 +803,9 @@ function resetPPEStatus() {
 
 // ── NOTIFICATIONS ──
 let _notifCount = 0;
-const _lastNotif = {};
+let _lastLogIds = {};
 
-function showNotification(type, title, sub, opts = {}) {
-  const { duration = 4500, dedup = '' } = opts;
-  if (dedup && _lastNotif[dedup] && Date.now() - _lastNotif[dedup] < duration - 500) return;
-  if (dedup) _lastNotif[dedup] = Date.now();
-
+function showNotification(type, title, sub, duration = 4500) {
   const container = document.getElementById('notificationContainer');
   const el = document.createElement('div');
   el.className = `notification ${type}`;
@@ -833,8 +829,15 @@ function showNotification(type, title, sub, opts = {}) {
 
 function updatePPEFromLog(logs) {
   if (!logs || logs.length === 0) { resetPPEStatus(); return; }
-  const src = selectedCam ? logs.find(l => l.cam_id === selectedCam) : logs[0];
+
+  // Собираем последний лог по каждой камере
+  const latestByCam = {};
+  logs.forEach(l => { if (!latestByCam[l.cam_id]) latestByCam[l.cam_id] = l; });
+
+  // Обновляем статус по выбранной камере (или первой)
+  const src = selectedCam ? latestByCam[selectedCam] : Object.values(latestByCam)[0];
   if (!src || !src.message.includes('Людей:')) { resetPPEStatus(); return; }
+
   const msg = src.message;
   const hasHelmet = msg.includes('К ')  && !msg.includes('!К');
   const hasMask   = msg.includes('М ')  && !msg.includes('!М');
@@ -848,54 +851,47 @@ function updatePPEFromLog(logs) {
   setPPE('zone',    !inDanger, inDanger  ? 'пересечена'  : 'не пересечена');
   setPPE('gesture', hasPass,   hasPass   ? 'распознан'   : 'ожидание');
 
-  const gi = document.getElementById('gestureIndicator');
   if (hasPass) {
-    gi.style.display = 'block';
-    setTimeout(() => gi.style.display = 'none', 3000);
+    document.getElementById('gestureIndicator').style.display = 'block';
+    setTimeout(() => document.getElementById('gestureIndicator').style.display = 'none', 3000);
   }
 
-  // ── Уведомления ──
-  // Извлекаем имя первого человека из сообщения
-  const parts = msg.split(' | ');
-  let personName = 'Работник';
-  for (const part of parts) {
-    const m = part.match(/^([^[]+?)\s*(?:\[.*?\])?\s*:\s*(ПРОПУСК|ОПАСНАЯ ЗОНА|Вне зоны)/);
-    if (m) { personName = m[1].trim(); break; }
-  }
-  const inZone = msg.includes('ОПАСНАЯ ЗОНА');
-  const outZone = msg.includes('Вне зоны');
+  // ── Уведомления только для НОВЫХ событий ──
+  for (const log of Object.values(latestByCam)) {
+    const camId = log.cam_id;
+    if (log.id === _lastLogIds[camId]) continue; // уже показывали для этого события
+    _lastLogIds[camId] = log.id;
 
-  // 1. Пропуск (зелёное уведомление)
-  if (hasPass) {
-    showNotification('granted', '✅ ДОСТУП РАЗРЕШЁН',
-      `${personName} — все СИЗ в порядке, добро пожаловать!`,
-      { dedup: 'pass_' + (selectedCam || 'all') });
-    return;
-  }
+    const m = log.message;
+    const hasPassHere = m.includes('ПРОПУСК');
+    const hh = m.includes('К ')  && !m.includes('!К');
+    const hm = m.includes('М ')  && !m.includes('!М');
+    const hv = m.includes('Ж')   && !m.includes('!Ж');
 
-  // 2. Чего не хватает
-  const missingItems = [];
-  if (!hasHelmet) missingItems.push('⛑️ Каска');
-  if (!hasMask)   missingItems.push('😷 Маска');
-  if (!hasVest)   missingItems.push('🦺 Жилет');
+    // Имя человека
+    const parts = m.split(' | ');
+    let pName = 'Работник';
+    for (const part of parts) {
+      const match = part.match(/^([^[]+?)\s*(?:\[.*?\])?\s*:\s*(ПРОПУСК|ОПАСНАЯ ЗОНА|Вне зоны)/);
+      if (match) { pName = match[1].trim(); break; }
+    }
 
-  if (inZone && missingItems.length > 0) {
-    // Опасная зона + нет СИЗ
-    showNotification('violation', '🚨 НАРУШЕНИЕ — ДОСТУП ЗАПРЕЩЁН',
-      `${personName} в ОПАСНОЙ ЗОНЕ без СИЗ`,
-      { dedup: 'viol_' + (selectedCam || 'all'), duration: 5000 });
-  } else if (missingItems.length > 0) {
-    // Нет СИЗ (но вне зоны — предупреждение)
-    showNotification('missing', '⚠️ НЕ ХВАТАЕТ СИЗ',
-      `${personName}: ${missingItems.join(' · ')}`,
-      { dedup: 'miss_' + (selectedCam || 'all'), duration: 4000 });
-  }
+    // 1. Жест ОК → пропуск
+    if (hasPassHere) {
+      showNotification('granted', '✅ ЖЕСТ «ОК» РАСПОЗНАН',
+        `${pName} — доступ разрешён!`, 5000);
+      continue;
+    }
 
-  // 3. Опасная зона (отдельно, если СИЗ в порядке)
-  if (inZone && missingItems.length === 0) {
-    showNotification('warning', '⚠️ ВНИМАНИЕ — ОПАСНАЯ ЗОНА',
-      `${personName} вошёл в опасную зону. Покажите жест ОК для пропуска.`,
-      { dedup: 'zone_' + (selectedCam || 'all'), duration: 4000 });
+    // 2. Не хватает СИЗ
+    const missing = [];
+    if (!hh) missing.push('⛑️ Каска');
+    if (!hm) missing.push('😷 Маска');
+    if (!hv) missing.push('🦺 Жилет');
+    if (missing.length > 0) {
+      showNotification('missing', '⚠️ НЕ ХВАТАЕТ СИЗ',
+        `${pName}: ${missing.join(' · ')}`, 4000);
+    }
   }
 }
 
