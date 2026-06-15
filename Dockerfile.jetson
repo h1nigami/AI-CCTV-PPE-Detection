@@ -49,6 +49,10 @@ RUN PIP_INDEX_URL="https://pypi.org/simple" PIP_TRUSTED_HOST="pypi.org" \
 RUN PIP_INDEX_URL="https://pypi.org/simple" PIP_EXTRA_INDEX_URL="" PIP_TRUSTED_HOST="pypi.org" \
     pip install --no-cache-dir --timeout=300 insightface==0.7.3
 
+# onnxruntime может переустановить numpy ≥2 — возвращаем 1.x
+RUN PIP_INDEX_URL="https://pypi.org/simple" PIP_EXTRA_INDEX_URL="" PIP_TRUSTED_HOST="pypi.org" \
+    pip install --no-cache-dir --timeout=300 "numpy<2" --force-reinstall
+
 # ── Код приложения ─────────────────────────────────────────
 COPY . .
 RUN mkdir -p uploads models data
