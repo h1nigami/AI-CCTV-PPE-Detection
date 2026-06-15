@@ -7,16 +7,24 @@ if not hasattr(cv2, 'INTER_NEAREST_EXACT'):
     cv2.INTER_NEAREST_EXACT = cv2.INTER_NEAREST
 
 from ultralytics import YOLO
-from flask import Flask, send_file, render_template, Response, request, jsonify
+from flask import Flask, send_file, render_template, Response, request, jsonify, send_from_directory
 from main import generate_live_feed, start_live, stop_live, state, annotated_buffers, add_camera, remove_camera, rename_camera, camera_captures, _init_camera_resources
 from config import CAMERAS, save_cameras
 from waitress import serve
 
-app = Flask(__name__)
+FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "frontend", "dist")
+
+app = Flask(__name__, static_folder=None)
 
 
-@app.route("/")
-def index():
+@app.route("/", defaults={"path": ""})
+@app.route("/<path:path>")
+def serve_frontend(path):
+    if path and os.path.exists(os.path.join(FRONTEND_DIR, path)):
+        return send_from_directory(FRONTEND_DIR, path)
+    index_path = os.path.join(FRONTEND_DIR, "index.html")
+    if os.path.exists(index_path):
+        return send_file(index_path)
     return render_template("index.html")
 
 

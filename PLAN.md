@@ -9,8 +9,13 @@
 - ✅ Опасные зоны (на основе конусов безопасности)
 - ✅ Flask Web UI с панелью статистики, логами, галереей лиц
 - ✅ REST API (камеры, логи, Re-ID, загрузка файлов)
-- ✅ Dockerfile
+- ✅ Dockerfile (multi-stage с frontend сборкой)
 - ✅ CSV экспорт логов
+- ✅ Vite + React + TypeScript frontend (в процессе)
+- ✅ CameraGrid с полноэкранным режимом (клик, Escape)
+- ✅ Модальные окна: галерея лиц, управление камерами
+- ✅ Уведомления о жестах OK / нарушениях
+- ✅ Polling логов в реальном времени (1s)
 
 ---
 
@@ -645,11 +650,17 @@ frigate_disk_usage_percent{mount="/media"} 45
 ### Фаза 7: UI Renaissance
 **Срок: 2-3 недели** — 🟢 Приоритет 3
 
-- [ ] TypeScript + Preact frontend (или итеративное улучшение)
-- [ ] Адаптивная сетка камер
+- [x] TypeScript + React + Vite frontend
+- [x] Адаптивная сетка камер с полноэкранным режимом (клик ↔ fullscreen, Escape)
+- [x] Левая панель: статус СИЗ, счётчики, люди в кадре
+- [x] Правая панель: события (лог) в реальном времени
+- [x] Уведомления при жесте OK / нарушении
+- [x] Модальное окно управления галереей лиц
+- [x] Модальное окно управления камерами (добавить/удалить/переименовать)
+- [x] Vite proxy → Flask API (dev режим)
 - [ ] Multi-camera синхронизация
 - [ ] Drag-and-drop layout
-- [ ] Темная тема (уже есть) + светлая тема
+- [ ] Светлая тема
 - [ ] Keyboard shortcuts
 
 ---
@@ -672,7 +683,7 @@ frigate_disk_usage_percent{mount="/media"} 45
 | RTSP restream | ❌ Нет | ffmpeg restream |
 | Docker | Один контейнер | Docker Compose + hardware passthrough |
 | Мониторинг | print() | Prometheus + JSON logs + healthchecks |
-| Web UI | Vanilla JS | TypeScript + Preact + Canvas |
+| Web UI | Vanilla JS + Flask templates | Vite + React + TypeScript + Canvas (в работе) |
 
 ---
 
