@@ -78,7 +78,7 @@ def detection_log():
     return jsonify({"logs": [
         {"id": e.id, "timestamp": e.timestamp,
          "message": e.message, "category": e.category,
-         "cam_id": e.cam_id}
+         "cam_id": e.cam_id, "global_id": e.global_id}
         for e in reversed(logs)
     ]})
 
@@ -135,6 +135,39 @@ def export_logs():
         mimetype="text/csv; charset=utf-8-sig",
         headers={"Content-Disposition": "attachment; filename=ppe_logs.csv"}
     )
+
+
+# ── API управления галереей лиц (Re-ID) ──
+
+@app.route("/api/reid/persons")
+def reid_list():
+    if state.gallery is None:
+        return jsonify({"error": "Re-ID не активен"}), 400
+    return jsonify({"persons": state.gallery.list_all()})
+
+@app.route("/api/reid/persons/<int:global_id>", methods=["DELETE"])
+def reid_delete(global_id: int):
+    if state.gallery is None:
+        return jsonify({"error": "Re-ID не активен"}), 400
+    if state.gallery.delete(global_id):
+        return jsonify({"status": "deleted", "global_id": global_id})
+    return jsonify({"error": "Не найдено"}), 404
+
+@app.route("/api/reid/clear", methods=["POST"])
+def reid_clear():
+    if state.gallery is None:
+        return jsonify({"error": "Re-ID не активен"}), 400
+    state.gallery.clear()
+    return jsonify({"status": "cleared"})
+
+@app.route("/api/reid/stats")
+def reid_stats():
+    if state.gallery is None:
+        return jsonify({"error": "Re-ID не активен"}), 400
+    return jsonify({
+        "total_persons": state.gallery.count,
+        "total_approved": len(list(state._approved.keys())) if hasattr(state, '_approved') else 0,
+    })
 
 
 if __name__ == "__main__":

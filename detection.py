@@ -1,8 +1,10 @@
 import numpy as np
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Dict, Any
 from config import (
     MIN_CONES, ZONE_EXPAND_PX, TOP_RATIO, CONF_THRESH
 )
+
+CLASS_PERSON = 5
 
 
 def get_boxes_by_class(boxes, classes, names, class_name: str) -> List:
@@ -39,15 +41,23 @@ def is_in_danger_zone(person_box, danger_zone) -> bool:
     return zx1 <= foot_x <= zx2 and zy1 <= foot_y <= zy2
 
 
-def run_detection(frame, model):
-    """Запускает модель и возвращает отфильтрованные боксы по классам"""
+def run_detection(frame, model, face_recognizer=None) -> Dict[str, Any]:
+    """Запускает модель и возвращает отфильтрованные боксы по классам.
+    Если передан face_recognizer — извлекает эмбеддинги лиц для людей."""
     results = model(frame, conf=CONF_THRESH, verbose=False)[0]
     names   = model.names
     boxes   = results.boxes.xyxy.cpu().numpy()
     classes = results.boxes.cls.cpu().numpy().astype(int)
 
+    person_boxes = get_boxes_by_class(boxes, classes, names, "Человек")
+    face_embeddings = None
+
+    if face_recognizer is not None and len(person_boxes) > 0:
+        face_embeddings = face_recognizer.get_embeddings(frame, person_boxes)
+
     return {
-        "persons": get_boxes_by_class(boxes, classes, names, "Человек"),
+        "persons": person_boxes,
+        "face_embeddings": face_embeddings,
         "helmets": get_boxes_by_class(boxes, classes, names, "Каска"),
         "masks":   get_boxes_by_class(boxes, classes, names, "Маска"),
         "vests":   get_boxes_by_class(boxes, classes, names, "Защитный жилет"),

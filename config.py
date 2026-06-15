@@ -55,3 +55,11 @@ CLASS_NAMES = {
 }
 
 PRINTER_NAME = "Argox OS-2130D PPLA"
+
+# ── Re-ID (распознавание лиц) ──
+REID_SIM_THRESHOLD    = 0.55
+REID_MAX_EMBEDDINGS   = 5
+REID_MAX_AGE_DAYS     = 30
+REID_GALLERY_PATH     = BASE_DIR / "data" / "face_gallery.pkl"
+REID_DET_SIZE         = (640, 640)
+REID_FRAME_SKIP       = 3  # запускать рекогнайшн каждый N-й кадр

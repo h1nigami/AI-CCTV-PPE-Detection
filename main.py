@@ -7,7 +7,8 @@ import torch
 from ultralytics import YOLO
 
 from config import (
-    MODEL_PATH, POSE_MODEL_PATH, CLASS_NAMES, CAMERAS, CONF_THRESH
+    MODEL_PATH, POSE_MODEL_PATH, CLASS_NAMES, CAMERAS, CONF_THRESH,
+    REID_GALLERY_PATH, REID_DET_SIZE, REID_FRAME_SKIP
 )
 from camera import FrameBuffer, CameraCapture
 from detection import run_detection, get_danger_zone, has_item_on_person, is_in_danger_zone
@@ -29,8 +30,20 @@ model.model.names = CLASS_NAMES
 pose_model = YOLO(str(POSE_MODEL_PATH))
 pose_model.to(DEVICE)
 
+# ── Re-ID (распознавание лиц) ──
+face_recognizer = None
+try:
+    from reid import FaceRecognizer
+    face_recognizer = FaceRecognizer(model_name='buffalo_l', det_size=REID_DET_SIZE)
+except Exception as e:
+    print(f"[ReID] InsightFace не загружен: {e}. Re-ID отключён.")
+
 # ── Глобальный стейт ──
 state = DetectionState()
+state.init_gallery(REID_GALLERY_PATH)
+
+# Счётчик кадров — запускаем распознавание лиц не каждый кадр
+_frame_count = 0
 
 # ── Буфер и захват для каждой камеры ──
 frame_buffers: dict[str, FrameBuffer]     = {}
@@ -51,12 +64,15 @@ detection_threads: dict[str, threading.Thread] = {}
 #  Общая обработка одного кадра
 # ─────────────────────────────────────────────
 
-def process_frame(frame, cam_id: str):
+def process_frame(frame, cam_id: str, face_rec=None, frame_idx: int = 0):
     """
     Детектирует СИЗ, опасную зону, жесты.
-    Возвращает (annotated_frame, log_message, category).
+    Возвращает (annotated_frame, log_message, category, [global_ids]).
     """
-    detected    = run_detection(frame, model)
+    # Запускаем рекогнайшн не каждый кадр
+    use_face = face_rec is not None and (frame_idx % REID_FRAME_SKIP == 0)
+
+    detected = run_detection(frame, model, face_recognizer=face_rec if use_face else None)
     danger_zone = get_danger_zone(detected["cones"])
 
     # ── Рисуем зону и СИЗ боксы ──
@@ -89,16 +105,22 @@ def process_frame(frame, cam_id: str):
     has_any_violation = False
 
     msg_parts = [f"{datetime.now().strftime('%H:%M:%S')} [{cam_id}]"]
+    global_ids = []
 
     if detected["persons"]:
         msg_parts.append(f"Людей: {persons_count}")
 
         for idx, pbox in enumerate(detected["persons"]):
+            # Глобальный ID через лицо
+            face_emb = (detected["face_embeddings"] or [None])[idx] if detected.get("face_embeddings") else None
+            global_id = state.get_global_id(idx, cam_id, face_embedding=face_emb, person_box=pbox)
+            global_ids.append(global_id)
+
             has_helmet = any(has_item_on_person(pbox, h) for h in detected["helmets"])
             has_mask   = any(has_item_on_person(pbox, m) for m in detected["masks"])
             has_vest   = any(has_item_on_person(pbox, v) for v in detected["vests"])
             in_danger  = is_in_danger_zone(pbox, danger_zone)
-            approved   = state.is_approved(pbox, cam_id)
+            approved   = state.is_approved(pbox, cam_id, global_id=global_id)
 
             fully_equipped = has_helmet and has_mask and has_vest
             missing = [n for f,n in [(has_helmet,"каска"),(has_mask,"маска"),(has_vest,"жилет")] if not f]
@@ -106,7 +128,7 @@ def process_frame(frame, cam_id: str):
             # Жест ОК → пропуск
             if fully_equipped and not approved:
                 if detect_ok_gesture(frame, pbox, pose_model):
-                    state.approve(pbox, cam_id)
+                    state.approve(pbox, cam_id, global_id=global_id)
                     approved = True
                     state.set_gesture_detected()
 
@@ -127,9 +149,11 @@ def process_frame(frame, cam_id: str):
 
             ppe = f"{'К' if has_helmet else '!К'} {'М' if has_mask else '!М'} {'Ж' if has_vest else '!Ж'}"
 
-            if approved:    label = f"Чел.{idx+1} ПРОПУСК | {ppe}"
-            elif in_danger: label = f"Чел.{idx+1} ОПАСНАЯ ЗОНА | {ppe}"
-            else:           label = f"Чел.{idx+1} Вне зоны | {ppe}"
+            # Показываем global_id на кадре если Re-ID активен
+            id_label = f"ID#{global_id}" if face_emb is not None else f"#{idx+1}"
+            if approved:    label = f"{id_label} ПРОПУСК | {ppe}"
+            elif in_danger: label = f"{id_label} ОПАСНАЯ ЗОНА | {ppe}"
+            else:           label = f"{id_label} Вне зоны | {ppe}"
 
             frame = draw_person(frame, pbox, label, in_danger, not fully_equipped, approved)
 
@@ -137,7 +161,7 @@ def process_frame(frame, cam_id: str):
                 frame = draw_hint(frame, pbox)
 
             # Строим сообщение лога
-            part = f"Чел.{idx+1}: "
+            part = f"{id_label}: "
             if approved:
                 part += "ПРОПУСК | Все СИЗ + ОК"
             elif in_danger:
@@ -176,7 +200,7 @@ def process_frame(frame, cam_id: str):
     category = "нарушение" if has_any_violation else \
                "внимание"  if danger_zone is not None and detected["persons"] else "норма"
 
-    return frame, message, category
+    return frame, message, category, global_ids
 
 
 # ─────────────────────────────────────────────
@@ -186,6 +210,7 @@ def process_frame(frame, cam_id: str):
 def detection_worker(cam_id: str):
     raw_buf = frame_buffers[cam_id]
     out_buf = annotated_buffers[cam_id]
+    frame_idx = 0
 
     min_interval = 0.05
 
@@ -197,15 +222,19 @@ def detection_worker(cam_id: str):
             continue
 
         try:
-            annotated, message, category = process_frame(frame.copy(), cam_id)
+            annotated, message, category, global_ids = process_frame(
+                frame.copy(), cam_id, face_rec=face_recognizer, frame_idx=frame_idx)
+            frame_idx += 1
             out_buf.write(annotated)
 
+            gid = global_ids[0] if global_ids else 0
             state.add_log(LogEntry(
                 id        = str(datetime.now().timestamp()),
                 timestamp = datetime.now().strftime('%H:%M:%S'),
                 message   = message,
                 category  = category,
                 cam_id    = cam_id,
+                global_id = gid,
             ))
             print(message)
 
@@ -285,6 +314,7 @@ def stop_live():
 
 def detection_loop():
     cam_ids = list(CAMERAS.keys())
+    frame_idx = 0
     while state.live_active:
         for cam_id in cam_ids:
             if not state.live_active:
@@ -295,17 +325,21 @@ def detection_loop():
             if frame is None:
                 continue
             try:
-                annotated, message, category = process_frame(frame.copy(), cam_id)
+                annotated, message, category, global_ids = process_frame(
+                    frame.copy(), cam_id, face_rec=face_recognizer, frame_idx=frame_idx)
                 out_buf.write(annotated)
+                gid = global_ids[0] if global_ids else 0
                 state.add_log(LogEntry(
                     id        = str(datetime.now().timestamp()),
                     timestamp = datetime.now().strftime('%H:%M:%S'),
                     message   = message,
                     category  = category,
                     cam_id    = cam_id,
+                    global_id = gid,
                 ))
                 print(message)
             except Exception as e:
                 print(f"[{cam_id}] Ошибка детекции: {e}")
                 traceback.print_exc()
+        frame_idx += 1
         time.sleep(0.05)

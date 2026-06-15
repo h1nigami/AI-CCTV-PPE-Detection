@@ -35,9 +35,20 @@ RUN PIP_INDEX_URL="https://pypi.org/simple" PIP_EXTRA_INDEX_URL="" PIP_TRUSTED_H
 RUN PIP_INDEX_URL="https://pypi.org/simple" PIP_EXTRA_INDEX_URL="" PIP_TRUSTED_HOST="pypi.org" \
     pip install --no-cache-dir --timeout=300 "numpy<2"
 
+# onnxruntime-gpu для Jetson (ARM64 + CUDA 12)
+RUN PIP_INDEX_URL="https://pypi.org/simple" PIP_EXTRA_INDEX_URL="" PIP_TRUSTED_HOST="pypi.org" \
+    pip install --no-cache-dir --timeout=300 \
+    --extra-index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-cuda-12/pypi/simple/ \
+    onnxruntime-gpu==1.18.0 || echo "onnxruntime-gpu fallback, пробуем CPU" && \
+    pip install --no-cache-dir --timeout=300 onnxruntime==1.18.0
+
+# InsightFace для распознавания лиц
+RUN PIP_INDEX_URL="https://pypi.org/simple" PIP_EXTRA_INDEX_URL="" PIP_TRUSTED_HOST="pypi.org" \
+    pip install --no-cache-dir --timeout=300 insightface==0.7.3
+
 # ── Код приложения ─────────────────────────────────────────
 COPY . .
-RUN mkdir -p uploads models
+RUN mkdir -p uploads models data
 
 EXPOSE 8000
 CMD ["python3", "-u", "app.py"]
