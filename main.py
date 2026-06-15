@@ -149,11 +149,11 @@ def process_frame(frame, cam_id: str, face_rec=None, frame_idx: int = 0):
 
             ppe = f"{'К' if has_helmet else '!К'} {'М' if has_mask else '!М'} {'Ж' if has_vest else '!Ж'}"
 
-            # Показываем global_id на кадре если Re-ID активен
-            id_label = f"ID#{global_id}" if face_emb is not None else f"#{idx+1}"
-            if approved:    label = f"{id_label} ПРОПУСК | {ppe}"
-            elif in_danger: label = f"{id_label} ОПАСНАЯ ЗОНА | {ppe}"
-            else:           label = f"{id_label} Вне зоны | {ppe}"
+            # Имя человека (через Re-ID или псевдоним)
+            person_name = state.get_person_name(global_id, cam_id, face_emb is not None)
+            if approved:    label = f"{person_name} ПРОПУСК | {ppe}"
+            elif in_danger: label = f"{person_name} ОПАСНАЯ ЗОНА | {ppe}"
+            else:           label = f"{person_name} Вне зоны | {ppe}"
 
             frame = draw_person(frame, pbox, label, in_danger, not fully_equipped, approved)
 
@@ -161,7 +161,7 @@ def process_frame(frame, cam_id: str, face_rec=None, frame_idx: int = 0):
                 frame = draw_hint(frame, pbox)
 
             # Строим сообщение лога
-            part = f"{id_label}: "
+            part = f"{person_name}: "
             if approved:
                 part += "ПРОПУСК | Все СИЗ + ОК"
             elif in_danger:
@@ -285,30 +285,40 @@ def generate_live_feed(cam_id: str = "cam1"):
 # ─────────────────────────────────────────────
 
 def start_live():
-    if not state.live_active:
-        state.live_active = True
-        state.clear_log()
+    if state.live_active:
+        stop_live()
+        time.sleep(0.5)
 
-        for cam_id in CAMERAS:
-            camera_captures[cam_id].start()
+    state.clear_log()
+    for buf in annotated_buffers.values():
+        buf.clear()
 
-        t = threading.Thread(target=detection_loop, daemon=True)
-        detection_threads["main"] = t
-        t.start()
+    state.live_active = True
 
-        print(f"Детекция запущена на {len(CAMERAS)} камерах")
+    for cam_id in CAMERAS:
+        camera_captures[cam_id].start()
+
+    t = threading.Thread(target=detection_loop, daemon=True)
+    detection_threads["main"] = t
+    t.start()
+
+    print(f"Детекция запущена на {len(CAMERAS)} камерах")
 
 
 def stop_live():
+    if not state.live_active:
+        return
     state.live_active = False
 
     for cam_id in CAMERAS:
         camera_captures[cam_id].stop()
 
-    for t in detection_threads.values():
-        t.join(timeout=3)
+    for t in list(detection_threads.values()):
+        t.join(timeout=2)
 
     detection_threads.clear()
+    for buf in annotated_buffers.values():
+        buf.clear()
     print("Детекция остановлена")
 
 

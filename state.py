@@ -1,9 +1,24 @@
 import time
 import threading
+import random
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Dict, Tuple, Optional
 import numpy as np
+
+
+FALLBACK_NAMES = [
+    "Александр", "Михаил", "Иван", "Сергей", "Андрей",
+    "Дмитрий", "Алексей", "Владимир", "Евгений", "Николай",
+    "Никита", "Роман", "Кирилл", "Павел", "Даниил",
+    "Максим", "Егор", "Илья", "Владислав", "Артём",
+    "Олег", "Антон", "Глеб", "Тимофей", "Вадим",
+    "Елена", "Ольга", "Наталья", "Анна", "Татьяна",
+    "Светлана", "Ирина", "Мария", "Виктория", "Дарья",
+    "Юлия", "Анастасия", "Екатерина", "Надежда", "Людмила",
+    "Алиса", "Василиса", "Ксения", "Полина", "Вероника",
+    "Варвара", "Арина", "Злата", "София", "Маргарита",
+]
 from config import (
     APPROVAL_DURATION, PERSON_ID_GRID,
     MAX_LOG_SIZE, GESTURE_DISPLAY_DURATION, PRINT_DISPLAY_DURATION,
@@ -37,6 +52,8 @@ class DetectionState:
         # Re-ID
         self._gallery = None
         self._track_to_global: Dict[Tuple[str, int], int] = {}  # (cam_id, track_id) -> global_id
+        self._fallback_names: Dict[int, str] = {}  # global_id -> имя без лица
+        self._used_fallback: set = set()
 
     def init_gallery(self, gallery_path: Optional[Path] = None):
         if gallery_path is None:
@@ -75,14 +92,17 @@ class DetectionState:
         cy = int((person_box[1] + person_box[3]) / 2)
         return (cam_id, cx // PERSON_ID_GRID, cy // PERSON_ID_GRID)
 
+    def _assign_fallback_name(self) -> str:
+        available = [n for n in FALLBACK_NAMES if n not in self._used_fallback]
+        if not available:
+            return f"Гость_{len(self._fallback_names) + 1}"
+        name = random.choice(available)
+        self._used_fallback.add(name)
+        return name
+
     def get_global_id(self, track_id: int, cam_id: str,
                       face_embedding: Optional[np.ndarray] = None,
                       person_box=None) -> int:
-        """
-        Возвращает global_person_id.
-        Сначала ищет в track->global маппинге (на случай без лица).
-        Если есть face_embedding — матчит по галерее (кросс-камерный).
-        """
         key = (cam_id, track_id)
         with self._reid_lock:
             if key in self._track_to_global:
@@ -91,8 +111,11 @@ class DetectionState:
             if face_embedding is not None and self._gallery is not None:
                 global_id = self._gallery.match_or_register(face_embedding, cam_id)
             else:
-                # Фоллбэк через детерминированный hash
                 global_id = hash(key) & 0x7FFFFFFF
+                if global_id not in self._fallback_names:
+                    name = self._assign_fallback_name()
+                    self._fallback_names[global_id] = name
+                    print(f"[ReID] Новый: {name} (ID={global_id}, камера {cam_id}, без лица)")
 
             self._track_to_global[key] = global_id
             return global_id
@@ -100,6 +123,18 @@ class DetectionState:
     def clear_tracks(self):
         with self._reid_lock:
             self._track_to_global.clear()
+            self._fallback_names.clear()
+            self._used_fallback.clear()
+
+    def get_person_name(self, global_id: int, cam_id: str, has_face: bool = False) -> str:
+        name = self._fallback_names.get(global_id)
+        if name:
+            return name
+        if self._gallery is not None:
+            name = self._gallery.get_name(global_id)
+            if not name.startswith("ID"):
+                return name
+        return f"#{global_id % 1000}"
 
     # ── Пропуска (по global_id, кросс-камерные) ──
 

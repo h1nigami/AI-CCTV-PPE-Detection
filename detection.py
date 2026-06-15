@@ -64,3 +64,4 @@ def run_detection(frame, model, face_recognizer=None) -> Dict[str, Any]:
         "cones":   get_boxes_by_class(boxes, classes, names, "Конус безопасности"),
     }
 
+

@@ -1,4 +1,5 @@
 import pickle
+import random
 import threading
 import time
 from pathlib import Path
@@ -10,6 +11,20 @@ try:
     INSIGHTFACE_AVAILABLE = True
 except ImportError:
     INSIGHTFACE_AVAILABLE = False
+
+
+RUSSIAN_NAMES = [
+    "Александр", "Михаил", "Иван", "Сергей", "Андрей",
+    "Дмитрий", "Алексей", "Владимир", "Евгений", "Николай",
+    "Никита", "Роман", "Кирилл", "Павел", "Даниил",
+    "Максим", "Егор", "Илья", "Владислав", "Артём",
+    "Олег", "Антон", "Глеб", "Тимофей", "Вадим",
+    "Елена", "Ольга", "Наталья", "Анна", "Татьяна",
+    "Светлана", "Ирина", "Мария", "Виктория", "Дарья",
+    "Юлия", "Анастасия", "Екатерина", "Надежда", "Людмила",
+    "Алиса", "Василиса", "Ксения", "Полина", "Вероника",
+    "Варвара", "Арина", "Злата", "София", "Маргарита",
+]
 
 
 class FaceGallery:
@@ -51,6 +66,13 @@ class FaceGallery:
     def _cosine_sim(self, a: np.ndarray, b: np.ndarray) -> float:
         return float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b) + 1e-8))
 
+    def _assign_name(self) -> str:
+        used = {d.get('name', '') for d in self._gallery.values()}
+        available = [n for n in RUSSIAN_NAMES if n not in used]
+        if not available:
+            return f"Гость_{self._next_id}"
+        return random.choice(available)
+
     def match_or_register(self, embedding: np.ndarray, cam_id: str) -> int:
         with self._lock:
             best_id = None
@@ -74,14 +96,23 @@ class FaceGallery:
 
             new_id = self._next_id
             self._next_id += 1
+            name = self._assign_name()
             self._gallery[new_id] = {
                 'embeddings': [embedding],
                 'last_seen': time.time(),
                 'cameras': {cam_id},
+                'name': name,
             }
             self._save()
-            print(f"[ReID] Новый global_id={new_id} (камера {cam_id}, sim={best_sim:.3f})")
+            print(f"[ReID] Новый: {name} (ID={new_id}, камера {cam_id}, sim={best_sim:.3f})")
             return new_id
+
+    def get_name(self, global_id: int) -> str:
+        with self._lock:
+            data = self._gallery.get(global_id)
+            if data:
+                return data.get('name', f"ID{global_id}")
+            return f"ID{global_id}"
 
     def get_info(self, global_id: int) -> Optional[Dict]:
         with self._lock:
@@ -90,6 +121,7 @@ class FaceGallery:
                 return None
             return {
                 'global_id': global_id,
+                'name': data.get('name', f"ID{global_id}"),
                 'last_seen': data['last_seen'],
                 'cameras': list(data['cameras']),
                 'embedding_count': len(data['embeddings']),
@@ -98,7 +130,8 @@ class FaceGallery:
     def list_all(self) -> List[Dict]:
         with self._lock:
             return [
-                {'global_id': gid, 'last_seen': d['last_seen'],
+                {'global_id': gid, 'name': d.get('name', f"ID{gid}"),
+                 'last_seen': d['last_seen'],
                  'cameras': list(d['cameras']),
                  'embedding_count': len(d['embeddings'])}
                 for gid, d in self._gallery.items()
