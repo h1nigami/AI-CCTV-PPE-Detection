@@ -25,11 +25,24 @@ from state import DetectionState, LogEntry
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 print(f"Используется устройство: {DEVICE}")
 
-model      = YOLO(str(MODEL_PATH))
+# Автовыбор TensorRT engine (.engine) или стандартного .pt
+def _resolve_model(path: Path) -> Path:
+    engine = path.with_suffix('.engine')
+    return engine if engine.exists() else path
+
+model_path  = _resolve_model(MODEL_PATH)
+pose_path   = _resolve_model(POSE_MODEL_PATH)
+
+model       = YOLO(str(model_path))
 model.to(DEVICE)
-model.model.names = CLASS_NAMES
-pose_model = YOLO(str(POSE_MODEL_PATH))
+if model_path.suffix == '.pt':
+    model.model.names = CLASS_NAMES
+pose_model  = YOLO(str(pose_path))
 pose_model.to(DEVICE)
+
+is_tensorrt = model_path.suffix == '.engine'
+if is_tensorrt:
+    print("[TensorRT] FP16 engine loaded")
 
 # ── Re-ID (распознавание лиц) ──
 face_recognizer = None

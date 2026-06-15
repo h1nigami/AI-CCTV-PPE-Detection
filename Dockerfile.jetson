@@ -30,7 +30,8 @@ RUN PIP_INDEX_URL="https://pypi.org/simple" PIP_EXTRA_INDEX_URL="" PIP_TRUSTED_H
         ultralytics \
         flask \
         waitress \
-        pillow
+        pillow \
+        onnx onnxsim
 
 RUN PIP_INDEX_URL="https://pypi.org/simple" PIP_EXTRA_INDEX_URL="" PIP_TRUSTED_HOST="pypi.org" \
     pip install --no-cache-dir --timeout=300 "numpy<2"
@@ -61,4 +62,8 @@ RUN rm -rf /usr/local/lib/python*/dist-packages/{cv2,cv2*.dist-info,opencv*} 2>/
     mkdir -p uploads models data
 
 EXPOSE 8000
-CMD ["python3", "-u", "app.py"]
+# При первом старте экспортирует .pt → .engine (TensorRT FP16)
+# Требует --runtime nvidia, поэтому делается в CMD, а не в RUN
+# .engine сохраняются в /app/models — для персистентности смонтируйте volume
+RUN chmod +x entrypoint.sh
+CMD ["/app/entrypoint.sh"]
