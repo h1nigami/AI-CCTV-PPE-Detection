@@ -188,7 +188,7 @@ def process_frame(frame, cam_id: str, face_worker=None):
             # Строим сообщение лога (с ppe для фронта)
             part = f"{person_name} [{ppe}]: "
             if approved:
-                part += "ПРОПУСК | Все СИЗ + ОК"
+                part += "ПРОПУСК | Все СИЗ + ЖЕСТ-ОК"
             elif gesture_ok:
                 part += "ЖЕСТ-ОК | Нет СИЗ: " + ", ".join(missing)
                 has_any_violation = True

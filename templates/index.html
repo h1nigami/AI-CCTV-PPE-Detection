@@ -987,7 +987,7 @@ function updatePPEFromLog(logs) {
     const parts = m.split(' | ');
     let pName = 'Работник';
     for (const part of parts) {
-      const match = part.match(/^([^[]+?)\s*(?:\[.*?\])?\s*:\s*(ПРОПУСК|ОПАСНАЯ ЗОНА|Вне зоны)/);
+      const match = part.match(/^([^[]+?)\s*(?:\[.*?\])?\s*:\s*(ПРОПУСК|ОПАСНАЯ ЗОНА|Вне зоны|ЖЕСТ-ОК)/);
       if (match) { pName = match[1].trim(); break; }
     }
 
