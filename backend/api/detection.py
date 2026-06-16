@@ -62,6 +62,21 @@ def configure_detection_routes(app, state, annotated_buffers, generate_live_feed
                      "Pragma": "no-cache", "Expires": "0"},
         )
 
+    @app.route("/api/detect-modes", methods=["GET"])
+    def api_get_detect_modes():
+        from backend.config import DETECT_MODES
+        return jsonify({"modes": dict(DETECT_MODES)})
+
+    @app.route("/api/detect-modes", methods=["PUT"])
+    def api_set_detect_modes():
+        from backend.config import DETECT_MODES, save_detect_modes
+        data = request.get_json() or {}
+        for key in ("people", "ppe", "faces"):
+            if key in data:
+                DETECT_MODES[key] = bool(data[key])
+        save_detect_modes()
+        return jsonify({"status": "updated", "modes": dict(DETECT_MODES)})
+
     @app.route("/api/status")
     def api_status():
         return jsonify({"running": state.live_active})

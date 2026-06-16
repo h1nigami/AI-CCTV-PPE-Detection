@@ -158,9 +158,14 @@ export const api = {
     return request<{ events: TimelineEvent[] }>(`/api/events${params}`)
   },
 
-  // ---- Группы камер ----
-  getGroups: () =>
-    request<{ groups: { id: string; name: string; cameraNames: string[] }[] }>("/api/cameras/groups"),
+  // ---- Режимы детекции ----
+  getDetectModes: () =>
+    request<{ modes: Record<string, boolean> }>("/api/detect-modes"),
+  setDetectModes: (modes: Record<string, boolean>) =>
+    request<{ status: string; modes: Record<string, boolean> }>("/api/detect-modes", {
+      method: "PUT",
+      body: JSON.stringify(modes),
+    }),
 
   // ---- Вспомогательные URL ----
   /** URL для HTTP polling (статичный JPEG-кадр) */

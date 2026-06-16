@@ -1,28 +1,54 @@
-import { useState, useRef, useEffect } from "react"
+import { useState, useRef, useEffect, useCallback } from "react"
 import { useNavigate, useLocation } from "react-router-dom"
 import { useAuth } from "../contexts/AuthContext"
-import { useCamerasContext } from "../contexts/CameraContext"
+import { api } from "../api/client"
 import { useClock } from "../hooks/useClock"
+
+const MODE_LABELS: Record<string, string> = {
+  people: "Люди",
+  ppe: "СИЗ",
+  faces: "Лица",
+}
 
 export function Header() {
   const now = useClock()
   const { user, logout } = useAuth()
-  const { groups, activeGroupId, setActiveGroup } = useCamerasContext()
   const navigate = useNavigate()
   const location = useLocation()
 
-  const [groupOpen, setGroupOpen] = useState(false)
-  const groupRef = useRef<HTMLDivElement>(null)
+  const [modesOpen, setModesOpen] = useState(false)
+  const [modes, setModes] = useState<Record<string, boolean>>({
+    people: true,
+    ppe: true,
+    faces: true,
+  })
+  const modesRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    api.getDetectModes().then((data) => {
+      if (data.modes) setModes(data.modes)
+    }).catch(() => {})
+  }, [])
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (groupRef.current && !groupRef.current.contains(e.target as Node)) {
-        setGroupOpen(false)
+      if (modesRef.current && !modesRef.current.contains(e.target as Node)) {
+        setModesOpen(false)
       }
     }
     document.addEventListener("mousedown", handler)
     return () => document.removeEventListener("mousedown", handler)
   }, [])
+
+  const toggleMode = useCallback(async (key: string) => {
+    const next = { ...modes, [key]: !modes[key] }
+    setModes(next)
+    try {
+      await api.setDetectModes(next)
+    } catch {
+      setModes(modes)
+    }
+  }, [modes])
 
   const timeStr = now.toLocaleTimeString("ru-RU")
   const dateStr = now.toLocaleDateString("ru-RU", {
@@ -35,8 +61,6 @@ export function Header() {
     logout()
     navigate("/login")
   }
-
-  const activeGroup = groups.find((g) => g.id === activeGroupId)
 
   return (
     <header style={styles.header}>
@@ -82,10 +106,10 @@ export function Header() {
       </div>
 
       <div style={styles.headerRight}>
-        <div ref={groupRef} style={styles.groupWrapper}>
+        <div ref={modesRef} style={styles.modesWrapper}>
           <button
-            style={styles.groupBtn}
-            onClick={() => setGroupOpen((o) => !o)}
+            style={styles.modesBtn}
+            onClick={() => setModesOpen((o) => !o)}
           >
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
               <rect x="1" y="1" width="5" height="5" rx="1" stroke="#888" strokeWidth="1.2" />
@@ -93,28 +117,28 @@ export function Header() {
               <rect x="1" y="8" width="5" height="5" rx="1" stroke="#888" strokeWidth="1.2" />
               <rect x="8" y="8" width="5" height="5" rx="1" stroke="#888" strokeWidth="1.2" />
             </svg>
-            {activeGroup?.name || "Все камеры"}
+            Детекция
             <svg width="10" height="6" viewBox="0 0 10 6" fill="none" style={{ marginLeft: "4px" }}>
               <path d="M1 1l4 4 4-4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </button>
 
-          {groupOpen && (
-            <div style={styles.groupDropdown}>
-              {groups.map((g) => (
-                <button
-                  key={g.id}
-                  style={{
-                    ...styles.groupOption,
-                    ...(activeGroupId === g.id ? styles.groupOptionActive : {}),
-                  }}
-                  onClick={() => {
-                    setActiveGroup(g.id)
-                    setGroupOpen(false)
-                  }}
-                >
-                  {g.name}
-                </button>
+          {modesOpen && (
+            <div style={styles.modesDropdown}>
+              {Object.entries(MODE_LABELS).map(([key, label]) => (
+                <label key={key} style={styles.modeOption}>
+                  <input
+                    type="checkbox"
+                    checked={!!modes[key]}
+                    onChange={() => toggleMode(key)}
+                    style={styles.modeCheckbox}
+                  />
+                  <span>{label}</span>
+                  <span style={{
+                    ...styles.modeDot,
+                    background: modes[key] ? "#00e676" : "#333",
+                  }} />
+                </label>
               ))}
             </div>
           )}
@@ -168,10 +192,6 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     gap: "10px",
   },
-  centerLogo: {
-    width: "24px",
-    height: "24px",
-  },
   logoText: {
     fontWeight: 500,
     fontSize: "0.75rem",
@@ -188,6 +208,10 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#ffffff",
     fontFamily: "'Inter', sans-serif",
     letterSpacing: "2px",
+  },
+  centerLogo: {
+    width: "24px",
+    height: "24px",
   },
   nav: {
     display: "flex",
@@ -217,10 +241,10 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     gap: "16px",
   },
-  groupWrapper: {
+  modesWrapper: {
     position: "relative",
   },
-  groupBtn: {
+  modesBtn: {
     display: "flex",
     alignItems: "center",
     gap: "6px",
@@ -237,7 +261,7 @@ const styles: Record<string, React.CSSProperties> = {
     textTransform: "uppercase",
     transition: "all 0.2s",
   },
-  groupDropdown: {
+  modesDropdown: {
     position: "absolute",
     top: "100%",
     right: 0,
@@ -246,30 +270,35 @@ const styles: Record<string, React.CSSProperties> = {
     border: "1px solid #333",
     borderRadius: "8px",
     overflow: "hidden",
-    minWidth: "180px",
+    minWidth: "160px",
     zIndex: 1000,
     boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
   },
-  groupOption: {
-    display: "block",
-    width: "100%",
+  modeOption: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    padding: "10px 14px",
+    cursor: "pointer",
     fontFamily: "'Inter', sans-serif",
     fontWeight: 500,
-    fontSize: "0.72rem",
-    letterSpacing: "1px",
-    border: "none",
+    fontSize: "0.78rem",
+    color: "#ccc",
     borderBottom: "1px solid #33333322",
-    padding: "10px 16px",
-    cursor: "pointer",
-    background: "transparent",
-    color: "#888",
-    textTransform: "uppercase",
-    textAlign: "left",
-    transition: "all 0.15s",
+    transition: "background 0.15s",
   },
-  groupOptionActive: {
-    color: "#00e676",
-    background: "#00e67611",
+  modeCheckbox: {
+    width: "14px",
+    height: "14px",
+    accentColor: "#00e676",
+    cursor: "pointer",
+  },
+  modeDot: {
+    width: "8px",
+    height: "8px",
+    borderRadius: "50%",
+    marginLeft: "auto",
+    transition: "background 0.2s",
   },
   clock: {
     textAlign: "right",

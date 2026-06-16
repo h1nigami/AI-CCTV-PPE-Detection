@@ -132,36 +132,41 @@ face_workers: dict[str, 'FaceRecognitionWorker'] = {}
 
 
 def process_frame(frame, cam_id: str, face_worker=None):
+    from backend.config import DETECT_MODES
     state.cleanup_stale_tracks()
     detected = run_detection(frame, model)
-    danger_zone = get_danger_zone(detected["cones"])
-    frame = draw_danger_zone(frame, danger_zone)
-    for box in detected["helmets"]:
-        x1, y1, x2, y2 = map(int, box)
-        cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-        frame = put_text(frame, "Каска", (x1, max(0, y1 - 20)), color=(0, 255, 0))
-    for box in detected["masks"]:
-        x1, y1, x2, y2 = map(int, box)
-        cv2.rectangle(frame, (x1, y1), (x2, y2), (255, 255, 0), 2)
-        frame = put_text(frame, "Маска", (x1, max(0, y1 - 20)), color=(255, 255, 0))
-    for box in detected["vests"]:
-        x1, y1, x2, y2 = map(int, box)
-        cv2.rectangle(frame, (x1, y1), (x2, y2), (255, 165, 0), 2)
-        frame = put_text(frame, "Жилет", (x1, max(0, y1 - 20)), color=(255, 165, 0))
-    for box in detected["cones"]:
-        x1, y1, x2, y2 = map(int, box)
-        cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 128, 255), 2)
-        frame = put_text(frame, "Конус", (x1, max(0, y1 - 20)), color=(0, 128, 255))
+    danger_zone = get_danger_zone(detected["cones"]) if DETECT_MODES.get("ppe", True) else None
+    if DETECT_MODES.get("ppe", True):
+        for box in detected["helmets"]:
+            x1, y1, x2, y2 = map(int, box)
+            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            frame = put_text(frame, "Каска", (x1, max(0, y1 - 20)), color=(0, 255, 0))
+        for box in detected["masks"]:
+            x1, y1, x2, y2 = map(int, box)
+            cv2.rectangle(frame, (x1, y1), (x2, y2), (255, 255, 0), 2)
+            frame = put_text(frame, "Маска", (x1, max(0, y1 - 20)), color=(255, 255, 0))
+        for box in detected["vests"]:
+            x1, y1, x2, y2 = map(int, box)
+            cv2.rectangle(frame, (x1, y1), (x2, y2), (255, 165, 0), 2)
+            frame = put_text(frame, "Жилет", (x1, max(0, y1 - 20)), color=(255, 165, 0))
+        for box in detected["cones"]:
+            x1, y1, x2, y2 = map(int, box)
+            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 128, 255), 2)
+            frame = put_text(frame, "Конус", (x1, max(0, y1 - 20)), color=(0, 128, 255))
+    if danger_zone is not None:
+        frame = draw_danger_zone(frame, danger_zone)
     persons_count = len(detected["persons"])
     approved_count = 0
     violation_count = 0
     has_any_violation = False
     msg_parts = [f"{datetime.now().strftime('%H:%M:%S')} [{cam_id}]"]
     global_ids = []
-    if detected["persons"]:
+    detect_people = DETECT_MODES.get("people", True)
+    detect_faces_mode = DETECT_MODES.get("faces", True)
+    if detected["persons"] and detect_people:
         msg_parts.append(f"Людей: {persons_count}")
         face_embeddings = None
-        if face_worker is not None:
+        if face_worker is not None and detect_faces_mode:
             face_data = face_worker.get_faces()
             face_embeddings = match_faces_to_persons(detected["persons"], face_data)
         person_track_ids = detected.get("person_track_ids", [])
@@ -176,15 +181,15 @@ def process_frame(frame, cam_id: str, face_worker=None):
                                             quality=face_quality,
                                             person_box=pbox)
             global_ids.append(global_id)
-            has_helmet = any(has_item_on_person(pbox, h) for h in detected["helmets"])
-            has_mask = any(has_item_on_person(pbox, m) for m in detected["masks"])
-            has_vest = any(has_item_on_person(pbox, v) for v in detected["vests"])
-            in_danger = is_in_danger_zone(pbox, danger_zone)
+            has_helmet = any(has_item_on_person(pbox, h) for h in detected["helmets"]) if DETECT_MODES.get("ppe", True) else False
+            has_mask = any(has_item_on_person(pbox, m) for m in detected["masks"]) if DETECT_MODES.get("ppe", True) else False
+            has_vest = any(has_item_on_person(pbox, v) for v in detected["vests"]) if DETECT_MODES.get("ppe", True) else False
+            in_danger = is_in_danger_zone(pbox, danger_zone) if danger_zone is not None else False
             approved = state.is_approved(pbox, cam_id, global_id=global_id)
             fully_equipped = has_helmet and has_mask and has_vest
-            missing = [n for f, n in [(has_helmet, "каска"), (has_mask, "маска"), (has_vest, "жилет")] if not f]
-            ppe = f"{'К' if has_helmet else '!К'} {'М' if has_mask else '!М'} {'Ж' if has_vest else '!Ж'}"
-            person_name = state.get_person_name(global_id, cam_id, face_emb is not None)
+            missing = [n for f, n in [(has_helmet, "каска"), (has_mask, "маска"), (has_vest, "жилет")] if not f] if DETECT_MODES.get("ppe", True) else []
+            ppe = f"{'К' if has_helmet else '!К'} {'М' if has_mask else '!М'} {'Ж' if has_vest else '!Ж'}" if DETECT_MODES.get("ppe", True) else ""
+            person_name = state.get_person_name(global_id, cam_id, face_emb is not None and detect_faces_mode)
             gesture_ok = (
                 detect_ok_gesture(frame, pbox, pose_model)
                 if not approved and state.can_gesture(global_id)
@@ -202,18 +207,21 @@ def process_frame(frame, cam_id: str, face_worker=None):
                                      color=(0, 215, 255), font=FONT_LARGE)
             if approved:
                 approved_count += 1
-            elif not fully_equipped:
+            elif not fully_equipped and DETECT_MODES.get("ppe", True):
                 violation_count += 1
             if approved:
-                label = f"{person_name} ПРОПУСК | {ppe}"
+                label = f"{person_name} ПРОПУСК | {ppe}" if ppe else f"{person_name} ПРОПУСК"
             elif in_danger:
-                label = f"{person_name} ОПАСНАЯ ЗОНА | {ppe}"
+                label = f"{person_name} ОПАСНАЯ ЗОНА | {ppe}" if ppe else f"{person_name} ОПАСНАЯ ЗОНА"
             else:
-                label = f"{person_name} Вне зоны | {ppe}"
-            frame = draw_person(frame, pbox, label, in_danger, not fully_equipped, approved)
+                label = f"{person_name} Вне зоны | {ppe}" if ppe else f"{person_name} Вне зоны"
+            frame = draw_person(frame, pbox, label, in_danger, not fully_equipped and DETECT_MODES.get("ppe", True), approved)
             if fully_equipped and not approved and in_danger:
                 frame = draw_hint(frame, pbox)
-            part = f"{person_name} [{ppe}]: "
+            part = f"{person_name}"
+            if ppe:
+                part += f" [{ppe}]"
+            part += ": "
             if approved:
                 part += "ПРОПУСК | Все СИЗ + ЖЕСТ-ОК"
             elif gesture_ok:
@@ -230,6 +238,8 @@ def process_frame(frame, cam_id: str, face_worker=None):
                 if not fully_equipped:
                     has_any_violation = True
             msg_parts.append(part)
+    elif not detect_people:
+        msg_parts.append("Детекция людей отключена")
     else:
         msg_parts.append("Людей не обнаружено")
     if danger_zone is not None:

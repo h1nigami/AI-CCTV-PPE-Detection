@@ -109,3 +109,24 @@ REID_MAX_AGE_DAYS = 30
 REID_GALLERY_PATH = BASE_DIR / "data" / "face_gallery.pkl"
 REID_DET_SIZE = (640, 640)
 REID_FRAME_SKIP = 3
+
+# ── Глобальные режимы детекции ────────────────────────────
+DETECT_MODES: dict[str, bool] = {
+    "people": True,
+    "ppe": True,
+    "faces": True,
+}
+
+_DETECT_MODES_PATH = BASE_DIR / "data" / "detect_modes.json"
+try:
+    with open(_DETECT_MODES_PATH, encoding="utf-8") as _f:
+        _loaded_modes = json.load(_f)
+        if isinstance(_loaded_modes, dict):
+            DETECT_MODES.update({k: bool(v) for k, v in _loaded_modes.items() if k in DETECT_MODES})
+except FileNotFoundError:
+    pass
+
+
+def save_detect_modes():
+    with open(_DETECT_MODES_PATH, "w", encoding="utf-8") as _f:
+        json.dump(DETECT_MODES, _f, ensure_ascii=False, indent=2)
