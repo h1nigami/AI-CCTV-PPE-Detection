@@ -42,7 +42,6 @@ export function Header() {
     <header style={styles.header}>
       <div style={styles.headerLeft}>
         <div style={styles.logo}>
-          <img src="/logo.svg" alt="" style={styles.logoIcon} />
           <span style={styles.logoText}>Видеоаналитика в реальном времени</span>
         </div>
 
@@ -169,28 +168,26 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     gap: "10px",
   },
-  logoIcon: {
-    width: "32px",
-    height: "32px",
-  },
   centerLogo: {
     width: "24px",
     height: "24px",
   },
   logoText: {
-    fontWeight: 700,
-    fontSize: "1.1rem",
-    color: "#ffffff",
+    fontWeight: 500,
+    fontSize: "0.75rem",
+    color: "#aaa",
     fontFamily: "'Inter', sans-serif",
+    letterSpacing: "1px",
   },
   headerCenter: {
     display: "flex",
     alignItems: "center",
     gap: "10px",
-    fontSize: "1rem",
-    fontWeight: 700,
+    fontSize: "1.25rem",
+    fontWeight: 800,
     color: "#ffffff",
     fontFamily: "'Inter', sans-serif",
+    letterSpacing: "2px",
   },
   nav: {
     display: "flex",
