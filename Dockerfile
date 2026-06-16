@@ -63,12 +63,10 @@ COPY --from=frontend-builder /frontend/dist /app/frontend/dist
 # ── YOLO config directory ────────────────────────────────
 ENV YOLO_CONFIG_DIR=/tmp/Ultralytics
 
-# ── Pre-download InsightFace buffalo_l (на случай, если сборка имеет доступ к GitHub) ──
-RUN mkdir -p /root/.insightface/models/buffalo_l && \
-    (wget -q -O /root/.insightface/models/buffalo_l/buffalo_l.zip \
-      https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_l.zip \
-      && cd /root/.insightface/models/buffalo_l && unzip -o buffalo_l.zip && rm buffalo_l.zip) \
-    || echo "[WARN] buffalo_l не скачался при сборке — будет попытка при запуске"
+# ── InsightFace buffalo_l — встроенная модель (загружена с HuggingFace immich-app/buffalo_l) ──
+# Модель лежит в /app/models/buffalo_l/ ; insightface ищет <root>/models/<name> → root=/app
+ENV INSIGHTFACE_ROOT=/app
+# models/buffalo_l/ копируется шагом COPY models/ ./models/ ниже
 
 EXPOSE 8000
 CMD ["python3", "-u", "app.py"]

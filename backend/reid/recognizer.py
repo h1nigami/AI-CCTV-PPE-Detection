@@ -38,8 +38,15 @@ class FaceRecognizer:
                 return
             except Exception as e:
                 last_exc = e
-                print(f"[ReID] Попытка {attempt + 1}/3 не удалась: {e}")
+                err_msg = str(e) if str(e) else repr(e)
+                print(f"[ReID] Попытка {attempt + 1}/3 не удалась: {err_msg}")
                 if attempt < 2:
+                    # Если директория модели пуста — удаляем, чтобы insightface попробовал скачать заново
+                    model_dir = Path(root) / "models" / model_name
+                    if model_dir.exists() and not any(model_dir.iterdir()):
+                        import shutil
+                        shutil.rmtree(model_dir)
+                        print(f"[ReID] Пустая директория {model_dir} удалена, будет повторная загрузка")
                     wait = 2 ** attempt * 5
                     print(f"[ReID] Повтор через {wait}с...")
                     time.sleep(wait)
