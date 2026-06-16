@@ -92,18 +92,44 @@ python app.py
 
 #### Быстрый старт (CPU)
 ```bash
-docker compose --profile cpu up -d
+# Создать файл .env с паролем админа (опционально)
+echo JWT_SECRET=$(openssl rand -hex 32) > .env
+echo ADMIN_PASSWORD=your-password >> .env
+
+# Запуск
+docker compose --profile cpu up --build -d
 ```
-Открыть в браузере: `http://localhost:8000`
+Открыть в браузере: `http://localhost:8000`  
+Логин: `admin` / пароль из `ADMIN_PASSWORD` (по умолч. `admin123`)
 
 #### GPU (NVIDIA CUDA)
 ```bash
-docker compose --profile gpu up -d
+# .env как выше
+docker compose --profile gpu up --build -d
 ```
 
 #### Разработка (hot-reload кода)
 ```bash
-docker compose --profile cpu -f docker-compose.yml -f docker-compose.override.yml up -d
+# После изменений в Python — просто перезапустить контейнер:
+docker compose --profile cpu restart app-cpu
+
+# После изменений в React — сначала пересобрать фронт:
+cd frontend && npm run build
+docker compose --profile cpu restart app-cpu
+```
+
+#### Переменные окружения (.env)
+```ini
+JWT_SECRET=your-random-secret-64-chars
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=your-password
+ADMIN_EMAIL=admin@example.com
+```
+
+#### Остановка
+```bash
+docker compose --profile cpu down
+docker compose --profile gpu down
 ```
 
 #### Ручная сборка (CPU)
@@ -144,13 +170,6 @@ docker run -d --name ppe-detection \
 > `--runtime nvidia` — включает GPU (CUDA) на Jetson.
 > `--device /dev/videoN` — пробрасывает USB/CSI-камеру в контейнер.
 > На **Windows Docker Desktop** host-сеть недоступна — запускайте локально (`python app.py`).
-
-#### Остановка
-```bash
-docker compose --profile cpu down
-# или
-docker compose --profile gpu down
-```
 
 #### Обслуживание на Jetson
 ```bash
