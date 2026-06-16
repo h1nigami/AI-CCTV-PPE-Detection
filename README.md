@@ -7,6 +7,7 @@
 ## 🚀 Возможности
 
 - **Живой стрим** — подключение к RTSP/IP камерам, детекция СИЗ в реальном времени
+- **Управление камерами** — добавление, удаление, переименование и включение/отключение аналитики через веб-интерфейс (Settings → Камеры)
 - **Опасные зоны** — автоматическое построение зон по расположению конусов безопасности
 - **Re-ID лиц** — кросс-камерная идентификация через InsightFace (buffalo_l) с русскими именами, адаптивный порог матчинга (quality-based), UI управления галереей
 - **ByteTrack** — трекинг людей между кадрами (persistent track IDs), имена не перескакивают между людьми
@@ -47,8 +48,17 @@ pip install -r requirements.txt
 ### 3. Положить модель
 ```
 models/
-└── best.pt   ← обученная YOLOv8 модель
+├── best.pt            ← обученная YOLOv8 модель
+├── yolov8n-pose.pt    ← распознавание жестов
+├── yolov8n-face.pt    ← детекция лиц (Re-ID)
+└── buffalo_l/
+    ├── det_10g.onnx   ← детекция лиц (InsightFace SCRFD)
+    └── w600k_r50.onnx ← распознавание лиц (InsightFace ArcFace)
 ```
+
+> Модель `buffalo_l` (InsightFace Re-ID) встроена в репозиторий и автоматически
+> подхватывается через `INSIGHTFACE_ROOT=/app`. Источник: HuggingFace
+> [`immich-app/buffalo_l`](https://huggingface.co/immich-app/buffalo_l).
 
 ---
 
@@ -125,6 +135,9 @@ ADMIN_USERNAME=admin
 ADMIN_PASSWORD=your-password
 ADMIN_EMAIL=admin@example.com
 ```
+
+> `INSIGHTFACE_ROOT` по умолчанию `/app` — модель buffalo_l лежит в `/app/models/buffalo_l/`.
+> Если нужно использовать другую директорию с моделями, установите `INSIGHTFACE_ROOT` в `.env`.
 
 #### Остановка
 ```bash
@@ -245,13 +258,21 @@ AI-CCTV-PPE-Detection/
 ├── models/
 │   ├── best.pt
 │   ├── yolov8n-pose.pt
-│   └── yolov8n-face.pt
+│   ├── yolov8n-face.pt
+│   └── buffalo_l/
 ├── data/
 │   ├── cameras.json        # конфигурация камер (RTSP URL)
 │   └── face_gallery.pkl    # галерея лиц Re-ID (авто)
 ├── templates/
 │   └── index.html          # fallback для старого фронтенда
 ├── uploads/
+├── models/
+│   ├── best.pt             # YOLOv8 PPE detection
+│   ├── yolov8n-pose.pt     # YOLOv8 pose (жесты)
+│   ├── yolov8n-face.pt     # YOLOv8 face (Re-ID)
+│   └── buffalo_l/
+│       ├── det_10g.onnx    # SCRFD face detection
+│       └── w600k_r50.onnx  # ArcFace recognition
 ├── requirements.txt
 ├── Dockerfile              # CPU multi-stage
 ├── Dockerfile.gpu          # GPU (CUDA 12.4)
