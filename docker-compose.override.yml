@@ -1,0 +1,34 @@
+# ── Development override ─────────────────────────────────────
+# Добавляет бинд-маунты для hot-reload кода при разработке.
+# Использование: docker compose --profile cpu -f docker-compose.yml -f docker-compose.override.yml up
+# (override подхватывается автоматически, если лежит рядом)
+
+services:
+
+  app-cpu:
+    volumes:
+      - ./backend:/app/backend
+      - ./app.py:/app/app.py
+      - ./config.py:/app/config.py
+      - ./main.py:/app/main.py
+      - ./state.py:/app/state.py
+      - ./camera.py:/app/camera.py
+      - ./detection.py:/app/detection.py
+      - ./gestures.py:/app/gestures.py
+      - ./visualization.py:/app/visualization.py
+      - ./reid.py:/app/reid.py
+
+  app-gpu:
+    volumes:
+      - ./backend:/app/backend
+      - ./app.py:/app/app.py
+      - ./config.py:/app/config.py
+      - ./main.py:/app/main.py
+      - ./state.py:/app/state.py
+      - ./camera.py:/app/camera.py
+      - ./detection.py:/app/detection.py
+      - ./gestures.py:/app/gestures.py
+      - ./visualization.py:/app/visualization.py
+      - ./reid.py:/app/reid.py
+
+  # MQTT не требует override

@@ -11,7 +11,6 @@
 - **Re-ID лиц** — кросс-камерная идентификация через InsightFace (buffalo_l) с русскими именами, адаптивный порог матчинга (quality-based), UI управления галереей
 - **ByteTrack** — трекинг людей между кадрами (persistent track IDs), имена не перескакивают между людьми
 - **Жест ОК** — распознавание жеста для выдачи пропуска в зону
-- **Поднятая рука** — жест для запуска печати кадра на принтере
 - **Обработка файлов** — загрузка и анализ изображений и видео
 - **Логирование** — история событий с временными метками и категориями
 - **Уведомления** — всплывающие оповещения в браузере о пропусках (ЖЕСТ-ОК) и нарушениях СИЗ; имя человека подставляется из сообщения лога
@@ -22,13 +21,13 @@
 
 ## 🛠️ Технологии
 
-- **Backend**: Python 3.10+, Flask, OpenCV, Ultralytics YOLOv8
-- **Re-ID**: InsightFace (buffalo_l) + ONNX Runtime GPU
+- **Backend**: Python 3.11+, Flask, OpenCV, Ultralytics YOLOv8
+- **Frontend**: Vite 6 + React 19 + TypeScript
+- **Re-ID**: InsightFace (buffalo_l) + ONNX Runtime
 - **Детекция поз**: YOLOv8n-pose (распознавание жестов)
 - **Визуализация**: PIL/Pillow (кириллица на кадре)
 - **Сервер**: Waitress (production WSGI)
-- **Печать**: win32print (Windows), CUPS (Linux)
-- **Контейнеризация**: Docker
+- **Контейнеризация**: Docker (CPU / GPU / Jetson) + docker compose
 
 ---
 
@@ -77,8 +76,6 @@ REID_MAX_AGE_DAYS = 30           # авто-чистка старых запис
 REID_GALLERY_PATH = BASE_DIR / "data/face_gallery.pkl"
 REID_FRAME_SKIP = 3              # запускать рекогнайшн каждый N-й кадр
 
-# Принтер (Windows)
-PRINTER_NAME = "Argox OS-2130D PPLA"
 ```
 
 ---
@@ -93,15 +90,37 @@ python app.py
 
 ### Docker
 
-#### x86_64 (Windows / Linux)
+#### Быстрый старт (CPU)
 ```bash
-docker build -t ppe-detection -f Dockerfile .
-docker run -d --name ppe-detector -p 8000:8000 ppe-detection
+docker compose --profile cpu up -d
+```
+Открыть в браузере: `http://localhost:8000`
+
+#### GPU (NVIDIA CUDA)
+```bash
+docker compose --profile gpu up -d
+```
+
+#### Разработка (hot-reload кода)
+```bash
+docker compose --profile cpu -f docker-compose.yml -f docker-compose.override.yml up -d
+```
+
+#### Ручная сборка (CPU)
+```bash
+docker build -t ppe-detection:cpu -f Dockerfile .
+docker run -d --name ppe-detector -p 8000:8000 ppe-detection:cpu
+```
+
+#### Ручная сборка (GPU)
+```bash
+docker build -t ppe-detection:gpu -f Dockerfile.gpu .
+docker run -d --gpus all --name ppe-detector -p 8000:8000 ppe-detection:gpu
 ```
 
 #### ARM64 + GPU (NVIDIA Jetson)
 
-**Сборка** (полная, с установкой зависимостей):
+**Сборка:**
 ```bash
 # Проверить версию JetPack: dpkg -l | grep nvidia-l4t-core
 # JetPack 6.x → r36.4.0
@@ -110,18 +129,7 @@ docker build --network host \
   -t ppe-detection -f Dockerfile.jetson .
 ```
 
-**Быстрая пересборка** (только код приложения, кэш pip/apt):
-```bash
-# Создать временный Dockerfile
-cat > Dockerfile.hotfix << 'EOF'
-FROM ppe-detection:latest
-COPY . /app/
-EOF
-docker build -t ppe-detection -f Dockerfile.hotfix .
-rm Dockerfile.hotfix
-```
-
-**Запуск** (с GPU и USB-камерой):
+**Запуск:**
 ```bash
 docker rm -f ppe-detection 2>/dev/null
 docker run -d --name ppe-detection \
@@ -132,29 +140,19 @@ docker run -d --name ppe-detection \
   ppe-detection
 ```
 
-**Просмотр логов:**
-```bash
-docker logs -f ppe-detection
-```
-
 > `--network host` — обязателен для доступа к RTSP-камерам в локальной сети.
-> `--runtime nvidia` — включает GPU (CUDA) на Jetson (без него YOLO работает на CPU, ~1 FPS).
+> `--runtime nvidia` — включает GPU (CUDA) на Jetson.
 > `--device /dev/videoN` — пробрасывает USB/CSI-камеру в контейнер.
 > На **Windows Docker Desktop** host-сеть недоступна — запускайте локально (`python app.py`).
 
-#### Просмотр логов
-```bash
-docker logs -f ppe-detection
-```
-
 #### Остановка
 ```bash
-docker stop ppe-detection && docker rm ppe-detection
+docker compose --profile cpu down
+# или
+docker compose --profile gpu down
 ```
 
 #### Обслуживание на Jetson
-
-Очистка неиспользуемых образов и кэша сборки (экономит ~30+ ГБ):
 ```bash
 docker container prune -f
 docker image prune -af
@@ -182,26 +180,66 @@ docker buildx prune -af
 
 ```
 AI-CCTV-PPE-Detection/
-├── app.py              # Flask роуты
-├── main.py             # Точка сборки, detection worker, live feed
-├── config.py           # Все константы и настройки
-├── state.py            # Потокобезопасный стейт приложения (Re-ID, пропуска, лог)
-├── reid.py             # FaceGallery и FaceRecognizer (InsightFace)
-├── camera.py           # Захват кадров, буфер, автопереподключение
-├── detection.py        # Логика СИЗ, опасных зон
-├── gestures.py         # Распознавание жестов (ОК, поднятая рука)
-├── visualization.py    # Отрисовка на кадре (PIL, кириллица)
-├── printer.py          # Печать кадра на принтер
+│
+├── backend/                # 🔧 Clean code архитектура
+│   ├── app.py              #   Flask + регистрация роутов
+│   ├── config.py           #   Константы
+│   ├── main.py             #   Оркестратор (start/stop, process_frame)
+│   ├── core/
+│   │   ├── state.py        #   DetectionState (треки, пропуска, логи, жесты)
+│   │   └── models.py       #   LogEntry
+│   ├── capture/
+│   │   ├── buffer.py       #   FrameBuffer
+│   │   └── camera.py       #   CameraCapture (RTSP/ffmpeg/local)
+│   ├── detection/
+│   │   └── engine.py       #   run_detection, has_item_on_person, danger_zone
+│   ├── gestures/
+│   │   └── detector.py     #   detect_ok_gesture, detect_raised_hand
+│   ├── reid/
+│   │   ├── gallery.py      #   FaceGallery
+│   │   ├── recognizer.py   #   FaceRecognizer + FaceRecognitionWorker
+│   │   └── worker.py       #   FaceDetector (YOLO face)
+│   ├── visualization/
+│   │   └── renderer.py     #   put_text, draw_person, draw_legend...
+│   └── api/
+│       ├── detection.py    #   /start, /stop, /video_feed, /upload, /logs
+│       ├── cameras.py      #   CRUD камер
+│       └── reid.py         #   Управление галереей лиц
+│
+├── app.py                  # 📄 Тонкий реэкспорт → backend.app
+├── config.py               # 📄 Тонкий реэкспорт → backend.config
+├── main.py                 # 📄 Тонкий реэкспорт → backend.main
+├── state.py                # 📄 Тонкий реэкспорт → backend.core.state
+├── reid.py                 # 📄 Тонкий реэкспорт → backend.reid
+├── camera.py               # 📄 Тонкий реэкспорт → backend.capture
+├── detection.py            # 📄 Тонкий реэкспорт → backend.detection
+├── gestures.py             # 📄 Тонкий реэкспорт → backend.gestures
+├── visualization.py        # 📄 Тонкий реэкспорт → backend.visualization
+│
+├── frontend/               # 🌐 Vite + React + TypeScript
+│   ├── src/
+│   ├── public/
+│   ├── dist/               # сборка для production
+│   ├── package.json
+│   └── vite.config.ts
+│
 ├── models/
-│   └── best.pt
+│   ├── best.pt
+│   ├── yolov8n-pose.pt
+│   └── yolov8n-face.pt
 ├── data/
-│   └── face_gallery.pkl  # автоматически, галерея лиц Re-ID
+│   ├── cameras.json        # конфигурация камер (RTSP URL)
+│   └── face_gallery.pkl    # галерея лиц Re-ID (авто)
 ├── templates/
-│   └── index.html
+│   └── index.html          # fallback для старого фронтенда
 ├── uploads/
 ├── requirements.txt
-├── Dockerfile              # x86_64 (Windows / Linux)
+├── Dockerfile              # CPU multi-stage
+├── Dockerfile.gpu          # GPU (CUDA 12.4)
 ├── Dockerfile.jetson       # ARM64 + GPU (NVIDIA Jetson)
+├── docker-compose.yml      # docker compose (cpu/gpu профили + MQTT)
+├── docker-compose.override.yml  # dev hot-reload
+└── PLAN.md                 # Дорожная карта трансформации
 ```
 
 ---
@@ -296,30 +334,6 @@ detection_worker          generate_live_feed
 
 Каждому новому лицу автоматически присваивается случайное русское имя.
 Имена можно переименовывать через UI (кнопка "👤 Управление лицами" в левой панели) или через API.
-
----
-
-## 🖨️ Печать
-
-Для печати на принтер при жесте "поднятая рука":
-
-**Windows** — установить `pywin32`:
-```bash
-pip install pywin32
-```
-
-**Linux** — установить CUPS:
-```bash
-sudo apt install cups
-```
-
-Посмотреть доступные принтеры:
-```python
-import win32print
-printers = win32print.EnumPrinters(win32print.PRINTER_ENUM_LOCAL)
-for p in printers:
-    print(p[2])
-```
 
 ---
 

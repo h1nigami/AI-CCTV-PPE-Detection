@@ -1,0 +1,113 @@
+import threading
+import time
+import numpy as np
+from pathlib import Path
+from typing import Optional, List, Tuple
+from backend.reid.gallery import FaceGallery
+
+try:
+    import insightface
+    INSIGHTFACE_AVAILABLE = True
+except ImportError:
+    INSIGHTFACE_AVAILABLE = False
+
+
+class FaceRecognizer:
+    def __init__(self, model_name: str = 'buffalo_l', det_size: Tuple[int, int] = (640, 640)):
+        if not INSIGHTFACE_AVAILABLE:
+            raise RuntimeError("insightface не установлен (pip install insightface)")
+        providers = ['CUDAExecutionProvider', 'CPUExecutionProvider']
+        self.app = insightface.app.FaceAnalysis(
+            name=model_name, providers=providers,
+            root=str(Path.home() / '.insightface')
+        )
+        self.app.prepare(ctx_id=0, det_size=det_size)
+        print(f"[ReID] InsightFace {model_name} loaded (CUDA)")
+
+    def detect_faces(self, frame: np.ndarray) -> List[Tuple[np.ndarray, np.ndarray, float]]:
+        faces = self.app.get(frame)
+        result = []
+        h, w = frame.shape[:2]
+        for face in faces:
+            emb = face.embedding.astype(np.float32)
+            emb = emb / (np.linalg.norm(emb) + 1e-8)
+            bbox = face.bbox.astype(np.float32)
+            det_score = getattr(face, 'det_score', 0.5)
+            fx1, fy1, fx2, fy2 = bbox
+            face_size = min((fx2 - fx1) / w, (fy2 - fy1) / h)
+            size_score = min(1.0, face_size / 0.15)
+            quality = det_score * 0.6 + size_score * 0.4
+            quality = min(1.0, max(0.1, quality))
+            result.append((bbox, emb, quality))
+        return result
+
+
+class FaceRecognitionWorker:
+    def __init__(self, raw_buffer, face_recognizer: FaceRecognizer,
+                 frame_skip: int = 3):
+        self._buf = raw_buffer
+        self._rec = face_recognizer
+        self._frame_skip = frame_skip
+        self._latest_faces: List[Tuple[np.ndarray, np.ndarray, float]] = []
+        self._lock = threading.Lock()
+        self._running = False
+        self._thread: Optional[threading.Thread] = None
+
+    def start(self):
+        if self._running:
+            return
+        self._running = True
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def stop(self):
+        self._running = False
+        if self._thread:
+            self._thread.join(timeout=2)
+
+    def get_faces(self) -> List[Tuple[np.ndarray, np.ndarray, float]]:
+        with self._lock:
+            return list(self._latest_faces)
+
+    def _run(self):
+        frame_idx = 0
+        while self._running:
+            frame = self._buf.read()
+            if frame is None:
+                time.sleep(0.01)
+                continue
+            if frame_idx % self._frame_skip == 0:
+                try:
+                    self._latest_faces = self._rec.detect_faces(frame)
+                except Exception as e:
+                    print(f"[FaceRecognitionWorker] Ошибка: {e}")
+            frame_idx += 1
+
+
+def match_faces_to_persons(
+    person_boxes: List[np.ndarray],
+    face_data: List[Tuple[np.ndarray, np.ndarray, float]]
+) -> List[Tuple[Optional[np.ndarray], float]]:
+    if not face_data or not person_boxes:
+        return [(None, 0.0)] * len(person_boxes) if person_boxes else []
+    results = []
+    for pbox in person_boxes:
+        px1, py1, px2, py2 = map(int, pbox)
+        best_emb = None
+        best_quality = 0.0
+        best_overlap = 0.0
+        for face_bbox, emb, quality in face_data:
+            fx1, fy1, fx2, fy2 = map(int, face_bbox)
+            ix1, iy1 = max(px1, fx1), max(py1, fy1)
+            ix2, iy2 = min(px2, fx2), min(py2, fy2)
+            if ix2 > ix1 and iy2 > iy1:
+                inter = (ix2 - ix1) * (iy2 - iy1)
+                face_area = (fx2 - fx1) * (fy2 - fy1)
+                if face_area > 0:
+                    overlap = inter / face_area
+                    if overlap > best_overlap:
+                        best_overlap = overlap
+                        best_emb = emb
+                        best_quality = quality
+        results.append((best_emb, best_quality))
+    return results

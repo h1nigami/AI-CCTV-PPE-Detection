@@ -1,0 +1,68 @@
+version: "3.9"
+
+x-common: &common
+  build:
+    context: .
+  ports:
+    - "8000:8000"
+  volumes:
+    - ./models:/app/models
+    - ./data:/app/data
+    - ./uploads:/app/uploads
+    - ./violation_logs:/app/violation_logs
+    - ./face_gallery.pkl:/app/data/face_gallery.pkl
+  restart: unless-stopped
+  environment:
+    - TZ=Europe/Moscow
+
+services:
+
+  # ─────────────────────────────────────────────────
+  #  CPU profile (default)
+  # ─────────────────────────────────────────────────
+  app-cpu:
+    <<: *common
+    profiles: ["cpu", ""]
+    build:
+      dockerfile: Dockerfile
+    container_name: kontroler-cpu
+
+  # ─────────────────────────────────────────────────
+  #  GPU profile (NVIDIA CUDA)
+  # ─────────────────────────────────────────────────
+  app-gpu:
+    <<: *common
+    profiles: ["gpu"]
+    build:
+      dockerfile: Dockerfile.gpu
+    container_name: kontroler-gpu
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    environment:
+      - TZ=Europe/Moscow
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+
+  # ─────────────────────────────────────────────────
+  #  MQTT broker (для будущей Frigate-архитектуры)
+  # ─────────────────────────────────────────────────
+  mqtt:
+    image: eclipse-mosquitto:2
+    profiles: ["cpu", "gpu"]
+    container_name: kontroler-mqtt
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - mosquitto_data:/mosquitto/data
+      - mosquitto_log:/mosquitto/log
+    restart: unless-stopped
+
+volumes:
+  mosquitto_data:
+  mosquitto_log:

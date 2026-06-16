@@ -37,3 +37,8 @@ uploads/
 *.md
 LICENSE
 Procfile
+
+# Бэкапы / temp
+*.bak
+*.tmp
+*.swp
