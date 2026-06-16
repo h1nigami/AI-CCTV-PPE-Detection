@@ -42,8 +42,8 @@ export function Header() {
     <header style={styles.header}>
       <div style={styles.headerLeft}>
         <div style={styles.logo}>
-          <div style={styles.logoIcon} />
-          <span style={styles.logoText}>Нейроконтролер</span>
+          <img src="/logo.svg" alt="" style={styles.logoIcon} />
+          <span style={styles.logoText}>Видеоаналитика в реальном времени</span>
         </div>
 
         <nav style={styles.nav}>
@@ -77,7 +77,10 @@ export function Header() {
         </nav>
       </div>
 
-      <div style={styles.headerCenter}>Видеоаналитика в реальном времени</div>
+      <div style={styles.headerCenter}>
+        <img src="/logo.svg" alt="" style={styles.centerLogo} />
+        <span>Нейроконтролер</span>
+      </div>
 
       <div style={styles.headerRight}>
         <div ref={groupRef} style={styles.groupWrapper}>
@@ -169,8 +172,10 @@ const styles: Record<string, React.CSSProperties> = {
   logoIcon: {
     width: "32px",
     height: "32px",
-    background: "#00e676",
-    clipPath: "polygon(25% 0%, 100% 0%, 75% 100%, 0% 100%)",
+  },
+  centerLogo: {
+    width: "24px",
+    height: "24px",
   },
   logoText: {
     fontWeight: 700,
@@ -179,9 +184,12 @@ const styles: Record<string, React.CSSProperties> = {
     fontFamily: "'Inter', sans-serif",
   },
   headerCenter: {
+    display: "flex",
+    alignItems: "center",
+    gap: "10px",
     fontSize: "1rem",
-    fontWeight: 500,
-    color: "#ccc",
+    fontWeight: 700,
+    color: "#ffffff",
     fontFamily: "'Inter', sans-serif",
   },
   nav: {
