@@ -109,7 +109,6 @@ export function LeftPanel({
     return result
   }, [logs, selectedCam])
 
-  // Notifications for new OK gestures
   useEffect(() => {
     if (logs.length === 0) return
     const latestByCam: Record<string, LogEntry> = {}
@@ -149,114 +148,131 @@ export function LeftPanel({
   }, [logs, addNotification])
 
   const personColor = (p: PersonSummary): string => {
-    if (p.approved) return "#00ff88"
-    if (p.danger && p.violation) return "#ff3355"
-    if (p.danger) return "#ff6d00"
+    if (p.approved) return "#00e676"
+    if (p.danger && p.violation) return "#f44336"
+    if (p.danger) return "#ff9800"
     if (p.violation) return "#ffd600"
-    return "#00e5ff"
+    return "#00b0ff"
+  }
+
+  const ppeConfig: { key: keyof PpeStatus; icon: string; label: string }[] = [
+    { key: "helmet", icon: "⛑️", label: "СИЗ Каска" },
+    { key: "mask", icon: "😷", label: "СИЗ Маска" },
+    { key: "vest", icon: "🦺", label: "СИЗ Жилет" },
+    { key: "gesture", icon: "🤙", label: "Жест ОК" },
+    { key: "zone", icon: "⚠️", label: "Опасная зона" },
+  ]
+
+  const ppeSubs: Record<string, (val: boolean | null) => string> = {
+    helmet: (v) => v === null ? "Ожидание" : v ? "Обнаружена" : "Не обнаружена",
+    mask: (v) => v === null ? "Ожидание" : v ? "Обнаружена" : "Не обнаружена",
+    vest: (v) => v === null ? "Ожидание" : v ? "Обнаружен" : "Не обнаружен",
+    gesture: (v) => v === null ? "Ожидание" : v ? "Распознан" : "Не обнаружен",
+    zone: (v) => v === null ? "Ожидание" : v ? "Не пересечена" : "Пересечена",
   }
 
   return (
     <div style={styles.leftPanel}>
       {/* Controls */}
-      <div style={styles.panelSection}>
-        <div style={styles.sectionLabel}>Управление</div>
+      <div style={styles.panelCard}>
+        <div style={styles.cardTitle}>Управление</div>
         <button style={styles.btnStart} onClick={onStart} disabled={isRunning}>
           ▶ Запустить
         </button>
         <button style={styles.btnStop} onClick={onStop} disabled={!isRunning}>
           ■ Остановить
         </button>
-        <div style={{ ...styles.statusPill, ...(isRunning ? styles.statusActive : styles.statusInactive) }}>
+        <div
+          style={{
+            ...styles.statusPill,
+            ...(isRunning ? styles.statusActive : styles.statusInactive),
+          }}
+        >
           <div style={styles.pillDot} />
           <span>{isRunning ? "Детекция активна" : "Система готова"}</span>
         </div>
-        <button style={styles.galleryBtn} onClick={onShowGallery}>
+        <button style={styles.ctrlBtn} onClick={onShowGallery}>
           👤 Управление лицами
         </button>
-        <button style={{ ...styles.galleryBtn, marginTop: 4 }} onClick={onShowCameraManager}>
+        <button style={{ ...styles.ctrlBtn, marginTop: 4 }} onClick={onShowCameraManager}>
           📷 Управление камерами
         </button>
       </div>
 
       {/* PPE Status */}
-      <div style={styles.panelSection}>
-        <div style={styles.sectionLabel}>Статус проверки</div>
-        {(["helmet", "mask", "vest", "zone", "gesture"] as const).map((key) => {
-          const labels: Record<string, { icon: string; name: string }> = {
-            helmet: { icon: "⛑️", name: "Каска" },
-            mask: { icon: "😷", name: "Маска" },
-            vest: { icon: "🦺", name: "Жилет" },
-            zone: { icon: "⚠️", name: "Опасная зона" },
-            gesture: { icon: "👌", name: "Жест «ОК»" },
-          }
-          const subs: Record<string, string> = {
-            helmet: ppe.helmet === null ? "ожидание" : ppe.helmet ? "обнаружена" : "не обнаружена",
-            mask: ppe.mask === null ? "ожидание" : ppe.mask ? "обнаружена" : "не обнаружена",
-            vest: ppe.vest === null ? "ожидание" : ppe.vest ? "обнаружен" : "не обнаружен",
-            zone: ppe.zone === null ? "ожидание" : ppe.zone ? "не пересечена" : "пересечена",
-            gesture: ppe.gesture === null ? "ожидание" : ppe.gesture ? "распознан" : "ожидание",
-          }
+      <div style={styles.panelCard}>
+        <div style={styles.cardTitle}>Статус проверки</div>
+        {ppeConfig.map(({ key, icon, label }) => {
           const val = ppe[key]
           const ok = val === true
-          const borderColor = val === null ? "#1a3a5c" : ok ? "#00ff8844" : "#ff335544"
-          const icon = val === null ? "—" : ok ? "✅" : "❌"
+          const fail = val === false
+          const neutral = val === null
+
+          let wrapClass = styles.ppeIconNeutral
+          let checkClass = styles.ppeCheckNeutral
+          let checkText = "—"
+
+          if (ok) {
+            wrapClass = styles.ppeIconOk
+            checkClass = styles.ppeCheckOk
+            checkText = "✓"
+          } else if (fail) {
+            wrapClass = styles.ppeIconFail
+            checkClass = styles.ppeCheckFail
+            checkText = "✕"
+          }
 
           return (
-            <div key={key} style={{ ...styles.ppeItem, borderColor }}>
-              <div style={styles.ppeLeft}>
-                <div style={{ fontSize: "1.3rem" }}>{labels[key].icon}</div>
-                <div>
-                  <div style={styles.ppeName}>{labels[key].name}</div>
-                  <div style={styles.ppeSub}>{subs[key]}</div>
-                </div>
+            <div key={key} style={styles.ppeItem}>
+              <div style={{ ...styles.ppeIconWrap, ...wrapClass }}>
+                {icon}
               </div>
-              <div style={{ fontSize: "1.1rem" }}>{icon}</div>
+              <div style={styles.ppeInfo}>
+                <div style={styles.ppeName}>{label}</div>
+                <div style={styles.ppeSub}>{ppeSubs[key](val)}</div>
+              </div>
+              <div style={{ ...styles.ppeCheck, ...checkClass }}>
+                {checkText}
+              </div>
             </div>
           )
         })}
       </div>
 
-      {/* Counters */}
-      <div style={styles.panelSection}>
-        <div style={styles.sectionLabel}>Счётчик людей</div>
-        <div style={styles.counterGrid}>
-          <div style={styles.counterItem}>
-            <div style={styles.counterNum}>{counters.total}</div>
-            <div style={styles.counterLabel}>Всего</div>
-          </div>
-          <div style={styles.counterItem}>
-            <div style={{ ...styles.counterNum, color: "#00ff88" }}>{counters.approved}</div>
-            <div style={styles.counterLabel}>Допущено</div>
-          </div>
-        </div>
+      {/* Counter */}
+      <div style={styles.panelCard}>
+        <div style={styles.cardTitle}>Счётчик людей</div>
+        <div style={styles.counterBig}>{counters.total}</div>
+        <div style={styles.counterSub}>человек в кадре</div>
 
-        <div style={styles.peopleIcons}>
+        <div style={styles.peopleRow}>
           {persons.length === 0 ? (
-            <span style={{ color: "#4a6a8a", fontFamily: "'Share Tech Mono', monospace", fontSize: ".7rem" }}>
-              нет людей
-            </span>
+            <span style={{ fontSize: ".75rem", color: "#888" }}>нет людей</span>
           ) : (
             persons.map((p, i) => (
-              <div key={i} style={styles.personIcon} title={`${p.name}: ${p.approved ? "Допущен" : p.danger && p.violation ? "Зона + нарушение" : p.danger ? "В опасной зоне" : p.violation ? "Нет СИЗ" : "OK"}`}>
-                <svg width="26" height="26" viewBox="0 0 28 28" fill="none">
+              <div
+                key={i}
+                style={styles.personIcon}
+                title={`${p.name}: ${p.approved ? "Допущен" : p.danger && p.violation ? "Зона + нарушение" : p.danger ? "В опасной зоне" : p.violation ? "Нет СИЗ" : "OK"}`}
+              >
+                <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
                   <circle cx="14" cy="9" r="5" fill={personColor(p)} opacity=".9" />
                   <path d="M4 24c0-5.5 4.5-9 10-9s10 3.5 10 9" stroke={personColor(p)} strokeWidth="2" strokeLinecap="round" fill="none" opacity=".9" />
                 </svg>
-                <span style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: ".6rem", color: personColor(p) }}>{i + 1}</span>
+                <span style={{ fontSize: ".6rem", color: personColor(p), fontFamily: "monospace" }}>{i + 1}</span>
               </div>
             ))
           )}
         </div>
 
-        <div style={{ ...styles.counterGrid, marginTop: 8, marginBottom: 0 }}>
-          <div style={styles.counterItem}>
-            <div style={{ ...styles.counterNum, color: "#ff3355" }}>{counters.violations}</div>
-            <div style={styles.counterLabel}>Нарушений</div>
+        <div style={styles.counterRow}>
+          <div style={styles.counterSmall}>
+            <div style={styles.counterSmallNum}>{counters.approved}</div>
+            <div style={styles.counterSmallLabel}>Допущено</div>
           </div>
-          <div style={styles.counterItem}>
-            <div style={styles.counterNum}>{counters.logCount}</div>
-            <div style={{ ...styles.counterLabel }}>Записей</div>
+          <div style={styles.counterSmall}>
+            <div style={{ ...styles.counterSmallNum, color: "#f44336" }}>{counters.violations}</div>
+            <div style={styles.counterSmallLabel}>Нарушений</div>
           </div>
         </div>
       </div>
@@ -266,83 +282,78 @@ export function LeftPanel({
 
 const styles: Record<string, React.CSSProperties> = {
   leftPanel: {
-    background: "#0d1520",
-    borderRight: "1px solid #1a3a5c",
+    background: "#1a1a1a",
+    borderRight: "1px solid #333",
     display: "flex",
     flexDirection: "column",
     overflowY: "auto",
-  },
-  panelSection: {
-    borderBottom: "1px solid #1a3a5c",
     padding: "16px",
+    gap: 0,
   },
-  sectionLabel: {
-    fontFamily: "'Rajdhani', sans-serif",
-    fontWeight: 700,
-    fontSize: "0.65rem",
-    letterSpacing: "3px",
-    color: "#4a6a8a",
-    textTransform: "uppercase",
+  panelCard: {
+    background: "#222",
+    borderRadius: "12px",
+    padding: "16px",
     marginBottom: "12px",
-    display: "flex",
-    alignItems: "center",
-    gap: "6px",
+  },
+  cardTitle: {
+    fontSize: "0.85rem",
+    fontWeight: 600,
+    color: "#ffffff",
+    marginBottom: "14px",
   },
   btnStart: {
-    fontFamily: "'Rajdhani', sans-serif",
-    fontWeight: 600,
-    fontSize: "0.85rem",
-    letterSpacing: "1px",
-    border: "1px solid #00e5ff",
-    borderRadius: "5px",
-    padding: "9px 16px",
-    cursor: "pointer",
-    textTransform: "uppercase",
     width: "100%",
+    padding: "11px",
+    border: "1px solid #00e67650",
+    borderRadius: "8px",
+    fontFamily: "'Inter', sans-serif",
+    fontSize: "0.85rem",
+    fontWeight: 600,
+    cursor: "pointer",
     marginBottom: "8px",
-    background: "#00e5ff22",
-    color: "#00e5ff",
+    letterSpacing: "0.3px",
+    background: "#00e67615",
+    color: "#00e676",
     transition: "all .2s",
   },
   btnStop: {
-    fontFamily: "'Rajdhani', sans-serif",
-    fontWeight: 600,
-    fontSize: "0.85rem",
-    letterSpacing: "1px",
-    border: "1px solid #ff3355",
-    borderRadius: "5px",
-    padding: "9px 16px",
-    cursor: "pointer",
-    textTransform: "uppercase",
     width: "100%",
+    padding: "11px",
+    border: "1px solid #f4433650",
+    borderRadius: "8px",
+    fontFamily: "'Inter', sans-serif",
+    fontSize: "0.85rem",
+    fontWeight: 600,
+    cursor: "pointer",
     marginBottom: "8px",
-    background: "#ff335522",
-    color: "#ff3355",
+    letterSpacing: "0.3px",
+    background: "#f4433615",
+    color: "#f44336",
     transition: "all .2s",
   },
   statusPill: {
     display: "flex",
     alignItems: "center",
     gap: "6px",
-    padding: "6px 12px",
-    borderRadius: "4px",
-    fontFamily: "'Share Tech Mono', monospace",
+    padding: "6px 10px",
+    borderRadius: "6px",
     fontSize: "0.72rem",
-    letterSpacing: "1px",
-    marginTop: "8px",
-    border: "1px solid #1a3a5c",
-    color: "#4a6a8a",
+    fontWeight: 500,
+    border: "1px solid #333",
+    color: "#888",
     transition: "all .3s",
+    marginTop: "4px",
   },
   statusActive: {
-    borderColor: "#00ff88",
-    color: "#00ff88",
-    background: "#00ff8811",
+    borderColor: "#00e67650",
+    color: "#00e676",
+    background: "#00e67610",
   },
   statusInactive: {
-    borderColor: "#ff3355",
-    color: "#ff3355",
-    background: "#ff335511",
+    borderColor: "#f4433650",
+    color: "#f44336",
+    background: "#f4433610",
   },
   pillDot: {
     width: "6px",
@@ -350,86 +361,102 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: "50%",
     background: "currentColor",
   },
-  galleryBtn: {
-    fontFamily: "'Rajdhani', sans-serif",
-    fontWeight: 600,
-    fontSize: "0.75rem",
-    letterSpacing: "1px",
-    background: "transparent",
-    border: "1px solid #1a3a5c",
-    color: "#4a6a8a",
-    borderRadius: "4px",
-    padding: "6px 12px",
-    cursor: "pointer",
-    textTransform: "uppercase",
+  ctrlBtn: {
     width: "100%",
+    padding: "7px",
+    borderRadius: "8px",
+    background: "transparent",
+    border: "1px solid #333",
+    color: "#888",
+    fontSize: "0.75rem",
+    cursor: "pointer",
+    fontFamily: "'Inter', sans-serif",
     transition: "all .2s",
   },
   ppeItem: {
     display: "flex",
     alignItems: "center",
-    justifyContent: "space-between",
-    padding: "10px 12px",
-    marginBottom: "8px",
-    background: "#111c2b",
-    border: "1px solid #1a3a5c",
-    borderRadius: "6px",
-    transition: "border-color .3s",
+    gap: "12px",
+    padding: "10px 0",
+    borderBottom: "1px solid #333",
   },
-  ppeLeft: {
+  ppeIconWrap: {
+    width: "42px",
+    height: "42px",
+    borderRadius: "50%",
     display: "flex",
     alignItems: "center",
-    gap: "10px",
+    justifyContent: "center",
+    fontSize: "1.3rem",
+    flexShrink: 0,
+  },
+  ppeIconOk: {
+    background: "#00e67620",
+    border: "1px solid #00e67640",
+  },
+  ppeIconFail: {
+    background: "#f4433620",
+    border: "1px solid #f4433640",
+  },
+  ppeIconNeutral: {
+    background: "#33333380",
+    border: "1px solid #333",
+  },
+  ppeInfo: {
+    flex: 1,
   },
   ppeName: {
-    fontFamily: "'Rajdhani', sans-serif",
-    fontWeight: 600,
-    fontSize: "0.9rem",
-    lineHeight: "1",
+    fontSize: "0.85rem",
+    fontWeight: 500,
+    color: "#ffffff",
   },
   ppeSub: {
-    fontSize: "0.7rem",
-    color: "#4a6a8a",
-    fontFamily: "'Share Tech Mono', monospace",
+    fontSize: "0.75rem",
+    color: "#888",
     marginTop: "2px",
   },
-  counterGrid: {
-    display: "grid",
-    gridTemplateColumns: "1fr 1fr",
-    gap: "8px",
-    marginBottom: "10px",
+  ppeCheck: {
+    width: "28px",
+    height: "28px",
+    borderRadius: "50%",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontSize: "0.9rem",
+    flexShrink: 0,
   },
-  counterItem: {
-    background: "#111c2b",
-    border: "1px solid #1a3a5c",
-    borderRadius: "6px",
-    padding: "12px 10px",
-    textAlign: "center" as const,
+  ppeCheckOk: {
+    background: "#00e67620",
+    border: "2px solid #00e676",
+    color: "#00e676",
   },
-  counterNum: {
-    fontFamily: "'Share Tech Mono', monospace",
-    fontSize: "2rem",
-    color: "#00e5ff",
-    lineHeight: "1",
+  ppeCheckFail: {
+    background: "#f4433620",
+    border: "2px solid #f44336",
+    color: "#f44336",
   },
-  counterLabel: {
-    fontSize: "0.65rem",
-    letterSpacing: "1px",
-    color: "#4a6a8a",
-    textTransform: "uppercase",
-    marginTop: "4px",
-    fontFamily: "'Rajdhani', sans-serif",
+  ppeCheckNeutral: {
+    background: "transparent",
+    border: "2px solid #333",
+    color: "#888",
   },
-  peopleIcons: {
-    padding: "10px",
-    background: "#111c2b",
-    border: "1px solid #1a3a5c",
-    borderRadius: "6px",
-    minHeight: "52px",
+  counterBig: {
+    fontSize: "4rem",
+    fontWeight: 700,
+    color: "#00e676",
+    lineHeight: 1,
+    margin: "8px 0 4px",
+  },
+  counterSub: {
+    fontSize: "0.8rem",
+    color: "#888",
+  },
+  peopleRow: {
     display: "flex",
     flexWrap: "wrap",
-    gap: "6px",
-    alignItems: "center",
+    gap: "8px",
+    marginTop: "12px",
+    minHeight: "40px",
   },
   personIcon: {
     display: "flex",
@@ -437,5 +464,29 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     gap: "2px",
     cursor: "default",
+  },
+  counterRow: {
+    display: "flex",
+    gap: "10px",
+    marginTop: "12px",
+  },
+  counterSmall: {
+    flex: 1,
+    background: "#2a2a2a",
+    borderRadius: "8px",
+    padding: "10px",
+    textAlign: "center" as const,
+  },
+  counterSmallNum: {
+    fontSize: "1.4rem",
+    fontWeight: 700,
+    color: "#ffffff",
+  },
+  counterSmallLabel: {
+    fontSize: "0.65rem",
+    color: "#888",
+    marginTop: "2px",
+    textTransform: "uppercase" as const,
+    letterSpacing: "0.5px",
   },
 }

@@ -1,3 +1,19 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+:root {
+  --bg:       #1a1a1a;
+  --panel:    #222222;
+  --panel2:   #2a2a2a;
+  --border:   #333333;
+  --accent:   #00e676;
+  --red:      #f44336;
+  --orange:   #ff9800;
+  --yellow:   #ffd600;
+  --text:     #ffffff;
+  --text-dim: #888888;
+  --text-mid: #cccccc;
+}
+
 *, *::before, *::after {
   box-sizing: border-box;
   margin: 0;
@@ -5,88 +21,63 @@
 }
 
 body {
-  background: #080d14;
-  color: #c8dff0;
-  font-family: 'Exo 2', 'Segoe UI', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Inter', sans-serif;
   min-height: 100vh;
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Анимация мерцания (для LIVE-индикатора, бейджей нарушений) */
 @keyframes blink {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.3; }
 }
 
-/* Анимация вращения (спиннер) */
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
 
-/* Анимация появления уведомления */
 @keyframes notifIn {
   from { transform: translateY(-120%); opacity: 0; }
   to { transform: translateY(0); opacity: 1; }
 }
 
-/* Анимация скрытия уведомления */
 @keyframes notifOut {
   from { transform: translateY(0); opacity: 1; }
   to { transform: translateY(-120%); opacity: 0; }
 }
 
-/* Анимация появления элемента */
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(-4px); }
   to { opacity: 1; transform: none; }
 }
 
-/* Анимация выезда диспетчерской панели справа */
-@keyframes slideIn {
-  from { transform: translateX(100%); opacity: 0; }
-  to { transform: translateX(0); opacity: 1; }
-}
-
-/* Анимация появления карточек камер */
-@keyframes cardIn {
-  from { opacity: 0; transform: scale(0.97); }
-  to { opacity: 1; transform: scale(1); }
-}
-
-/* Стилизация скроллбара (диспетчерский стиль) */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 4px;
+  height: 4px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #080d14;
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #1a3a5c;
-  border-radius: 3px;
+  background: var(--border);
+  border-radius: 2px;
 }
 
-::-webkit-scrollbar-thumb:hover {
-  background: #2a4a6c;
-}
-
-/* Стили для фокуса кнопок */
 button:focus-visible {
-  outline: 2px solid #00e5ff;
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
-/* Стили для инпутов */
 input:focus {
-  border-color: #00e5ff !important;
-  box-shadow: 0 0 0 1px #00e5ff44 !important;
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 1px #00e67644 !important;
 }
 
-/* Убираем стандартный outline у всех элементов */
 :focus:not(:focus-visible) {
   outline: none;
 }

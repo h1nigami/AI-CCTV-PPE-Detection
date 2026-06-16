@@ -60,5 +60,15 @@ RUN mkdir -p uploads
 # ── Собранный frontend из Stage 1 ──────────────────────────
 COPY --from=frontend-builder /frontend/dist /app/frontend/dist
 
+# ── YOLO config directory ────────────────────────────────
+ENV YOLO_CONFIG_DIR=/tmp/Ultralytics
+
+# ── Pre-download InsightFace buffalo_l (на случай, если сборка имеет доступ к GitHub) ──
+RUN mkdir -p /root/.insightface/models/buffalo_l && \
+    (wget -q -O /root/.insightface/models/buffalo_l/buffalo_l.zip \
+      https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_l.zip \
+      && cd /root/.insightface/models/buffalo_l && unzip -o buffalo_l.zip && rm buffalo_l.zip) \
+    || echo "[WARN] buffalo_l не скачался при сборке — будет попытка при запуске"
+
 EXPOSE 8000
 CMD ["python3", "-u", "app.py"]

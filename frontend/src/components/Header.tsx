@@ -4,11 +4,6 @@ import { useAuth } from "../contexts/AuthContext"
 import { useCamerasContext } from "../contexts/CameraContext"
 import { useClock } from "../hooks/useClock"
 
-// ============================================================
-// Шапка приложения — навигация, выбор группы камер, часы,
-// профиль пользователя.
-// ============================================================
-
 export function Header() {
   const now = useClock()
   const { user, logout } = useAuth()
@@ -16,11 +11,9 @@ export function Header() {
   const navigate = useNavigate()
   const location = useLocation()
 
-  // Состояние дропдауна групп
   const [groupOpen, setGroupOpen] = useState(false)
   const groupRef = useRef<HTMLDivElement>(null)
 
-  // Закрытие дропдауна по клику вне него
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (groupRef.current && !groupRef.current.contains(e.target as Node)) {
@@ -31,7 +24,6 @@ export function Header() {
     return () => document.removeEventListener("mousedown", handler)
   }, [])
 
-  // Форматирование времени
   const timeStr = now.toLocaleTimeString("ru-RU")
   const dateStr = now.toLocaleDateString("ru-RU", {
     day: "numeric",
@@ -39,30 +31,21 @@ export function Header() {
     year: "numeric",
   })
 
-  // Выход
   const handleLogout = () => {
     logout()
     navigate("/login")
   }
 
-  // Активная группа
   const activeGroup = groups.find((g) => g.id === activeGroupId)
 
   return (
     <header style={styles.header}>
-      {/* Левая часть: логотип + навигация */}
       <div style={styles.headerLeft}>
-        {/* Логотип */}
         <div style={styles.logo}>
-          <svg width="24" height="24" viewBox="0 0 28 28" fill="none">
-            <rect x="2" y="2" width="24" height="24" rx="4" stroke="#00e5ff" strokeWidth="1.5" />
-            <circle cx="14" cy="12" r="5" stroke="#00e5ff" strokeWidth="1.5" />
-            <path d="M6 22c0-4 3.6-7 8-7s8 3 8 7" stroke="#00e5ff" strokeWidth="1.5" strokeLinecap="round" />
-          </svg>
-          KONTROLER AI
+          <div style={styles.logoIcon} />
+          <span style={styles.logoText}>Нейроконтролер</span>
         </div>
 
-        {/* Навигация */}
         <nav style={styles.nav}>
           <button
             style={{
@@ -94,19 +77,19 @@ export function Header() {
         </nav>
       </div>
 
-      {/* Правая часть: группы, часы, пользователь */}
+      <div style={styles.headerCenter}>Видеоаналитика в реальном времени</div>
+
       <div style={styles.headerRight}>
-        {/* Выбор группы камер */}
         <div ref={groupRef} style={styles.groupWrapper}>
           <button
             style={styles.groupBtn}
             onClick={() => setGroupOpen((o) => !o)}
           >
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-              <rect x="1" y="1" width="5" height="5" rx="1" stroke="#4a6a8a" strokeWidth="1.2" />
-              <rect x="8" y="1" width="5" height="5" rx="1" stroke="#4a6a8a" strokeWidth="1.2" />
-              <rect x="1" y="8" width="5" height="5" rx="1" stroke="#4a6a8a" strokeWidth="1.2" />
-              <rect x="8" y="8" width="5" height="5" rx="1" stroke="#4a6a8a" strokeWidth="1.2" />
+              <rect x="1" y="1" width="5" height="5" rx="1" stroke="#888" strokeWidth="1.2" />
+              <rect x="8" y="1" width="5" height="5" rx="1" stroke="#888" strokeWidth="1.2" />
+              <rect x="1" y="8" width="5" height="5" rx="1" stroke="#888" strokeWidth="1.2" />
+              <rect x="8" y="8" width="5" height="5" rx="1" stroke="#888" strokeWidth="1.2" />
             </svg>
             {activeGroup?.name || "Все камеры"}
             <svg width="10" height="6" viewBox="0 0 10 6" fill="none" style={{ marginLeft: "4px" }}>
@@ -114,7 +97,6 @@ export function Header() {
             </svg>
           </button>
 
-          {/* Дропдаун групп */}
           {groupOpen && (
             <div style={styles.groupDropdown}>
               {groups.map((g) => (
@@ -136,13 +118,11 @@ export function Header() {
           )}
         </div>
 
-        {/* Часы */}
         <div style={styles.clock}>
           <div style={styles.clockTime}>{timeStr}</div>
           <div style={styles.clockDate}>{dateStr}</div>
         </div>
 
-        {/* Пользователь */}
         {user && (
           <div style={styles.userSection}>
             <div style={styles.userAvatar}>
@@ -169,9 +149,10 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
-    padding: "8px 20px",
-    background: "#0d1520",
-    borderBottom: "1px solid #1a3a5c",
+    padding: "0 24px",
+    height: "56px",
+    background: "#1a1a1a",
+    borderBottom: "1px solid #333",
     flexShrink: 0,
     zIndex: 100,
   },
@@ -183,36 +164,48 @@ const styles: Record<string, React.CSSProperties> = {
   logo: {
     display: "flex",
     alignItems: "center",
-    gap: "8px",
-    fontFamily: "'Rajdhani', sans-serif",
+    gap: "10px",
+  },
+  logoIcon: {
+    width: "32px",
+    height: "32px",
+    background: "#00e676",
+    clipPath: "polygon(25% 0%, 100% 0%, 75% 100%, 0% 100%)",
+  },
+  logoText: {
     fontWeight: 700,
+    fontSize: "1.1rem",
+    color: "#ffffff",
+    fontFamily: "'Inter', sans-serif",
+  },
+  headerCenter: {
     fontSize: "1rem",
-    letterSpacing: "2px",
-    color: "#00e5ff",
-    flexShrink: 0,
+    fontWeight: 500,
+    color: "#ccc",
+    fontFamily: "'Inter', sans-serif",
   },
   nav: {
     display: "flex",
     gap: "4px",
   },
   navBtn: {
-    fontFamily: "'Rajdhani', sans-serif",
+    fontFamily: "'Inter', sans-serif",
     fontWeight: 600,
     fontSize: "0.72rem",
     letterSpacing: "1.5px",
     border: "1px solid transparent",
-    borderRadius: "4px",
+    borderRadius: "8px",
     padding: "4px 12px",
     cursor: "pointer",
     background: "transparent",
-    color: "#4a6a8a",
+    color: "#888",
     textTransform: "uppercase",
     transition: "all 0.2s",
   },
   navActive: {
-    borderColor: "#1a3a5c",
-    color: "#00e5ff",
-    background: "#00e5ff11",
+    borderColor: "#333",
+    color: "#00e676",
+    background: "#00e67610",
   },
   headerRight: {
     display: "flex",
@@ -226,16 +219,16 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     alignItems: "center",
     gap: "6px",
-    fontFamily: "'Rajdhani', sans-serif",
-    fontWeight: 600,
+    fontFamily: "'Inter', sans-serif",
+    fontWeight: 500,
     fontSize: "0.72rem",
     letterSpacing: "1px",
-    border: "1px solid #1a3a5c",
-    borderRadius: "4px",
+    border: "1px solid #333",
+    borderRadius: "8px",
     padding: "5px 12px",
     cursor: "pointer",
-    background: "transparent",
-    color: "#4a6a8a",
+    background: "#2a2a2a",
+    color: "#888",
     textTransform: "uppercase",
     transition: "all 0.2s",
   },
@@ -244,9 +237,9 @@ const styles: Record<string, React.CSSProperties> = {
     top: "100%",
     right: 0,
     marginTop: "4px",
-    background: "#101a24",
-    border: "1px solid #1a3a5c",
-    borderRadius: "6px",
+    background: "#222",
+    border: "1px solid #333",
+    borderRadius: "8px",
     overflow: "hidden",
     minWidth: "180px",
     zIndex: 1000,
@@ -255,80 +248,79 @@ const styles: Record<string, React.CSSProperties> = {
   groupOption: {
     display: "block",
     width: "100%",
-    fontFamily: "'Rajdhani', sans-serif",
-    fontWeight: 600,
+    fontFamily: "'Inter', sans-serif",
+    fontWeight: 500,
     fontSize: "0.72rem",
     letterSpacing: "1px",
     border: "none",
-    borderBottom: "1px solid #1a3a5c22",
+    borderBottom: "1px solid #33333322",
     padding: "10px 16px",
     cursor: "pointer",
     background: "transparent",
-    color: "#4a6a8a",
+    color: "#888",
     textTransform: "uppercase",
     textAlign: "left",
     transition: "all 0.15s",
   },
   groupOptionActive: {
-    color: "#00e5ff",
-    background: "#00e5ff11",
+    color: "#00e676",
+    background: "#00e67611",
   },
   clock: {
     textAlign: "right",
-    lineHeight: "1.3",
+    lineHeight: "1.5",
   },
   clockTime: {
-    fontFamily: "'Share Tech Mono', monospace",
-    fontSize: "0.85rem",
-    color: "#00e5ff",
-    letterSpacing: "1px",
+    fontFamily: "monospace",
+    fontSize: "0.8rem",
+    color: "#888",
   },
   clockDate: {
-    fontSize: "0.6rem",
-    color: "#4a6a8a",
-    fontFamily: "'Exo 2', sans-serif",
+    fontFamily: "monospace",
+    fontSize: "0.7rem",
+    color: "#888",
   },
   userSection: {
     display: "flex",
     alignItems: "center",
     gap: "8px",
-    borderLeft: "1px solid #1a3a5c",
+    borderLeft: "1px solid #333",
     paddingLeft: "12px",
   },
   userAvatar: {
     width: "28px",
     height: "28px",
     borderRadius: "50%",
-    background: "#00e5ff22",
-    border: "1px solid #00e5ff44",
+    background: "#00e67620",
+    border: "1px solid #00e67640",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    fontFamily: "'Rajdhani', sans-serif",
     fontWeight: 700,
     fontSize: "0.75rem",
-    color: "#00e5ff",
+    color: "#00e676",
+    fontFamily: "'Inter', sans-serif",
   },
   userInfo: {
     lineHeight: "1.2",
   },
   userName: {
-    fontFamily: "'Rajdhani', sans-serif",
     fontWeight: 600,
     fontSize: "0.78rem",
-    color: "#c8dff0",
+    color: "#ffffff",
+    fontFamily: "'Inter', sans-serif",
   },
   userRole: {
     fontSize: "0.6rem",
-    color: "#4a6a8a",
+    color: "#888",
     textTransform: "uppercase",
-    fontFamily: "'Exo 2', sans-serif",
+    fontFamily: "'Inter', sans-serif",
   },
   logoutBtn: {
     background: "none",
-    border: "1px solid #4a6a8a",
+    border: "1px solid #888",
     borderRadius: "4px",
-    color: "#ff5566",
+    color: "#f44336",
     cursor: "pointer",
     padding: "4px 6px",
     display: "flex",

@@ -26,7 +26,7 @@ export default function SettingsPage() {
                 <div key={cam.name} style={styles.row}>
                   <span style={styles.rowName}>{cam.name}</span>
                   <span style={styles.rowSource}>{String(cam.source)}</span>
-                  <span style={{ ...styles.rowStatus, color: cam.detect_enabled ? "#00ff88" : "#ff3355" }}>
+                  <span style={{ ...styles.rowStatus,                     color: cam.detect_enabled ? "#00e676" : "#f44336" }}>
                     {cam.detect_enabled ? "ВКЛ" : "ВЫКЛ"}
                   </span>
                 </div>
@@ -54,21 +54,21 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     flexDirection: "column",
     flex: 1,
-    background: "#080d14",
-    color: "#c8dff0",
+    background: "#1a1a1a",
+    color: "#ffffff",
     overflow: "hidden",
     minHeight: 0,
   },
   header: {
     padding: "16px 24px",
-    borderBottom: "1px solid #1a3a5c",
+    borderBottom: "1px solid #333",
   },
   title: {
-    fontFamily: "'Rajdhani', sans-serif",
+    fontFamily: "'Inter', sans-serif",
     fontWeight: 700,
     fontSize: "1rem",
     letterSpacing: "3px",
-    color: "#00e5ff",
+    color: "#00e676",
     textTransform: "uppercase",
     margin: 0,
   },
@@ -81,21 +81,21 @@ const styles: Record<string, React.CSSProperties> = {
     gap: "16px",
   },
   card: {
-    background: "#0d1520",
-    border: "1px solid #1a3a5c",
-    borderRadius: "8px",
+    background: "#222",
+    border: "1px solid #333",
+    borderRadius: "12px",
     overflow: "hidden",
   },
   cardTitle: {
-    fontFamily: "'Rajdhani', sans-serif",
+    fontFamily: "'Inter', sans-serif",
     fontWeight: 700,
     fontSize: "0.7rem",
     letterSpacing: "3px",
-    color: "#4a6a8a",
+    color: "#888",
     textTransform: "uppercase",
     padding: "12px 16px",
-    borderBottom: "1px solid #1a3a5c",
-    background: "#080d14",
+    borderBottom: "1px solid #333",
+    background: "#1a1a1a",
   },
   cardBody: {
     padding: "12px 16px",
@@ -105,33 +105,33 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     gap: "12px",
     padding: "8px 0",
-    borderBottom: "1px solid #1a3a5c22",
-    fontFamily: "'Share Tech Mono', monospace",
+    borderBottom: "1px solid #33333322",
+    fontFamily: "monospace",
     fontSize: "0.7rem",
   },
   rowName: {
-    color: "#c8dff0",
+    color: "#ffffff",
     minWidth: "120px",
   },
   rowSource: {
-    color: "#4a6a8a",
+    color: "#888",
     flex: 1,
   },
   rowStatus: {
-    fontFamily: "'Rajdhani', sans-serif",
+    fontFamily: "'Inter', sans-serif",
     fontWeight: 600,
   },
   empty: {
-    fontFamily: "'Share Tech Mono', monospace",
+    fontFamily: "monospace",
     fontSize: "0.7rem",
-    color: "#4a6a8a",
+    color: "#888",
     textAlign: "center",
     padding: "20px",
   },
   placeholder: {
-    fontFamily: "'Share Tech Mono', monospace",
+    fontFamily: "monospace",
     fontSize: "0.7rem",
-    color: "#4a6a8a",
+    color: "#888",
     textAlign: "center",
     padding: "20px",
   },

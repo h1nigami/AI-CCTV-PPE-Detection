@@ -118,16 +118,16 @@ export function CameraManagerModal({
             </button>
           </div>
 
-          {status && (
+            {status && (
             <div
               style={{
                 ...styles.status,
-                color: status.startsWith("OK") ? "#00ff88" : status.startsWith("ERR") ? "#ff3355" : "#ffd600",
+                color: status.startsWith("OK") ? "#00e676" : status.startsWith("ERR") ? "#f44336" : "#ffd600",
               }}
             >
               {status}
             </div>
-          )}
+            )}
 
           <div>
             {cameraList.length === 0 ? (
@@ -154,16 +154,16 @@ export function CameraManagerModal({
                             autoFocus
                           />
                         ) : (
-                          <span style={{ color: "#00e5ff" }}>{cam.name}</span>
+                          <span style={{ color: "#00e676" }}>{cam.name}</span>
                         )}
                         <span
                           style={{
                             fontSize: "0.6rem",
                             padding: "1px 6px",
-                            borderRadius: "3px",
+                            borderRadius: "4px",
                             background: cam.detect_enabled ? "#0a2a1a" : "#2a1a1a",
-                            color: cam.detect_enabled ? "#00ff88" : "#ff5566",
-                            border: `1px solid ${cam.detect_enabled ? "#00ff88" : "#ff5566"}`,
+                            color: cam.detect_enabled ? "#00e676" : "#f44336",
+                            border: `1px solid ${cam.detect_enabled ? "#00e676" : "#f44336"}`,
                           }}
                         >
                           {cam.detect_enabled ? "ANALYTICS ON" : "ANALYTICS OFF"}
@@ -179,8 +179,8 @@ export function CameraManagerModal({
                       <button
                         style={{
                           ...styles.actionBtn,
-                          borderColor: cam.detect_enabled ? "#00ff88" : "#ff5566",
-                          color: cam.detect_enabled ? "#00ff88" : "#ff5566",
+                          borderColor: cam.detect_enabled ? "#00e676" : "#f44336",
+                          color: cam.detect_enabled ? "#00e676" : "#f44336",
                         }}
                         onClick={() => handleToggleAnalytics(cam)}
                         disabled={togglingId === cam.name}
@@ -223,13 +223,13 @@ export function CameraManagerModal({
 }
 
 const baseInput: React.CSSProperties = {
-  background: "#080d14",
-  border: "1px solid #1a3a5c",
-  borderRadius: "3px",
+  background: "#1a1a1a",
+  border: "1px solid #333",
+  borderRadius: "6px",
   padding: "6px 8px",
-  fontFamily: "'Share Tech Mono', monospace",
+  fontFamily: "monospace",
   fontSize: ".75rem",
-  color: "#c8dff0",
+  color: "#ffffff",
 }
 
 const styles: Record<string, React.CSSProperties> = {
@@ -243,9 +243,9 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: "center",
   },
   modal: {
-    background: "#0d1520",
-    border: "1px solid #1a3a5c",
-    borderRadius: "10px",
+    background: "#222",
+    border: "1px solid #333",
+    borderRadius: "12px",
     width: "90vw",
     maxWidth: "600px",
     maxHeight: "80vh",
@@ -257,18 +257,18 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     justifyContent: "space-between",
     padding: "16px 20px 12px",
-    borderBottom: "1px solid #1a3a5c",
-    fontFamily: "'Rajdhani', sans-serif",
+    borderBottom: "1px solid #333",
+    fontFamily: "'Inter', sans-serif",
     fontWeight: 700,
     fontSize: "0.9rem",
     letterSpacing: "2px",
-    color: "#00e5ff",
+    color: "#00e676",
     textTransform: "uppercase",
   },
   closeBtn: {
     background: "none",
     border: "none",
-    color: "#4a6a8a",
+    color: "#888",
     fontSize: "1.2rem",
     cursor: "pointer",
     padding: "0 4px",
@@ -287,27 +287,27 @@ const styles: Record<string, React.CSSProperties> = {
   input: { ...baseInput, flex: 1, minWidth: "80px" },
   inputWide: { ...baseInput, flex: 2, minWidth: "140px" },
   addBtn: {
-    background: "#111c2b",
-    border: "1px solid #00e5ff",
-    color: "#00e5ff",
-    borderRadius: "3px",
+    background: "#2a2a2a",
+    border: "1px solid #00e676",
+    color: "#00e676",
+    borderRadius: "6px",
     padding: "6px 12px",
     cursor: "pointer",
-    fontFamily: "'Rajdhani', sans-serif",
+    fontFamily: "'Inter', sans-serif",
     fontWeight: 600,
     fontSize: ".7rem",
     textTransform: "uppercase",
   },
   status: {
-    fontFamily: "'Share Tech Mono', monospace",
+    fontFamily: "monospace",
     fontSize: ".7rem",
     marginBottom: "8px",
   },
   empty: {
     textAlign: "center",
     padding: "30px 20px",
-    color: "#4a6a8a",
-    fontFamily: "'Share Tech Mono', monospace",
+    color: "#888",
+    fontFamily: "monospace",
     fontSize: "0.75rem",
   },
   item: {
@@ -316,22 +316,22 @@ const styles: Record<string, React.CSSProperties> = {
     gap: "10px",
     padding: "10px 12px",
     marginBottom: "6px",
-    background: "#111c2b",
-    border: "1px solid #1a3a5c",
-    borderRadius: "6px",
+    background: "#2a2a2a",
+    border: "1px solid #333",
+    borderRadius: "8px",
     transition: "border-color .2s",
   },
   avatar: {
     width: "36px",
     height: "36px",
     borderRadius: "50%",
-    background: "#1a3a5c",
+    background: "#333",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    fontFamily: "'Share Tech Mono', monospace",
+    fontFamily: "monospace",
     fontSize: "0.8rem",
-    color: "#00e5ff",
+    color: "#00e676",
     flexShrink: 0,
   },
   info: {
@@ -339,19 +339,19 @@ const styles: Record<string, React.CSSProperties> = {
     minWidth: 0,
   },
   nameRow: {
-    fontFamily: "'Rajdhani', sans-serif",
+    fontFamily: "'Inter', sans-serif",
     fontWeight: 600,
     fontSize: "0.85rem",
-    color: "#c8dff0",
+    color: "#ffffff",
     display: "flex",
     alignItems: "center",
     gap: "6px",
   },
   nameInput: { ...baseInput, width: "120px" },
   meta: {
-    fontFamily: "'Share Tech Mono', monospace",
+    fontFamily: "monospace",
     fontSize: "0.7rem",
-    color: "#4a6a8a",
+    color: "#888",
     marginTop: "2px",
   },
   actions: {
@@ -360,22 +360,22 @@ const styles: Record<string, React.CSSProperties> = {
   },
   actionBtn: {
     background: "none",
-    border: "1px solid #1a3a5c",
-    borderRadius: "3px",
-    color: "#4a6a8a",
+    border: "1px solid #333",
+    borderRadius: "6px",
+    color: "#888",
     cursor: "pointer",
     padding: "2px 8px",
-    fontFamily: "'Share Tech Mono', monospace",
+    fontFamily: "monospace",
     fontSize: "0.65rem",
     transition: "all .2s",
   },
   footer: {
     padding: "10px 16px",
-    borderTop: "1px solid #1a3a5c",
+    borderTop: "1px solid #333",
   },
   footerCount: {
-    fontFamily: "'Share Tech Mono', monospace",
+    fontFamily: "monospace",
     fontSize: "0.65rem",
-    color: "#4a6a8a",
+    color: "#888",
   },
 }

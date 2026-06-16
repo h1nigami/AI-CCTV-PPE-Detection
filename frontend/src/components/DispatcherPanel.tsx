@@ -3,34 +3,20 @@ import { useCamerasContext } from "../contexts/CameraContext"
 import { api } from "../api/client"
 import type { LogEntry, PpeStatus, PersonSummary } from "../types"
 
-// ============================================================
-// Диспетчерская панель — открывается по клику на камеру.
-// Содержит: крупный видеопоток, ленту событий, статус СИЗ,
-// список людей, кнопку управления аналитикой.
-// Разметку можно менять — это базовая структура.
-// ============================================================
-
 export function DispatcherPanel() {
   const { dispatcher, closeDispatcher, cameras } = useCamerasContext()
   const { cameraName } = dispatcher
 
-  // Информация о выбранной камере
   const camera = useMemo(
     () => cameras.find((c) => c.name === cameraName) || null,
     [cameras, cameraName],
   )
 
-  // Состояние детекции (локальный toggle)
   const [detectEnabled, setDetectEnabled] = useState(camera?.detect_enabled ?? true)
-
-  // Логи для выбранной камеры
   const [logs, setLogs] = useState<LogEntry[]>([])
-
-  // Флаг загрузки
   const [loading, setLoading] = useState(false)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  // Подгружаем события для камеры с polling'ом (каждую секунду)
   useEffect(() => {
     if (!cameraName) return
 
@@ -39,14 +25,13 @@ export function DispatcherPanel() {
         const data = await api.getLogs(cameraName)
         setLogs(data.logs)
       } catch {
-        // игнорируем ошибки при polling'е
+        // ignore
       }
     }
 
     setLoading(true)
     fetchLogs().finally(() => setLoading(false))
 
-    // Опрашиваем раз в секунду для обновления статусов СИЗ
     pollRef.current = setInterval(fetchLogs, 1000)
 
     return () => {
@@ -54,12 +39,10 @@ export function DispatcherPanel() {
     }
   }, [cameraName])
 
-  // Синхронизируем detectEnabled при смене камеры
   useEffect(() => {
     setDetectEnabled(camera?.detect_enabled ?? true)
   }, [camera])
 
-  // Переключение аналитики
   const toggleAnalytics = useCallback(async () => {
     if (!cameraName) return
     const next = !detectEnabled
@@ -67,11 +50,10 @@ export function DispatcherPanel() {
       await api.toggleAnalytics(cameraName, next)
       setDetectEnabled(next)
     } catch {
-      // Ошибка — возвращаем предыдущее состояние
+      // ignore
     }
   }, [cameraName, detectEnabled])
 
-  // Парсим СИЗ и людей из логов (взято из LeftPanel)
   const { ppe, persons } = useMemo(() => {
     const result: {
       ppe: PpeStatus
@@ -83,7 +65,6 @@ export function DispatcherPanel() {
 
     if (logs.length === 0) return result
 
-    // Берём самую свежую запись (API возвращает reversed — первая = новая)
     const latest = logs[0]
     if (!latest?.message) return result
 
@@ -135,19 +116,17 @@ export function DispatcherPanel() {
     return result
   }, [logs])
 
-  // Если панель закрыта — не рендерим
   if (!dispatcher.open || !cameraName) return null
 
   return (
     <div style={styles.panel}>
-      {/* Шапка панели */}
       <div style={styles.header}>
         <div style={styles.headerLeft}>
           <div style={styles.camIcon}>
             <svg width="18" height="18" viewBox="0 0 28 28" fill="none">
-              <rect x="2" y="6" width="24" height="16" rx="3" stroke="#00e5ff" strokeWidth="1.5" />
-              <circle cx="14" cy="14" r="5" stroke="#00e5ff" strokeWidth="1.5" />
-              <path d="M22 6l4-3v18l-4-3" stroke="#00e5ff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              <rect x="2" y="6" width="24" height="16" rx="3" stroke="#00e676" strokeWidth="1.5" />
+              <circle cx="14" cy="14" r="5" stroke="#00e676" strokeWidth="1.5" />
+              <path d="M22 6l4-3v18l-4-3" stroke="#00e676" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </div>
           <div>
@@ -155,16 +134,13 @@ export function DispatcherPanel() {
             <div style={styles.camSource}>{String(camera?.source || "")}</div>
           </div>
         </div>
-
-        {/* Кнопка закрытия */}
-        <button style={styles.closeBtn} onClick={closeDispatcher} title="Закрыть панель">
+        <button style={styles.closeBtn} onClick={closeDispatcher} title="Закрыть">
           <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-            <path d="M4 4l10 10M14 4l-10 10" stroke="#4a6a8a" strokeWidth="1.5" strokeLinecap="round" />
+            <path d="M4 4l10 10M14 4l-10 10" stroke="#888" strokeWidth="1.5" strokeLinecap="round" />
           </svg>
         </button>
       </div>
 
-      {/* Управление аналитикой */}
       <div style={styles.controls}>
         <button
           style={{
@@ -176,14 +152,13 @@ export function DispatcherPanel() {
           <div
             style={{
               ...styles.toggleDot,
-              background: detectEnabled ? "#00ff88" : "#ff3355",
+              background: detectEnabled ? "#00e676" : "#f44336",
             }}
           />
           АНАЛИТИКА: {detectEnabled ? "ВКЛ" : "ВЫКЛ"}
         </button>
       </div>
 
-      {/* Секция: статус СИЗ */}
       <div style={styles.section}>
         <div style={styles.sectionTitle}>СТАТУС СИЗ</div>
         <div style={styles.ppeGrid}>
@@ -196,8 +171,7 @@ export function DispatcherPanel() {
           ]).map(({ key, icon, label }) => {
             const val = ppe[key]
             const ok = val === true
-            const color =
-              val === null ? "#4a6a8a" : ok ? "#00ff88" : "#ff3355"
+            const color = val === null ? "#888" : ok ? "#00e676" : "#f44336"
             return (
               <div key={key} style={{ ...styles.ppeItem, borderColor: color + "44" }}>
                 <div style={styles.ppeIcon}>{icon}</div>
@@ -211,7 +185,6 @@ export function DispatcherPanel() {
         </div>
       </div>
 
-      {/* Секция: люди */}
       <div style={styles.section}>
         <div style={styles.sectionTitle}>
           ЛЮДИ
@@ -225,7 +198,7 @@ export function DispatcherPanel() {
               <div key={i} style={styles.personRow}>
                 <div style={styles.personName}>{p.name}</div>
                 <div style={styles.personPpe}>{p.ppe}</div>
-                <div style={{ color: p.approved ? "#00ff88" : p.violation ? "#ff3355" : "#ffd600" }}>
+                <div style={{ color: p.approved ? "#00e676" : p.violation ? "#f44336" : "#ffd600" }}>
                   {p.approved ? "✓" : p.violation ? "✗" : "?"}
                 </div>
               </div>
@@ -234,7 +207,6 @@ export function DispatcherPanel() {
         )}
       </div>
 
-      {/* Секция: последние события */}
       <div style={styles.section}>
         <div style={styles.sectionTitle}>
           СОБЫТИЯ
@@ -257,11 +229,7 @@ export function DispatcherPanel() {
                     key={log.id}
                     style={{
                       ...styles.eventRow,
-                      borderLeftColor: isViolation
-                        ? "#ff3355"
-                        : isWarning
-                          ? "#ffd600"
-                          : "#00ff88",
+                      borderLeftColor: isViolation ? "#f44336" : isWarning ? "#ffd600" : "#00e676",
                     }}
                   >
                     <div style={styles.eventTime}>{log.timestamp}</div>
@@ -277,21 +245,21 @@ export function DispatcherPanel() {
 
 const styles: Record<string, React.CSSProperties> = {
   panel: {
-    width: "380px",
-    minWidth: "380px",
-    background: "#0d1520",
-    borderLeft: "1px solid #1a3a5c",
+    width: "420px",
+    background: "#222",
+    border: "1px solid #333",
+    borderRadius: "12px",
     display: "flex",
     flexDirection: "column",
     overflow: "hidden",
-    animation: "slideIn 0.25s cubic-bezier(0.34, 1.56, 0.64, 1)",
+    boxShadow: "0 16px 64px rgba(0,0,0,0.6)",
   },
   header: {
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
     padding: "12px 16px",
-    borderBottom: "1px solid #1a3a5c",
+    borderBottom: "1px solid #333",
     flexShrink: 0,
   },
   headerLeft: {
@@ -304,17 +272,17 @@ const styles: Record<string, React.CSSProperties> = {
     flexShrink: 0,
   },
   camTitle: {
-    fontFamily: "'Rajdhani', sans-serif",
     fontWeight: 700,
     fontSize: "0.85rem",
-    color: "#c8dff0",
+    color: "#ffffff",
     letterSpacing: "1px",
     lineHeight: "1.2",
+    fontFamily: "'Inter', sans-serif",
   },
   camSource: {
-    fontFamily: "'Share Tech Mono', monospace",
+    fontFamily: "monospace",
     fontSize: "0.55rem",
-    color: "#4a6a8a",
+    color: "#888",
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
@@ -322,46 +290,46 @@ const styles: Record<string, React.CSSProperties> = {
   },
   closeBtn: {
     background: "none",
-    border: "1px solid #1a3a5c",
-    borderRadius: "4px",
+    border: "1px solid #333",
+    borderRadius: "6px",
     padding: "4px",
     cursor: "pointer",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    color: "#4a6a8a",
+    color: "#888",
     flexShrink: 0,
     transition: "all 0.2s",
   },
   controls: {
     padding: "10px 16px",
-    borderBottom: "1px solid #1a3a5c",
+    borderBottom: "1px solid #333",
     flexShrink: 0,
   },
   analyticsBtn: {
     display: "flex",
     alignItems: "center",
     gap: "8px",
-    fontFamily: "'Rajdhani', sans-serif",
     fontWeight: 600,
     fontSize: "0.75rem",
     letterSpacing: "1px",
-    border: "1px solid #1a3a5c",
-    borderRadius: "5px",
+    border: "1px solid #333",
+    borderRadius: "8px",
     padding: "6px 14px",
     cursor: "pointer",
     textTransform: "uppercase",
     width: "100%",
     background: "transparent",
+    fontFamily: "'Inter', sans-serif",
     transition: "all 0.2s",
   },
   analyticsOn: {
-    borderColor: "#00ff8844",
-    color: "#00ff88",
+    borderColor: "#00e67650",
+    color: "#00e676",
   },
   analyticsOff: {
-    borderColor: "#ff335544",
-    color: "#ff3355",
+    borderColor: "#f4433650",
+    color: "#f44336",
   },
   toggleDot: {
     width: "8px",
@@ -370,29 +338,29 @@ const styles: Record<string, React.CSSProperties> = {
     flexShrink: 0,
   },
   section: {
-    borderBottom: "1px solid #1a3a5c",
+    borderBottom: "1px solid #333",
     padding: "12px 16px",
     flexShrink: 0,
   },
   sectionTitle: {
-    fontFamily: "'Rajdhani', sans-serif",
     fontWeight: 700,
     fontSize: "0.6rem",
     letterSpacing: "3px",
-    color: "#4a6a8a",
+    color: "#888",
     textTransform: "uppercase",
     marginBottom: "10px",
     display: "flex",
     alignItems: "center",
     gap: "8px",
+    fontFamily: "'Inter', sans-serif",
   },
   sectionCount: {
-    fontFamily: "'Share Tech Mono', monospace",
+    fontFamily: "monospace",
     fontSize: "0.6rem",
-    color: "#1a3a5c",
-    background: "#080d14",
-    border: "1px solid #1a3a5c",
-    borderRadius: "3px",
+    color: "#333",
+    background: "#1a1a1a",
+    border: "1px solid #333",
+    borderRadius: "4px",
     padding: "0 5px",
     lineHeight: "16px",
   },
@@ -406,9 +374,9 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     gap: "8px",
     padding: "8px 10px",
-    background: "#111c2b",
-    border: "1px solid #1a3a5c",
-    borderRadius: "5px",
+    background: "#2a2a2a",
+    border: "1px solid #333",
+    borderRadius: "8px",
     transition: "border-color 0.3s",
   },
   ppeIcon: {
@@ -416,14 +384,14 @@ const styles: Record<string, React.CSSProperties> = {
     flexShrink: 0,
   },
   ppeLabel: {
-    fontFamily: "'Rajdhani', sans-serif",
     fontWeight: 600,
     fontSize: "0.75rem",
-    color: "#c8dff0",
+    color: "#ffffff",
     flex: 1,
+    fontFamily: "'Inter', sans-serif",
   },
   ppeValue: {
-    fontFamily: "'Share Tech Mono', monospace",
+    fontFamily: "monospace",
     fontSize: "0.7rem",
     fontWeight: 700,
   },
@@ -437,17 +405,17 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     gap: "8px",
     padding: "6px 8px",
-    background: "#111c2b",
-    borderRadius: "4px",
-    fontFamily: "'Share Tech Mono', monospace",
+    background: "#2a2a2a",
+    borderRadius: "6px",
+    fontFamily: "monospace",
     fontSize: "0.65rem",
   },
   personName: {
-    color: "#c8dff0",
+    color: "#ffffff",
     minWidth: "80px",
   },
   personPpe: {
-    color: "#4a6a8a",
+    color: "#888",
     flex: 1,
   },
   eventList: {
@@ -459,25 +427,25 @@ const styles: Record<string, React.CSSProperties> = {
   },
   eventRow: {
     padding: "6px 8px",
-    background: "#111c2b",
+    background: "#2a2a2a",
     borderLeft: "2px solid",
-    borderRadius: "3px",
+    borderRadius: "4px",
   },
   eventTime: {
-    fontFamily: "'Share Tech Mono', monospace",
+    fontFamily: "monospace",
     fontSize: "0.55rem",
-    color: "#4a6a8a",
+    color: "#888",
     marginBottom: "2px",
   },
   eventMsg: {
     fontSize: "0.7rem",
-    color: "#c8dff0",
+    color: "#ccc",
     lineHeight: "1.3",
   },
   empty: {
-    fontFamily: "'Share Tech Mono', monospace",
+    fontFamily: "monospace",
     fontSize: "0.65rem",
-    color: "#4a6a8a",
+    color: "#888",
     textAlign: "center",
     padding: "12px",
   },

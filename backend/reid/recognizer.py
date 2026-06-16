@@ -1,5 +1,6 @@
-import threading
+import os
 import time
+import threading
 import numpy as np
 from pathlib import Path
 from typing import Optional, List, Tuple
@@ -12,17 +13,50 @@ except ImportError:
     INSIGHTFACE_AVAILABLE = False
 
 
+def _get_insightface_root() -> str:
+    env_root = os.environ.get("INSIGHTFACE_ROOT")
+    if env_root:
+        return env_root
+    return str(Path.home() / ".insightface")
+
+
 class FaceRecognizer:
-    def __init__(self, model_name: str = 'buffalo_l', det_size: Tuple[int, int] = (640, 640)):
+    def __init__(self, model_name: str = "buffalo_l", det_size: Tuple[int, int] = (640, 640)):
         if not INSIGHTFACE_AVAILABLE:
             raise RuntimeError("insightface не установлен (pip install insightface)")
-        providers = ['CUDAExecutionProvider', 'CPUExecutionProvider']
-        self.app = insightface.app.FaceAnalysis(
-            name=model_name, providers=providers,
-            root=str(Path.home() / '.insightface')
+        root = _get_insightface_root()
+        providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
+
+        last_exc = None
+        for attempt in range(3):
+            try:
+                self.app = insightface.app.FaceAnalysis(
+                    name=model_name, providers=providers, root=root
+                )
+                self.app.prepare(ctx_id=0, det_size=det_size)
+                print(f"[ReID] InsightFace {model_name} loaded (root={root})")
+                return
+            except Exception as e:
+                last_exc = e
+                print(f"[ReID] Попытка {attempt + 1}/3 не удалась: {e}")
+                if attempt < 2:
+                    wait = 2 ** attempt * 5
+                    print(f"[ReID] Повтор через {wait}с...")
+                    time.sleep(wait)
+
+        if "SSLError" in str(last_exc) or "ssl" in str(last_exc).lower():
+            print(
+                f"[ReID] SSL ошибка при загрузке buffalo_l. "
+                f"Скачайте модель вручную:\n"
+                f"  mkdir -p {root}/models/buffalo_l\n"
+                f"  cd {root}/models/buffalo_l\n"
+                f"  wget https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_l.zip\n"
+                f"  unzip buffalo_l.zip\n"
+                f"Или установите INSIGHTFACE_ROOT на директорию с предзагруженной моделью."
+            )
+        raise RuntimeError(
+            f"Не удалось загрузить InsightFace {model_name} после 3 попыток: {last_exc}"
         )
-        self.app.prepare(ctx_id=0, det_size=det_size)
-        print(f"[ReID] InsightFace {model_name} loaded (CUDA)")
 
     def detect_faces(self, frame: np.ndarray) -> List[Tuple[np.ndarray, np.ndarray, float]]:
         faces = self.app.get(frame)
@@ -32,7 +66,7 @@ class FaceRecognizer:
             emb = face.embedding.astype(np.float32)
             emb = emb / (np.linalg.norm(emb) + 1e-8)
             bbox = face.bbox.astype(np.float32)
-            det_score = getattr(face, 'det_score', 0.5)
+            det_score = getattr(face, "det_score", 0.5)
             fx1, fy1, fx2, fy2 = bbox
             face_size = min((fx2 - fx1) / w, (fy2 - fy1) / h)
             size_score = min(1.0, face_size / 0.15)
@@ -43,8 +77,7 @@ class FaceRecognizer:
 
 
 class FaceRecognitionWorker:
-    def __init__(self, raw_buffer, face_recognizer: FaceRecognizer,
-                 frame_skip: int = 3):
+    def __init__(self, raw_buffer, face_recognizer: FaceRecognizer, frame_skip: int = 3):
         self._buf = raw_buffer
         self._rec = face_recognizer
         self._frame_skip = frame_skip

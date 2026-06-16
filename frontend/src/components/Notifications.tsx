@@ -43,14 +43,14 @@ function NotificationItem({
 
   const typeStyles: Record<string, React.CSSProperties> = {
     granted: {
-      background: "linear-gradient(135deg, #00ff8833 0%, #00ff8811 100%)",
-      border: "1px solid #00ff8866",
-      color: "#00ff88",
+      background: "linear-gradient(135deg, #00e67633 0%, #00e67611 100%)",
+      border: "1px solid #00e67666",
+      color: "#00e676",
     },
     violation: {
-      background: "linear-gradient(135deg, #ff335544 0%, #ff335522 100%)",
-      border: "1px solid #ff335566",
-      color: "#ff3355",
+      background: "linear-gradient(135deg, #f4433644 0%, #f4433622 100%)",
+      border: "1px solid #f4433666",
+      color: "#f44336",
     },
     warning: {
       background: "linear-gradient(135deg, #ffd60044 0%, #ffd60022 100%)",
@@ -58,9 +58,9 @@ function NotificationItem({
       color: "#ffd600",
     },
     missing: {
-      background: "linear-gradient(135deg, #ff6d0044 0%, #ff6d0022 100%)",
-      border: "1px solid #ff6d0066",
-      color: "#ff6d00",
+      background: "linear-gradient(135deg, #ff980044 0%, #ff980022 100%)",
+      border: "1px solid #ff980066",
+      color: "#ff9800",
     },
   }
 
@@ -99,8 +99,8 @@ const styles: Record<string, React.CSSProperties> = {
     maxWidth: "600px",
     width: "100%",
     padding: "16px 24px 14px",
-    borderRadius: "0 0 14px 14px",
-    fontFamily: "'Rajdhani', sans-serif",
+    borderRadius: "0 0 12px 12px",
+    fontFamily: "'Inter', sans-serif",
     fontWeight: 700,
     fontSize: "1rem",
     letterSpacing: "2px",
