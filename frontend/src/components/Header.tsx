@@ -1,4 +1,6 @@
 import { useClock } from "../hooks/useClock"
+import { useAuth } from "../contexts/AuthContext"
+import { useNavigate } from "react-router-dom"
 
 interface HeaderProps {
   isRunning: boolean
@@ -6,9 +8,16 @@ interface HeaderProps {
 
 export function Header({ isRunning }: HeaderProps) {
   const now = useClock()
+  const { user, logout } = useAuth()
+  const navigate = useNavigate()
 
   const timeStr = now.toLocaleTimeString("ru-RU")
   const dateStr = now.toLocaleDateString("ru-RU")
+
+  const handleLogout = () => {
+    logout()
+    navigate("/login")
+  }
 
   return (
     <header style={styles.header}>
@@ -32,6 +41,14 @@ export function Header({ isRunning }: HeaderProps) {
           <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: "0.85rem", color: "#00e5ff", letterSpacing: "1px" }}>{timeStr}</div>
           <div style={{ fontSize: "0.65rem", color: "#4a6a8a" }}>{dateStr}</div>
         </div>
+        {user && (
+          <div style={styles.userSection}>
+            <span style={styles.userName}>{user.username}</span>
+            <button style={styles.logoutBtn} onClick={handleLogout} title="Выйти">
+              ⏻
+            </button>
+          </div>
+        )}
       </div>
     </header>
   )
@@ -87,5 +104,27 @@ const styles: Record<string, React.CSSProperties> = {
   clock: {
     textAlign: "right" as const,
     lineHeight: "1.4",
+  },
+  userSection: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    borderLeft: "1px solid #1a3a5c",
+    paddingLeft: "16px",
+  },
+  userName: {
+    fontFamily: "'Share Tech Mono', monospace",
+    fontSize: "0.75rem",
+    color: "#4a6a8a",
+  },
+  logoutBtn: {
+    background: "none",
+    border: "1px solid #4a6a8a",
+    borderRadius: "4px",
+    color: "#ff5566",
+    cursor: "pointer",
+    fontSize: "0.9rem",
+    padding: "2px 8px",
+    lineHeight: "1",
   },
 }

@@ -1,11 +1,19 @@
 # ── Development override ─────────────────────────────────────
-# Добавляет бинд-маунты для hot-reload кода при разработке.
-# Использование: docker compose --profile cpu -f docker-compose.yml -f docker-compose.override.yml up
-# (override подхватывается автоматически, если лежит рядом)
+# Использование:
+#   docker compose --profile cpu up --build      (первый запуск / после новых зависимостей)
+#   docker compose --profile cpu up              (bind-mounts подтягивают изменения кода)
+#
+# После изменений в Python → достаточно перезапустить контейнер (без --build):
+#   docker compose --profile cpu restart app-cpu
+#
+# После изменений в React → нужно пересобрать frontend:
+#   cd frontend && npm run build
+#   docker compose --profile cpu restart app-cpu
+# (или сервер сам перечитает dist, т.к. папка примонтирована)
 
 services:
 
-  app-cpu:
+  x-dev-mounts: &dev-mounts
     volumes:
       - ./backend:/app/backend
       - ./app.py:/app/app.py
@@ -17,18 +25,13 @@ services:
       - ./gestures.py:/app/gestures.py
       - ./visualization.py:/app/visualization.py
       - ./reid.py:/app/reid.py
+      - ./migrations:/app/migrations
+      - ./frontend/dist:/app/frontend/dist
+    environment:
+      - FLASK_DEBUG=1
+
+  app-cpu:
+    <<: *dev-mounts
 
   app-gpu:
-    volumes:
-      - ./backend:/app/backend
-      - ./app.py:/app/app.py
-      - ./config.py:/app/config.py
-      - ./main.py:/app/main.py
-      - ./state.py:/app/state.py
-      - ./camera.py:/app/camera.py
-      - ./detection.py:/app/detection.py
-      - ./gestures.py:/app/gestures.py
-      - ./visualization.py:/app/visualization.py
-      - ./reid.py:/app/reid.py
-
-  # MQTT не требует override
+    <<: *dev-mounts
