@@ -72,6 +72,15 @@ export default function DashboardPage() {
     }
   }, [])
 
+  // При монтировании проверяем, не запущена ли система на бэке
+  useEffect(() => {
+    api.getStatus().then((data) => {
+      if (data.running) setIsRunning(true)
+    }).catch(() => {
+      // игнорируем — бэкенд мог быть не готов
+    })
+  }, [])
+
   // Escape для закрытия диспетчерской и полноэкранного режима
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

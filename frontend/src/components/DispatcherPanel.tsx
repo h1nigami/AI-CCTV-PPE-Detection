@@ -83,8 +83,8 @@ export function DispatcherPanel() {
 
     if (logs.length === 0) return result
 
-    // Берём последнюю запись
-    const latest = logs[logs.length - 1]
+    // Берём самую свежую запись (API возвращает reversed — первая = новая)
+    const latest = logs[0]
     if (!latest?.message) return result
 
     const m = latest.message
@@ -162,15 +162,6 @@ export function DispatcherPanel() {
             <path d="M4 4l10 10M14 4l-10 10" stroke="#4a6a8a" strokeWidth="1.5" strokeLinecap="round" />
           </svg>
         </button>
-      </div>
-
-      {/* Крупный видеопоток */}
-      <div style={styles.videoContainer}>
-        <img
-          src={api.getFrameUrl(cameraName)}
-          alt={cameraName}
-          style={styles.videoFeed}
-        />
       </div>
 
       {/* Управление аналитикой */}
@@ -341,19 +332,6 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#4a6a8a",
     flexShrink: 0,
     transition: "all 0.2s",
-  },
-  videoContainer: {
-    height: "220px",
-    flexShrink: 0,
-    background: "#050a10",
-    borderBottom: "1px solid #1a3a5c",
-    overflow: "hidden",
-  },
-  videoFeed: {
-    width: "100%",
-    height: "100%",
-    objectFit: "contain",
-    display: "block",
   },
   controls: {
     padding: "10px 16px",

@@ -101,6 +101,9 @@ export const api = {
     }),
   me: () => request<User>("/api/auth/me"),
 
+  // ---- Статус системы ----
+  getStatus: () => request<{ running: boolean }>("/api/status"),
+
   // ---- Управление детекцией ----
   start: () => request<ApiStatus>("/start", { method: "POST" }),
   stop: () => request<ApiStatus>("/stop", { method: "POST" }),
