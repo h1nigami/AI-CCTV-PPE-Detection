@@ -11,7 +11,8 @@ cv2.INTER_NEAREST_EXACT = getattr(cv2, 'INTER_NEAREST_EXACT', cv2.INTER_NEAREST)
 
 from backend.config import (
     MODEL_PATH, POSE_MODEL_PATH, CLASS_NAMES, CAMERAS, CONF_THRESH,
-    REID_GALLERY_PATH, REID_DET_SIZE, REID_FRAME_SKIP, REID_MAX_AGE_DAYS
+    REID_GALLERY_PATH, REID_DET_SIZE, REID_FRAME_SKIP, REID_MAX_AGE_DAYS,
+    get_camera_config,
 )
 from backend.capture.buffer import FrameBuffer
 from backend.capture.camera import CameraCapture
@@ -355,9 +356,12 @@ def detection_loop():
             if frame is None:
                 continue
             had_any = True
+            if not get_camera_config(cam_id).get("detect_enabled", True):
+                out_buf.write(frame)
+                continue
             try:
                 annotated, message, category, global_ids = process_frame(
-                    frame.copy(), cam_id, face_worker=face_workers.get(cam_id))
+                    frame, cam_id, face_worker=face_workers.get(cam_id))
                 out_buf.write(annotated)
                 gid = global_ids[0] if global_ids else 0
                 state.add_log(LogEntry(

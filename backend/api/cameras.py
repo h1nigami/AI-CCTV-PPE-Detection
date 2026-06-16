@@ -5,8 +5,15 @@ def configure_camera_routes(app, state, camera_captures):
 
     @app.route("/cameras")
     def get_cameras():
-        from backend.config import CAMERAS
-        return jsonify({"cameras": {k: v if isinstance(v, int) else v for k, v in CAMERAS.items()}})
+        from backend.config import CAMERAS, get_camera_config
+        result = {}
+        for k, v in CAMERAS.items():
+            cfg = get_camera_config(k)
+            result[k] = {
+                "source": v if isinstance(v, int) else v,
+                "detect_enabled": cfg.get("detect_enabled", True),
+            }
+        return jsonify({"cameras": result})
 
     @app.route("/api/cameras", methods=["POST"])
     def api_add_camera():
@@ -74,5 +81,18 @@ def configure_camera_routes(app, state, camera_captures):
         if not rename_camera(cam_id, new_name):
             return jsonify({"error": "Камера не найдена"}), 404
         return jsonify({"status": "renamed", "old": cam_id, "new": new_name, "source": CAMERAS[new_name]})
+
+    @app.route("/api/cameras/<cam_id>/analytics", methods=["PUT"])
+    def api_toggle_analytics(cam_id):
+        from backend.config import CAMERAS, set_camera_config, get_camera_config
+        if cam_id not in CAMERAS:
+            return jsonify({"error": "Камера не найдена"}), 404
+        data = request.get_json() or {}
+        detect_enabled = data.get("detect_enabled")
+        if detect_enabled is None:
+            return jsonify({"error": "detect_enabled обязателен"}), 400
+        set_camera_config(cam_id, detect_enabled=bool(detect_enabled))
+        cfg = get_camera_config(cam_id)
+        return jsonify({"status": "updated", "name": cam_id, "detect_enabled": cfg.get("detect_enabled")})
 
     return app

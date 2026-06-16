@@ -13,12 +13,35 @@ from backend.api.detection import configure_detection_routes
 from backend.api.cameras import configure_camera_routes
 from backend.api.reid import configure_reid_routes
 from backend.config import CAMERAS
+from backend.db.engine import init_db
+from backend.auth.routes import auth_bp
+from backend.auth.service import init_admin, set_jwt_secret
 
 app = Flask(__name__, static_folder=None, template_folder=str(
     os.path.join(os.path.dirname(__file__), "..", "templates")
 ))
 
+init_db()
+
+JWT_SECRET = os.environ.get("JWT_SECRET", "")
+if JWT_SECRET:
+    set_jwt_secret(JWT_SECRET)
+
+init_admin(
+    username=os.environ.get("ADMIN_USERNAME", "admin"),
+    password=os.environ.get("ADMIN_PASSWORD", "admin123"),
+    email=os.environ.get("ADMIN_EMAIL", None),
+)
+
 FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")
+
+
+@app.after_request
+def add_cors(response):
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type,Authorization"
+    response.headers["Access-Control-Allow-Methods"] = "GET,POST,PUT,DELETE,OPTIONS"
+    return response
 
 
 @app.route("/", defaults={"path": ""})
@@ -32,6 +55,7 @@ def serve_frontend(path):
     return render_template("index.html")
 
 
+app.register_blueprint(auth_bp)
 app = configure_detection_routes(app, state, annotated_buffers,
                                   generate_live_feed, start_live, stop_live, model)
 app = configure_camera_routes(app, state, camera_captures)

@@ -23,12 +23,13 @@ export function CameraManagerModal({
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editingName, setEditingName] = useState("")
   const [editingSource, setEditingSource] = useState("")
+  const [togglingId, setTogglingId] = useState<string | null>(null)
 
   if (!open) return null
 
   const handleAdd = async () => {
     if (!newName.trim() || !newSource.trim()) {
-      setStatus("⚠️ Заполните имя и источник")
+      setStatus("Заполните имя и источник")
       return
     }
     try {
@@ -36,10 +37,10 @@ export function CameraManagerModal({
       await api.addCamera(newName.trim(), isNaN(srcInt) ? newSource.trim() : srcInt)
       setNewName("")
       setNewSource("")
-      setStatus("✅ Камера добавлена")
+      setStatus("OK")
       onRefresh()
     } catch (err) {
-      setStatus("❌ " + (err as Error).message)
+      setStatus("ERR " + (err as Error).message)
     }
   }
 
@@ -60,7 +61,7 @@ export function CameraManagerModal({
       setEditingId(null)
       onRefresh()
     } catch (err) {
-      alert("Ошибка: " + (err as Error).message)
+      alert("ERR " + (err as Error).message)
     }
   }
 
@@ -76,18 +77,29 @@ export function CameraManagerModal({
     }
   }
 
+  const handleToggleAnalytics = async (cam: CameraInfo) => {
+    setTogglingId(cam.name)
+    try {
+      await api.toggleAnalytics(cam.name, !cam.detect_enabled)
+      onRefresh()
+    } catch (err) {
+      setStatus("ERR " + (err as Error).message)
+    } finally {
+      setTogglingId(null)
+    }
+  }
+
   return (
     <div style={styles.overlay} onClick={onClose}>
       <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
         <div style={styles.header}>
-          <span>📷 Управление камерами</span>
+          <span>Управление камерами</span>
           <button style={styles.closeBtn} onClick={onClose}>
-            ✕
+            X
           </button>
         </div>
 
         <div style={styles.body}>
-          {/* Add form */}
           <div style={styles.addRow}>
             <input
               style={styles.input}
@@ -102,24 +114,21 @@ export function CameraManagerModal({
               onChange={(e) => setNewSource(e.target.value)}
             />
             <button style={styles.addBtn} onClick={handleAdd}>
-              ➕ Добавить
+              + Добавить
             </button>
           </div>
 
           {status && (
             <div
               style={{
-                fontFamily: "'Share Tech Mono', monospace",
-                fontSize: ".7rem",
-                color: status.startsWith("✅") ? "#00ff88" : status.startsWith("⚠️") ? "#ffd600" : "#ff3355",
-                marginBottom: "8px",
+                ...styles.status,
+                color: status.startsWith("OK") ? "#00ff88" : status.startsWith("ERR") ? "#ff3355" : "#ffd600",
               }}
             >
               {status}
             </div>
           )}
 
-          {/* Camera list */}
           <div>
             {cameraList.length === 0 ? (
               <div style={styles.empty}>Нет камер</div>
@@ -147,17 +156,40 @@ export function CameraManagerModal({
                         ) : (
                           <span style={{ color: "#00e5ff" }}>{cam.name}</span>
                         )}
+                        <span
+                          style={{
+                            fontSize: "0.6rem",
+                            padding: "1px 6px",
+                            borderRadius: "3px",
+                            background: cam.detect_enabled ? "#0a2a1a" : "#2a1a1a",
+                            color: cam.detect_enabled ? "#00ff88" : "#ff5566",
+                            border: `1px solid ${cam.detect_enabled ? "#00ff88" : "#ff5566"}`,
+                          }}
+                        >
+                          {cam.detect_enabled ? "ANALYTICS ON" : "ANALYTICS OFF"}
+                        </span>
                       </div>
                       <div style={styles.meta}>
                         {typeof cam.source === "number"
-                          ? `🔌 Локальная камера ${cam.source}`
-                          : `📡 ${cam.source}`}
+                          ? `LOCAL ${cam.source}`
+                          : `RTSP ${cam.source}`}
                       </div>
                     </div>
                     <div style={styles.actions}>
+                      <button
+                        style={{
+                          ...styles.actionBtn,
+                          borderColor: cam.detect_enabled ? "#00ff88" : "#ff5566",
+                          color: cam.detect_enabled ? "#00ff88" : "#ff5566",
+                        }}
+                        onClick={() => handleToggleAnalytics(cam)}
+                        disabled={togglingId === cam.name}
+                      >
+                        {togglingId === cam.name ? "..." : cam.detect_enabled ? "OFF" : "ON"}
+                      </button>
                       {isEditing ? (
                         <button style={styles.actionBtn} onClick={() => handleRename(cam.name)}>
-                          💾
+                          SAVE
                         </button>
                       ) : (
                         <button
@@ -168,11 +200,11 @@ export function CameraManagerModal({
                             setEditingSource(String(cam.source))
                           }}
                         >
-                          ✏️
+                          EDIT
                         </button>
                       )}
-                      <button style={styles.actionBtn} onClick={() => handleDelete(cam.name)}>
-                        🗑
+                      <button style={{ ...styles.actionBtn, color: "#ff5566" }} onClick={() => handleDelete(cam.name)}>
+                        DEL
                       </button>
                     </div>
                   </div>
@@ -183,7 +215,7 @@ export function CameraManagerModal({
         </div>
 
         <div style={styles.footer}>
-          <span style={styles.footerCount}>{cameraList.length} камер</span>
+          <span style={styles.footerCount}>{cameraList.length} cameras</span>
         </div>
       </div>
     </div>
@@ -215,7 +247,7 @@ const styles: Record<string, React.CSSProperties> = {
     border: "1px solid #1a3a5c",
     borderRadius: "10px",
     width: "90vw",
-    maxWidth: "560px",
+    maxWidth: "600px",
     maxHeight: "80vh",
     display: "flex",
     flexDirection: "column",
@@ -265,6 +297,11 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 600,
     fontSize: ".7rem",
     textTransform: "uppercase",
+  },
+  status: {
+    fontFamily: "'Share Tech Mono', monospace",
+    fontSize: ".7rem",
+    marginBottom: "8px",
   },
   empty: {
     textAlign: "center",

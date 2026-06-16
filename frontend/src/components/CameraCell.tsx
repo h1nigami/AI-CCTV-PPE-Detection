@@ -3,11 +3,12 @@ import { api } from "../api/client"
 
 interface CameraCellProps {
   name: string
+  detectEnabled: boolean
   onClick: () => void
   isFullscreen?: boolean
 }
 
-export function CameraCell({ name, onClick, isFullscreen }: CameraCellProps) {
+export function CameraCell({ name, detectEnabled, onClick, isFullscreen }: CameraCellProps) {
   const [src, setSrc] = useState("")
   const [error, setError] = useState(false)
   const [hasFrame, setHasFrame] = useState(false)
@@ -27,6 +28,11 @@ export function CameraCell({ name, onClick, isFullscreen }: CameraCellProps) {
 
   return (
     <div style={{ ...styles.cell, ...(isFullscreen ? styles.cellFullscreen : {}) }} onClick={onClick}>
+      {!detectEnabled && (
+        <div style={styles.overlay}>
+          <div style={styles.overlayText}>DETECT OFF</div>
+        </div>
+      )}
       <img
         src={src}
         alt={name}
@@ -43,11 +49,14 @@ export function CameraCell({ name, onClick, isFullscreen }: CameraCellProps) {
       {(!hasFrame || error) && (
         <div style={styles.spinner}>
           <div style={styles.spinnerRing} />
-          <div style={styles.spinnerText}>{error ? "Нет сигнала" : "Подключение..."}</div>
+          <div style={styles.spinnerText}>{error ? "NO SIGNAL" : "CONNECTING..."}</div>
         </div>
       )}
 
-      <div style={styles.label}>{name.toUpperCase()}</div>
+      <div style={styles.label}>
+        {name.toUpperCase()}
+        {!detectEnabled && <span style={{ color: "#ff5566", marginLeft: "6px" }}>DETECT OFF</span>}
+      </div>
     </div>
   )
 }
@@ -63,6 +72,26 @@ const styles: Record<string, React.CSSProperties> = {
   cellFullscreen: {
     outline: "2px solid #00e5ff",
     outlineOffset: "-2px",
+  },
+  overlay: {
+    position: "absolute",
+    inset: 0,
+    zIndex: 3,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    background: "rgba(0,0,0,0.6)",
+    pointerEvents: "none",
+  },
+  overlayText: {
+    fontFamily: "'Share Tech Mono', monospace",
+    fontSize: "1.2rem",
+    color: "#ff5566",
+    letterSpacing: "3px",
+    border: "2px solid #ff5566",
+    padding: "8px 20px",
+    borderRadius: "6px",
+    background: "rgba(42,26,26,0.8)",
   },
   img: {
     width: "100%",

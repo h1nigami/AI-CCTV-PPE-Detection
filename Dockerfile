@@ -38,6 +38,9 @@ RUN pip install --no-cache-dir --timeout=300 \
     ultralytics \
     numpy \
     insightface \
+    sqlalchemy \
+    alembic \
+    pyjwt \
     --extra-index-url https://download.pytorch.org/whl/cpu \
     2>&1 | tail -10
 

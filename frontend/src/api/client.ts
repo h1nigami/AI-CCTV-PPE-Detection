@@ -1,12 +1,53 @@
-import type { Cameras, LogEntry, ReidPerson, ReidStats, ApiStatus, ApiError } from "../types"
+import type { Cameras, LogEntry, ReidPerson, ReidStats, ApiStatus, ApiError, AuthResponse, User } from "../types"
 
 const BASE = ""
 
+let accessToken: string | null = localStorage.getItem("access_token")
+let refreshToken: string | null = localStorage.getItem("refresh_token")
+
+export function setTokens(access: string, refresh: string) {
+  accessToken = access
+  refreshToken = refresh
+  localStorage.setItem("access_token", access)
+  localStorage.setItem("refresh_token", refresh)
+}
+
+export function clearTokens() {
+  accessToken = null
+  refreshToken = null
+  localStorage.removeItem("access_token")
+  localStorage.removeItem("refresh_token")
+}
+
+export function getAccessToken() {
+  return accessToken
+}
+
+export function isAuthenticated() {
+  return !!accessToken
+}
+
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${url}`, {
-    headers: { "Content-Type": "application/json" },
-    ...options,
-  })
+  const headers: Record<string, string> = { "Content-Type": "application/json" }
+  if (accessToken) {
+    headers["Authorization"] = `Bearer ${accessToken}`
+  }
+  const res = await fetch(`${BASE}${url}`, { headers, ...options })
+  if (res.status === 401 && refreshToken) {
+    const refreshed = await tryRefresh()
+    if (refreshed) {
+      headers["Authorization"] = `Bearer ${accessToken}`
+      const retry = await fetch(`${BASE}${url}`, { headers, ...options })
+      if (!retry.ok) {
+        const body = await retry.json().catch(() => ({}))
+        throw new Error((body as ApiError).error || `HTTP ${retry.status}`)
+      }
+      return retry.json()
+    }
+    clearTokens()
+    window.location.href = "/login"
+    throw new Error("Session expired")
+  }
   if (!res.ok) {
     const body = await res.json().catch(() => ({}))
     throw new Error((body as ApiError).error || `HTTP ${res.status}`)
@@ -14,7 +55,37 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
   return res.json()
 }
 
+async function tryRefresh(): Promise<boolean> {
+  try {
+    const res = await fetch(`${BASE}/api/auth/refresh`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    })
+    if (!res.ok) return false
+    const data = await res.json()
+    accessToken = data.access_token
+    localStorage.setItem("access_token", data.access_token)
+    return true
+  } catch {
+    return false
+  }
+}
+
 export const api = {
+  // Auth
+  login: (username: string, password: string) =>
+    request<AuthResponse>("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ username, password }),
+    }),
+  register: (username: string, password: string, email?: string) =>
+    request<{ id: number; username: string; role: string }>("/api/auth/register", {
+      method: "POST",
+      body: JSON.stringify({ username, password, email }),
+    }),
+  me: () => request<User>("/api/auth/me"),
+
   // Detection control
   start: () => request<ApiStatus>("/start", { method: "POST" }),
   stop: () => request<ApiStatus>("/stop", { method: "POST" }),
@@ -37,6 +108,11 @@ export const api = {
     request<ApiStatus>(`/api/cameras/${id}/rename`, {
       method: "POST",
       body: JSON.stringify({ name: newName }),
+    }),
+  toggleAnalytics: (id: string, detect_enabled: boolean) =>
+    request<ApiStatus>(`/api/cameras/${id}/analytics`, {
+      method: "PUT",
+      body: JSON.stringify({ detect_enabled }),
     }),
 
   // Logs

@@ -43,6 +43,7 @@ export function CameraGrid({ cameras, isRunning, fullscreenCam, onCamClick }: Ca
             <CameraCell
               key={cam.name}
               name={cam.name}
+              detectEnabled={cam.detect_enabled}
               onClick={() => onCamClick(cam.name)}
               isFullscreen={fullscreenCam === cam.name}
             />

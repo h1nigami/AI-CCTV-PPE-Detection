@@ -1,4 +1,8 @@
 import { useState, useCallback, useRef, useEffect } from "react"
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom"
+import { AuthProvider, useAuth } from "./contexts/AuthContext"
+import LoginPage from "./pages/LoginPage"
+import RegisterPage from "./pages/RegisterPage"
 import { Header } from "./components/Header"
 import { CameraGrid } from "./components/CameraGrid"
 import { LeftPanel } from "./components/LeftPanel"
@@ -11,7 +15,14 @@ import { useCameras } from "./hooks/useCameras"
 import { api } from "./api/client"
 import type { LogEntry } from "./types"
 
-export default function App() {
+function ProtectedRoute({ children }: { children: React.ReactNode }) {
+  const { isAuth, loading } = useAuth()
+  if (loading) return null
+  if (!isAuth) return <Navigate to="/login" replace />
+  return <>{children}</>
+}
+
+function Dashboard() {
   const [isRunning, setIsRunning] = useState(false)
   const [selectedCam, setSelectedCam] = useState<string | null>(null)
   const [fullscreenCam, setFullscreenCam] = useState<string | null>(null)
@@ -86,10 +97,7 @@ export default function App() {
 
   return (
     <div style={styles.root}>
-      <Notifications
-        notifications={notifications}
-        onRemove={removeNotification}
-      />
+      <Notifications notifications={notifications} onRemove={removeNotification} />
 
       <Header isRunning={isRunning} />
 
@@ -116,10 +124,7 @@ export default function App() {
         <RightPanel logs={logs} />
       </div>
 
-      <GalleryModal
-        open={showGallery}
-        onClose={() => setShowGallery(false)}
-      />
+      <GalleryModal open={showGallery} onClose={() => setShowGallery(false)} />
 
       <CameraManagerModal
         open={showCameraManager}
@@ -129,6 +134,27 @@ export default function App() {
         onRefresh={refreshCameras}
       />
     </div>
+  )
+}
+
+export default function App() {
+  return (
+    <BrowserRouter>
+      <AuthProvider>
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/register" element={<RegisterPage />} />
+          <Route
+            path="/*"
+            element={
+              <ProtectedRoute>
+                <Dashboard />
+              </ProtectedRoute>
+            }
+          />
+        </Routes>
+      </AuthProvider>
+    </BrowserRouter>
   )
 }
 

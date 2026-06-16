@@ -10,6 +10,7 @@ FACE_MODEL_PATH = BASE_DIR / "models" / "yolov8n-face.pt"
 REID_MODEL_PATH = BASE_DIR / "models" / "yolov8n.pt"
 
 CAMERAS: dict[str, str | int] = {"cam": 0}
+CAMERAS_CONFIG: dict[str, dict] = {}
 
 _CAMERAS_PATH = BASE_DIR / "data" / "cameras.json"
 try:
@@ -23,10 +24,38 @@ except FileNotFoundError:
     with open(_CAMERAS_PATH, "w", encoding="utf-8") as _f:
         json.dump(CAMERAS, _f, ensure_ascii=False, indent=2)
 
+_CAMERAS_CONFIG_PATH = BASE_DIR / "data" / "cameras_config.json"
+try:
+    with open(_CAMERAS_CONFIG_PATH, encoding="utf-8") as _f:
+        _loaded_cfg = json.load(_f)
+        if isinstance(_loaded_cfg, dict):
+            CAMERAS_CONFIG.update(_loaded_cfg)
+except FileNotFoundError:
+    pass
+
 
 def save_cameras():
     with open(_CAMERAS_PATH, "w", encoding="utf-8") as _f:
         json.dump(CAMERAS, _f, ensure_ascii=False, indent=2)
+
+
+def save_cameras_config():
+    with open(_CAMERAS_CONFIG_PATH, "w", encoding="utf-8") as _f:
+        json.dump(CAMERAS_CONFIG, _f, ensure_ascii=False, indent=2)
+
+
+def get_camera_config(cam_id: str) -> dict:
+    if cam_id not in CAMERAS_CONFIG:
+        CAMERAS_CONFIG[cam_id] = {"detect_enabled": True}
+        save_cameras_config()
+    return CAMERAS_CONFIG[cam_id]
+
+
+def set_camera_config(cam_id: str, **kwargs):
+    if cam_id not in CAMERAS_CONFIG:
+        CAMERAS_CONFIG[cam_id] = {}
+    CAMERAS_CONFIG[cam_id].update(kwargs)
+    save_cameras_config()
 
 CONF_THRESH = 0.75
 MAX_LOG_SIZE = 100

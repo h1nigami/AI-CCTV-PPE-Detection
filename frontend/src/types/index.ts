@@ -7,13 +7,19 @@ export interface LogEntry {
   global_id: number
 }
 
+export interface CameraConfig {
+  source: string | number
+  detect_enabled: boolean
+}
+
 export interface Cameras {
-  [name: string]: string | number
+  [name: string]: CameraConfig
 }
 
 export interface CameraInfo {
   name: string
   source: string | number
+  detect_enabled: boolean
 }
 
 export interface ReidPerson {
@@ -52,4 +58,17 @@ export interface PersonSummary {
   danger: boolean
   violation: boolean
   index: number
+}
+
+export interface User {
+  id: number
+  username: string
+  email?: string
+  role: "admin" | "operator" | "viewer" | "api"
+}
+
+export interface AuthResponse {
+  access_token: string
+  refresh_token: string
+  user: User
 }

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react"
 import { api } from "../api/client"
-import type { Cameras } from "../types"
+import type { Cameras, CameraInfo } from "../types"
 
 export function useCameras() {
   const [cameras, setCameras] = useState<Cameras>({})
@@ -21,9 +21,10 @@ export function useCameras() {
     refresh()
   }, [refresh])
 
-  const cameraList = Object.entries(cameras).map(([name, source]) => ({
+  const cameraList: CameraInfo[] = Object.entries(cameras).map(([name, cfg]) => ({
     name,
-    source,
+    source: typeof cfg === "object" && cfg !== null ? cfg.source : cfg,
+    detect_enabled: typeof cfg === "object" && cfg !== null ? cfg.detect_enabled : true,
   }))
 
   return { cameras, cameraList, loading, refresh }

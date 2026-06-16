@@ -10,7 +10,6 @@ x-common: &common
     - ./data:/app/data
     - ./uploads:/app/uploads
     - ./violation_logs:/app/violation_logs
-    - ./face_gallery.pkl:/app/data/face_gallery.pkl
   restart: unless-stopped
   environment:
     - TZ=Europe/Moscow
