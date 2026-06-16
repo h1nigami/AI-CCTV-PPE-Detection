@@ -343,6 +343,9 @@ def stop_live():
 
 
 def detection_loop():
+    """Основной цикл детекции. Проходит по всем камерам,
+    делает YOLO + аннотацию на каждом кадре.
+    """
     while state.live_active:
         had_any = False
         for cam_id in list(CAMERAS.keys()):
@@ -356,9 +359,12 @@ def detection_loop():
             if frame is None:
                 continue
             had_any = True
+
+            # Если детекция выключена — просто копируем raw кадр в аннотированный буфер
             if not get_camera_config(cam_id).get("detect_enabled", True):
                 out_buf.write(frame)
                 continue
+
             try:
                 annotated, message, category, global_ids = process_frame(
                     frame, cam_id, face_worker=face_workers.get(cam_id))

@@ -1,3 +1,5 @@
+// ===== Существующие типы (без изменений) =====
+
 export interface LogEntry {
   id: string
   timestamp: string
@@ -71,4 +73,48 @@ export interface AuthResponse {
   access_token: string
   refresh_token: string
   user: User
+}
+
+// ===== Новые типы для диспетчерского интерфейса =====
+
+/** Режим стрима камеры — статичный (кадр раз в N сек) или живой (FPS) */
+export type StreamMode = "static" | "live" | "offline"
+
+/** Статус соединения камеры */
+export type CameraStatus = "online" | "offline" | "error"
+
+/** Группа камер для фильтрации на дашборде */
+export interface CameraGroup {
+  id: string
+  name: string
+  /** Имена камер в группе */
+  cameraNames: string[]
+}
+
+/** Событие для таймлайна / списка в диспетчерской */
+export interface TimelineEvent {
+  id: string
+  cameraName: string
+  timestamp: string
+  type: "alert" | "detection" | "motion"
+  label: string
+  confidence: number
+  thumbnailUrl?: string
+}
+
+/** Состояние диспетчерской панели */
+export interface DispatcherState {
+  /** Открыта ли панель */
+  open: boolean
+  /** Выбранная камера */
+  cameraName: string | null
+}
+
+/** Расширенная информация о камере для отображения в сетке */
+export interface CameraCardInfo {
+  name: string
+  source: string | number
+  detectEnabled: boolean
+  status: CameraStatus
+  streamMode: StreamMode
 }

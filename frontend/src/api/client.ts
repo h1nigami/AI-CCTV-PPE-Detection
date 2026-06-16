@@ -1,4 +1,19 @@
-import type { Cameras, LogEntry, ReidPerson, ReidStats, ApiStatus, ApiError, AuthResponse, User } from "../types"
+import type {
+  Cameras,
+  LogEntry,
+  ReidPerson,
+  ReidStats,
+  ApiStatus,
+  ApiError,
+  AuthResponse,
+  User,
+  TimelineEvent,
+} from "../types"
+
+// ============================================================
+// API-клиент. Все запросы через единый механизм с JWT-авторизацией
+// и автоматическим refresh токена.
+// ============================================================
 
 const BASE = ""
 
@@ -73,7 +88,7 @@ async function tryRefresh(): Promise<boolean> {
 }
 
 export const api = {
-  // Auth
+  // ---- Аутентификация ----
   login: (username: string, password: string) =>
     request<AuthResponse>("/api/auth/login", {
       method: "POST",
@@ -86,11 +101,11 @@ export const api = {
     }),
   me: () => request<User>("/api/auth/me"),
 
-  // Detection control
+  // ---- Управление детекцией ----
   start: () => request<ApiStatus>("/start", { method: "POST" }),
   stop: () => request<ApiStatus>("/stop", { method: "POST" }),
 
-  // Cameras
+  // ---- Камеры ----
   getCameras: () => request<{ cameras: Cameras }>("/cameras"),
   addCamera: (name: string, source: string | number) =>
     request<ApiStatus & { name: string }>("/api/cameras", {
@@ -115,13 +130,13 @@ export const api = {
       body: JSON.stringify({ detect_enabled }),
     }),
 
-  // Logs
+  // ---- Логи ----
   getLogs: (camId?: string) => {
     const params = camId ? `?cam_id=${camId}` : ""
     return request<{ logs: LogEntry[] }>(`/detection_log${params}`)
   },
 
-  // ReID
+  // ---- ReID ----
   getReidPersons: () => request<{ persons: ReidPerson[] }>("/api/reid/persons"),
   renameReidPerson: (id: number, name: string) =>
     request<ApiStatus>(`/api/reid/persons/${id}/rename`, {
@@ -134,6 +149,19 @@ export const api = {
     request<ApiStatus>("/api/reid/clear", { method: "POST" }),
   getReidStats: () => request<ReidStats>("/api/reid/stats"),
 
-  // Frame URL helper
+  // ---- События (для таймлайна) ----
+  getEvents: (cameraName?: string) => {
+    const params = cameraName ? `?camera=${cameraName}` : ""
+    return request<{ events: TimelineEvent[] }>(`/api/events${params}`)
+  },
+
+  // ---- Группы камер ----
+  getGroups: () =>
+    request<{ groups: { id: string; name: string; cameraNames: string[] }[] }>("/api/cameras/groups"),
+
+  // ---- Вспомогательные URL ----
+  /** URL для HTTP polling (статичный JPEG-кадр) */
   getFrameUrl: (camId: string) => `/video_frame/${camId}?t=${Date.now()}`,
+  /** URL для MJPEG-потока (постоянное соединение, фреймы приходят автоматически) */
+  getFrameUrlMJPEG: (camId: string) => `/video_feed/${camId}`,
 }

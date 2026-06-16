@@ -9,27 +9,25 @@
 # После изменений в React → нужно пересобрать frontend:
 #   cd frontend && npm run build
 #   docker compose --profile cpu restart app-cpu
-# (или сервер сам перечитает dist, т.к. папка примонтирована)
+
+x-dev-mounts: &dev-mounts
+  volumes:
+    - ./backend:/app/backend
+    - ./app.py:/app/app.py
+    - ./config.py:/app/config.py
+    - ./main.py:/app/main.py
+    - ./state.py:/app/state.py
+    - ./camera.py:/app/camera.py
+    - ./detection.py:/app/detection.py
+    - ./gestures.py:/app/gestures.py
+    - ./visualization.py:/app/visualization.py
+    - ./reid.py:/app/reid.py
+    - ./migrations:/app/migrations
+    - ./frontend/dist:/app/frontend/dist
+  environment:
+    - FLASK_DEBUG=1
 
 services:
-
-  x-dev-mounts: &dev-mounts
-    volumes:
-      - ./backend:/app/backend
-      - ./app.py:/app/app.py
-      - ./config.py:/app/config.py
-      - ./main.py:/app/main.py
-      - ./state.py:/app/state.py
-      - ./camera.py:/app/camera.py
-      - ./detection.py:/app/detection.py
-      - ./gestures.py:/app/gestures.py
-      - ./visualization.py:/app/visualization.py
-      - ./reid.py:/app/reid.py
-      - ./migrations:/app/migrations
-      - ./frontend/dist:/app/frontend/dist
-    environment:
-      - FLASK_DEBUG=1
-
   app-cpu:
     <<: *dev-mounts
 

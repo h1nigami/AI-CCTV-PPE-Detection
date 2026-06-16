@@ -1,82 +1,106 @@
-import { CameraCell } from "./CameraCell"
+import { useMemo } from "react"
+import { CameraCard } from "./CameraCard"
+import { useCamerasContext } from "../contexts/CameraContext"
 import type { CameraInfo } from "../types"
 
+// ============================================================
+// Сетка камер — основное поле дашборда.
+// Отображает камеры, отфильтрованные по группе.
+// При клике на камеру открывается диспетчерская панель.
+// ============================================================
+
 interface CameraGridProps {
-  cameras: CameraInfo[]
+  /** Если задана — показываем только эту камеру (полноэкран) */
+  fullscreenCam?: string | null
+  onCamClick?: (camName: string) => void
+  /** Запущена ли детекция глобально */
   isRunning: boolean
-  fullscreenCam: string | null
-  onCamClick: (camId: string) => void
 }
 
-export function CameraGrid({ cameras, isRunning, fullscreenCam, onCamClick }: CameraGridProps) {
-  const count = Math.min(cameras.length, 9)
+export function CameraGrid({ fullscreenCam, onCamClick, isRunning }: CameraGridProps) {
+  const { filteredCameras, openDispatcher } = useCamerasContext()
 
-  if (!isRunning || cameras.length === 0) {
+  // Если полноэкран — показываем только выбранную камеру
+  const visibleCams: CameraInfo[] = fullscreenCam
+    ? filteredCameras.filter((c) => c.name === fullscreenCam)
+    : filteredCameras
+
+  // Определяем количество колонок
+  const cols = useMemo(() => {
+    const count = visibleCams.length
+    if (fullscreenCam) return 1
+    if (count <= 1) return 1
+    if (count <= 4) return 2
+    return 3
+  }, [visibleCams.length, fullscreenCam])
+
+  const handleClick = (camName: string) => {
+    if (onCamClick) {
+      onCamClick(camName)
+    } else {
+      openDispatcher(camName)
+    }
+  }
+
+  // Если камер нет — показываем заглушку
+  if (visibleCams.length === 0) {
     return (
-      <div style={styles.centerPanel}>
-        <div style={styles.videoArea}>
-          <div style={styles.feedPlaceholder}>
-            <div style={{ fontSize: "3rem", marginBottom: "12px", opacity: 0.3 }}>📷</div>
-            Запустите детекцию для отображения видео
+      <div style={styles.container}>
+        <div style={styles.placeholder}>
+          <div style={styles.placeholderIcon}>
+            <svg width="48" height="48" viewBox="0 0 48 48" fill="none" opacity="0.15">
+              <rect x="4" y="8" width="40" height="28" rx="4" stroke="#4a6a8a" strokeWidth="2" />
+              <circle cx="24" cy="22" r="8" stroke="#4a6a8a" strokeWidth="2" />
+              <path d="M8 40c0-8 7-14 16-14s16 6 16 14" stroke="#4a6a8a" strokeWidth="2" strokeLinecap="round" />
+            </svg>
           </div>
+          <div style={styles.placeholderText}>Нет камер в этой группе</div>
         </div>
       </div>
     )
   }
 
-  const visibleCams = fullscreenCam
-    ? cameras.filter((c) => c.name === fullscreenCam)
-    : cameras
-
-  const cols = fullscreenCam ? 1 : count <= 1 ? 1 : count <= 4 ? 2 : 3
-
   return (
-    <div style={styles.centerPanel}>
-      <div style={styles.videoArea}>
-        <div
-          style={{
-            ...styles.grid,
-            gridTemplateColumns: `repeat(${cols}, 1fr)`,
-          }}
-        >
-          {visibleCams.map((cam) => (
-            <CameraCell
-              key={cam.name}
-              name={cam.name}
-              detectEnabled={cam.detect_enabled}
-              onClick={() => onCamClick(cam.name)}
-              isFullscreen={fullscreenCam === cam.name}
-            />
-          ))}
-        </div>
-        {fullscreenCam && (
-          <div style={styles.exitHint}>Нажмите на камеру для выхода из полноэкранного режима</div>
-        )}
+    <div style={styles.container}>
+      <div
+        style={{
+          ...styles.grid,
+          gridTemplateColumns: `repeat(${cols}, 1fr)`,
+          gridTemplateRows: fullscreenCam ? "1fr" : undefined,
+        }}
+      >
+        {visibleCams.map((cam) => (
+          <CameraCard
+            key={cam.name}
+            name={cam.name}
+            detectEnabled={cam.detect_enabled}
+            status="online"
+            isRunning={isRunning}
+            onClick={() => handleClick(cam.name)}
+            isFullscreen={fullscreenCam === cam.name}
+          />
+        ))}
       </div>
 
-      <div style={styles.bottomBar}>
-        <div style={styles.camCount}>
-          {cameras.length} камера{cameras.length % 10 === 1 ? "" : cameras.length % 10 < 5 ? "ы" : ""} в сети
+      {/* Подсказка при полноэкранном режиме */}
+      {fullscreenCam && (
+        <div style={styles.exitHint}>
+          Нажмите Esc или кликните ещё раз для выхода
         </div>
-      </div>
+      )}
     </div>
   )
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  centerPanel: {
+  container: {
+    flex: 1,
     display: "flex",
     flexDirection: "column",
     background: "#080d14",
-    flex: 1,
     minWidth: 0,
-  },
-  videoArea: {
-    flex: 1,
-    position: "relative",
-    background: "#050a10",
-    borderBottom: "1px solid #1a3a5c",
     overflow: "hidden",
+    position: "relative",
   },
   grid: {
     display: "grid",
@@ -84,32 +108,26 @@ const styles: Record<string, React.CSSProperties> = {
     height: "100%",
     gap: "2px",
     background: "#000",
+    flex: 1,
+    minHeight: 0,
   },
-  feedPlaceholder: {
-    position: "absolute",
-    inset: 0,
+  placeholder: {
     display: "flex",
     flexDirection: "column",
     alignItems: "center",
     justifyContent: "center",
-    textAlign: "center",
-    color: "#4a6a8a",
-    fontFamily: "'Share Tech Mono', monospace",
-    fontSize: "0.8rem",
-    letterSpacing: "1px",
-  },
-  bottomBar: {
-    padding: "10px 16px",
-    background: "#0d1520",
-    borderTop: "1px solid #1a3a5c",
-    display: "flex",
-    alignItems: "center",
+    flex: 1,
     gap: "12px",
   },
-  camCount: {
+  placeholderIcon: {
+    width: "48px",
+    height: "48px",
+  },
+  placeholderText: {
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: "0.72rem",
+    fontSize: "0.75rem",
     color: "#4a6a8a",
+    letterSpacing: "1px",
   },
   exitHint: {
     position: "absolute",
@@ -121,7 +139,7 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: "4px",
     padding: "4px 12px",
     fontFamily: "'Share Tech Mono', monospace",
-    fontSize: "0.65rem",
+    fontSize: "0.6rem",
     color: "#4a6a8a",
     letterSpacing: "1px",
     pointerEvents: "none",

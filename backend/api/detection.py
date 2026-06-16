@@ -28,10 +28,16 @@ def configure_detection_routes(app, state, annotated_buffers, generate_live_feed
         frame = ann_buf.read()
         if frame is None:
             return b"", 204
-        ret, buffer = cv2.imencode('.jpg', frame)
+        # Качество 85 вместо 95 — на 30-40% быстрее кодирование,
+        # визуально разница незаметна при 1280x720
+        ret, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
         if not ret:
             return b"", 500
-        return Response(buffer.tobytes(), mimetype='image/jpeg')
+        return Response(
+            buffer.tobytes(),
+            mimetype='image/jpeg',
+            headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+        )
 
     @app.route("/video_feed/<cam_id>")
     def video_feed_cam(cam_id):
@@ -40,7 +46,9 @@ def configure_detection_routes(app, state, annotated_buffers, generate_live_feed
             return "Камера не найдена", 404
         return Response(
             generate_live_feed(cam_id),
-            mimetype='multipart/x-mixed-replace; boundary=frame'
+            mimetype='multipart/x-mixed-replace; boundary=frame',
+            headers={"Cache-Control": "no-cache, no-store, must-revalidate",
+                     "Pragma": "no-cache", "Expires": "0"},
         )
 
     @app.route("/video_feed")
@@ -49,7 +57,9 @@ def configure_detection_routes(app, state, annotated_buffers, generate_live_feed
         cam_id = list(CAMERAS.keys())[0] if CAMERAS else "cam1"
         return Response(
             generate_live_feed(cam_id),
-            mimetype='multipart/x-mixed-replace; boundary=frame'
+            mimetype='multipart/x-mixed-replace; boundary=frame',
+            headers={"Cache-Control": "no-cache, no-store, must-revalidate",
+                     "Pragma": "no-cache", "Expires": "0"},
         )
 
     @app.route("/detection_log")
