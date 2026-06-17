@@ -127,12 +127,17 @@ def configure_detection_routes(app, state, annotated_buffers, generate_live_feed
 
     @app.route("/upload", methods=["POST"])
     def upload_file():
-        file = request.files["file"]
+        file = request.files.get("file")
+        if file is None:
+            return "No file uploaded", 400
         filename = f"{uuid.uuid4().hex}_{file.filename}"
         path = os.path.join(UPLOAD_FOLDER, filename)
         file.save(path)
         if filename.lower().endswith((".png", ".jpg", ".jpeg")):
             img = cv2.imread(path)
+            if img is None:
+                os.remove(path)
+                return "Invalid image file", 400
             result = model(img)[0]
             output = os.path.join(UPLOAD_FOLDER, f"result_{filename}")
             cv2.imwrite(output, result.plot())

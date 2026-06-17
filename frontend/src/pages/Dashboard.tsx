@@ -163,16 +163,31 @@ export default function DashboardPage() {
               onSubmit={(e) => {
                 e.preventDefault()
                 const input = (e.target as HTMLFormElement).querySelector("input[type=file]") as HTMLInputElement
-                if (!input?.files?.[0]) return
+                const file = input?.files?.[0]
+                if (!file) {
+                  addNotification("warning", "Выберите файл")
+                  return
+                }
                 const fd = new FormData()
-                fd.append("file", input.files[0])
+                fd.append("file", file)
+                addNotification("info", "Обработка файла...")
                 fetch("/upload", { method: "POST", body: fd })
-                  .then((r) => r.blob())
+                  .then((r) => {
+                    if (!r.ok) throw new Error(`Ошибка ${r.status}`)
+                    return r.blob()
+                  })
                   .then((blob) => {
                     const url = URL.createObjectURL(blob)
-                    window.open(url, "_blank")
+                    const a = document.createElement("a")
+                    a.href = url
+                    a.download = `result_${file.name}`
+                    a.click()
+                    URL.revokeObjectURL(url)
+                    addNotification("granted", "Файл обработан")
                   })
-                  .catch(() => {})
+                  .catch((err) => {
+                    addNotification("violation", `Ошибка: ${err.message}`)
+                  })
               }}
             >
               <input type="file" name="file" accept="image/*,video/*" style={styles.fileInput} />
