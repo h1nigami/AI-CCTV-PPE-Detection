@@ -122,7 +122,7 @@ def configure_detection_routes(app, state, annotated_buffers, generate_live_feed
             headers={"Content-Disposition": "attachment; filename=ppe_logs.csv"}
         )
 
-    UPLOAD_FOLDER = "uploads"
+    UPLOAD_FOLDER = os.path.abspath("uploads")
     os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
     @app.route("/upload", methods=["POST"])
