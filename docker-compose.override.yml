@@ -24,12 +24,26 @@ x-dev-mounts: &dev-mounts
     - ./reid.py:/app/reid.py
     - ./migrations:/app/migrations
     - ./frontend/dist:/app/frontend/dist
+    - ./tests:/app/tests
   environment:
     - FLASK_DEBUG=1
+    - PYTHONDONTWRITEBYTECODE=1
 
 services:
   app-cpu:
     <<: *dev-mounts
+    command: >
+      sh -c "
+        pip install -q pytest pytest-cov 2>/dev/null &&
+        python3 -m pytest tests/ -v --tb=short &&
+        python3 -u app.py
+      "
 
   app-gpu:
     <<: *dev-mounts
+    command: >
+      sh -c "
+        pip install -q pytest pytest-cov 2>/dev/null &&
+        python3 -m pytest tests/ -v --tb=short &&
+        python3 -u app.py
+      "

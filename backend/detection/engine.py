@@ -1,6 +1,7 @@
 import numpy as np
+from pathlib import Path
 from typing import List, Optional, Tuple, Dict, Any
-from backend.config import (MIN_CONES, ZONE_EXPAND_PX, TOP_RATIO, CONF_THRESH)
+from backend.config import (BASE_DIR, MIN_CONES, ZONE_EXPAND_PX, TOP_RATIO, CONF_THRESH)
 
 CLASS_PERSON = 5
 
@@ -39,9 +40,12 @@ def is_in_danger_zone(person_box, danger_zone) -> bool:
     return zx1 <= foot_x <= zx2 and zy1 <= foot_y <= zy2
 
 
+TRACKER_CFG = str(BASE_DIR / "backend" / "detection" / "bytetrack_custom.yaml")
+
+
 def run_detection(frame, model) -> Dict[str, Any]:
     results = model.track(frame, conf=CONF_THRESH, verbose=False,
-                          persist=True, tracker='bytetrack.yaml')[0]
+                          persist=True, tracker=TRACKER_CFG)[0]
     names = model.names
     boxes = results.boxes.xyxy.cpu().numpy()
     classes = results.boxes.cls.cpu().numpy().astype(int)

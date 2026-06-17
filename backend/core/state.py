@@ -93,7 +93,14 @@ class DetectionState:
                             print(f"[ReID] Track {key}: fallback {old_id} -> gallery {gallery_id}, "
                                   f"имя gallery '{info['name'] if info else '?'}' сохранено (existing)")
                     else:
-                        print(f"[ReID] Track {key}: global_id {old_id} -> {gallery_id}")
+                        old_info = self._gallery.get_info(old_id)
+                        if old_info and old_info['embedding_count'] <= 1:
+                            old_name = old_info['name']
+                            self._gallery.merge_entries(old_id, gallery_id)
+                            print(f"[ReID] Слит gallery {old_id} ({old_name}) -> "
+                                  f"{gallery_id} для трека {key}")
+                        else:
+                            print(f"[ReID] Track {key}: global_id {old_id} -> {gallery_id}")
                 elif (self._gallery is not None and self._gallery.has_id(old_id)):
                     info = self._gallery.get_info(gallery_id)
                     if info and info['embedding_count'] <= 1:

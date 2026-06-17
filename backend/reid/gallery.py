@@ -53,13 +53,13 @@ class FaceGallery:
 
     def _adaptive_threshold(self, quality: float) -> float:
         if quality >= 0.8:
-            return 0.60
+            return 0.50
         elif quality >= 0.6:
-            return 0.65
+            return 0.55
         elif quality >= 0.4:
-            return 0.72
+            return 0.62
         else:
-            return 0.80
+            return 0.70
 
     def _assign_name(self) -> str:
         return f"Гость_{self._next_id}"
@@ -75,6 +75,8 @@ class FaceGallery:
                 sim = self._cosine_sim(embedding, mean_emb)
                 person_threshold = threshold
                 if len(data['embeddings']) >= 2:
+                    person_threshold -= 0.08
+                if len(data['embeddings']) >= 5:
                     person_threshold -= 0.05
                 if sim > person_threshold and sim > best_sim:
                     best_sim = sim
@@ -97,7 +99,7 @@ class FaceGallery:
                 'name': name,
             }
             self._save()
-            q_label = {0.60: 'отл', 0.65: 'хор', 0.72: 'ср', 0.80: 'плох'}.get(threshold, '?')
+            q_label = {0.50: 'отл', 0.55: 'хор', 0.62: 'ср', 0.70: 'плох'}.get(threshold, '?')
             print(f"[ReID] Новый: {name} (ID={new_id}, камера {cam_id}, "
                   f"sim={best_sim:.3f}, кач={quality:.2f} [{q_label}])")
             return new_id
@@ -109,6 +111,8 @@ class FaceGallery:
     def merge_entries(self, source_id: int, target_id: int) -> bool:
         with self._lock:
             if source_id not in self._gallery or target_id not in self._gallery:
+                return False
+            if source_id == target_id:
                 return False
             source = self._gallery[source_id]
             target = self._gallery[target_id]

@@ -44,3 +44,5 @@ insightface==0.7.3
 alembic==1.18.4
 PyJWT==2.13.0
 SQLAlchemy==2.0.51
+pytest==8.3.5
+pytest-cov==6.1.1
