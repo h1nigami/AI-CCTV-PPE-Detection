@@ -128,6 +128,36 @@ class TestMatchOrRegister:
         assert gallery_path.exists()
         assert gallery_path.stat().st_size > 0
 
+    def test_per_embedding_max_resists_mean_dilution(self, gallery):
+        rng = np.random.RandomState(42)
+        dim = 512
+
+        base = rng.randn(dim).astype(np.float32)
+        base = base / np.linalg.norm(base)
+        gid = gallery.match_or_register(base, "cam01", quality=0.9)
+
+        noise_ids = []
+        for _ in range(4):
+            noise = rng.randn(dim).astype(np.float32)
+            noise = noise / np.linalg.norm(noise)
+            nid = gallery.match_or_register(noise, "cam01", quality=0.9)
+            assert nid != gid
+            noise_ids.append(nid)
+
+        for nid in noise_ids:
+            gallery.merge_entries(nid, gid)
+
+        info = gallery.get_info(gid)
+        assert info['embedding_count'] == 5
+
+        profile = base + rng.randn(dim).astype(np.float32) * 0.02
+        profile = profile / np.linalg.norm(profile)
+        match_id = gallery.match_or_register(profile, "cam01", quality=0.7)
+        assert match_id == gid, (
+            f"per-embedding max sim ({gid}) should beat mean-based threshold "
+            f"(got {match_id})"
+        )
+
 
 class TestMergeEntries:
     def test_merge_two_entries(self, gallery):
