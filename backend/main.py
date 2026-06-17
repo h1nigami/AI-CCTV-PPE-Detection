@@ -77,14 +77,37 @@ for cam_id, source in CAMERAS.items():
     _init_camera_resources(cam_id, source)
 
 
+def start_face_workers():
+    if face_recognizer is None:
+        return
+    from backend.config import DETECT_MODES
+    if not DETECT_MODES.get("faces", True):
+        return
+    for cam_id in list(CAMERAS.keys()):
+        if cam_id not in face_workers and cam_id in frame_buffers:
+            from backend.reid.recognizer import FaceRecognitionWorker
+            fw = FaceRecognitionWorker(frame_buffers[cam_id], face_recognizer, REID_FRAME_SKIP)
+            fw.start()
+            face_workers[cam_id] = fw
+    if face_workers:
+        print(f"[ReID] Face workers запущены для {len(face_workers)} камер")
+
+
+def stop_face_workers():
+    for fw in list(face_workers.values()):
+        fw.stop()
+    face_workers.clear()
+    print("[ReID] Face workers остановлены")
+
+
 def add_camera(cam_id: str, source: str | int):
-    from backend.config import save_cameras
+    from backend.config import save_cameras, DETECT_MODES
     CAMERAS[cam_id] = source
     save_cameras()
     _init_camera_resources(cam_id, source)
     if state.live_active:
         camera_captures[cam_id].start()
-        if face_recognizer is not None:
+        if face_recognizer is not None and DETECT_MODES.get("faces", True):
             from backend.reid.recognizer import FaceRecognitionWorker
             fw = FaceRecognitionWorker(frame_buffers[cam_id], face_recognizer, REID_FRAME_SKIP)
             fw.start()
@@ -341,11 +364,7 @@ def start_live():
     for cam_id in CAMERAS:
         _init_camera_resources(cam_id, CAMERAS[cam_id])
         camera_captures[cam_id].start()
-        if face_recognizer is not None and cam_id not in face_workers:
-            from backend.reid.recognizer import FaceRecognitionWorker
-            fw = FaceRecognitionWorker(frame_buffers[cam_id], face_recognizer, REID_FRAME_SKIP)
-            fw.start()
-            face_workers[cam_id] = fw
+    start_face_workers()
     t = threading.Thread(target=detection_loop, daemon=True)
     detection_threads["main"] = t
     t.start()
@@ -362,9 +381,7 @@ def stop_live():
     for t in list(detection_threads.values()):
         t.join(timeout=2)
     detection_threads.clear()
-    for fw in list(face_workers.values()):
-        fw.stop()
-    face_workers.clear()
+    stop_face_workers()
     for buf in annotated_buffers.values():
         buf.clear()
     print("Детекция остановлена")

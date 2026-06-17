@@ -5,7 +5,8 @@ from flask import Flask, send_file, render_template, Response, request, jsonify,
 
 
 def configure_detection_routes(app, state, annotated_buffers, generate_live_feed,
-                                start_live, stop_live, model):
+                                start_live, stop_live, model,
+                                start_face_workers=None, stop_face_workers=None):
 
     @app.route("/start", methods=["POST"])
     def start():
@@ -71,6 +72,7 @@ def configure_detection_routes(app, state, annotated_buffers, generate_live_feed
     def api_set_detect_modes():
         from backend.config import DETECT_MODES, save_detect_modes
         data = request.get_json() or {}
+        old_faces = DETECT_MODES.get("faces", True)
         for key in ("people", "ppe", "faces"):
             if key in data:
                 DETECT_MODES[key] = bool(data[key])
@@ -78,6 +80,12 @@ def configure_detection_routes(app, state, annotated_buffers, generate_live_feed
             DETECT_MODES["ppe"] = False
             DETECT_MODES["faces"] = False
         save_detect_modes()
+        new_faces = DETECT_MODES.get("faces", True)
+        if new_faces != old_faces:
+            if new_faces and start_face_workers:
+                start_face_workers()
+            elif not new_faces and stop_face_workers:
+                stop_face_workers()
         return jsonify({"status": "updated", "modes": dict(DETECT_MODES)})
 
     @app.route("/api/status")

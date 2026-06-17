@@ -8,6 +8,7 @@ from flask import Flask, send_file, send_from_directory, render_template
 from backend.main import (
     generate_live_feed, start_live, stop_live, state,
     annotated_buffers, model, camera_captures,
+    start_face_workers, stop_face_workers,
 )
 from backend.api.detection import configure_detection_routes
 from backend.api.cameras import configure_camera_routes
@@ -57,7 +58,9 @@ def serve_frontend(path):
 
 app.register_blueprint(auth_bp)
 app = configure_detection_routes(app, state, annotated_buffers,
-                                  generate_live_feed, start_live, stop_live, model)
+                                  generate_live_feed, start_live, stop_live, model,
+                                  start_face_workers=start_face_workers,
+                                  stop_face_workers=stop_face_workers)
 app = configure_camera_routes(app, state, camera_captures)
 app = configure_reid_routes(app, state)
 
