@@ -23,9 +23,9 @@
 
 ## Фаза 1: Design Tokens (3 дня)
 
-- [ ] [Web+RN] Создать `src/design/tokens.ts` — единый источник цветов, отступов, радиусов, теней, типографики
+- [✓] [Web+RN] Создать `src/design/tokens.ts` — единый источник цветов, отступов, радиусов, теней, типографики
 - [ ] [Web+RN] Создать `src/design/theme.ts` — ThemeProvider (dark mode + light mode)
-- [ ] [Web] Подключить токены в `index.css` через CSS-переменные
+- [✓] [Web] Подключить токены в `index.css` через CSS-переменные
 - [ ] [RN] Подготовить StyleSheet-фабрику на основе токенов
 - [ ] [Web] Заменить все inline `{ color: "#00e676" }` на `tokens.colors.accent`
 - [ ] [Web] Заменить все inline `{ fontFamily: "'Inter', sans-serif" }` на `tokens.typography.fontFamily.web`
@@ -37,12 +37,12 @@
 ## Фаза 2: Layout Primitives (5 дней)
 
 ### 2.1. База
-- [ ] [Web+RN] Создать `Box` — универсальный layout-компонент (View/div)
+- [✓] [Web+RN] Создать `Box` — универсальный layout-компонент (View/div)
 - [ ] [Web+RN] Создать `Text` — единый компонент для текста с токенами
-- [ ] [Web+RN] Создать `Flex` — Box с `display: flex` (web) / `View` с `flexDirection` (RN)
+- [✓] [Web+RN] Создать `Flex` — Box с `display: flex` (web) / `View` с `flexDirection` (RN)
 
 ### 2.2. Responsive
-- [ ] [Web] Создать `useBreakpoint()` на основе `matchMedia`
+- [✓] [Web] Создать `useBreakpoint()` на основе `matchMedia`
 - [ ] [RN] Создать `useBreakpoint()` на основе `useWindowDimensions`
 - [ ] [Web+RN] Создать `ResponsiveGrid` — адаптивная сетка для карточек камер
 - [ ] [Web+RN] Создать `AdaptiveSidebar` — сайдбар ↔ BottomSheet ↔ Drawer
@@ -51,7 +51,7 @@
 - [ ] [Web+RN] Обновить `Button` — единый компонент с токенами
 - [ ] [Web+RN] Обновить `Input` — единый компонент с токенами
 - [ ] [Web+RN] Создать `Modal` — на основе портала (web) / `Modal` (RN)
-- [ ] [Web+RN] Создать `BottomSheet` — для мобильных панелей
+- [✓] [Web+RN] Создать `BottomSheet` — для мобильных панелей
 
 ---
 
@@ -61,8 +61,8 @@
 
 **Desktop (≥ 1200px):** 3 колонки (LeftPanel | CameraGrid | RightPanel) — текущий вид
 
-- [ ] [Web] Заменить `gridTemplateColumns: "260px 1fr 260px"` на расчёт от брейкпоинта
-- [ ] [Web+RN] Создать `PageContainer` — обёртка с переключением между 3/2/1 колонкой
+- [✓] [Web] Заменить `gridTemplateColumns: "260px 1fr 260px"` на расчёт от брейкпоинта
+- [✓] [Web+RN] Создать `PageContainer` — обёртка с переключением между 3/2/1 колонкой
 
 **Tablet (768–1199px):** 2 колонки (CameraGrid + коллапсируемый сайдбар)
 
@@ -73,14 +73,14 @@
 **Mobile (< 768px):** 1 колонка (Video Carousel + FAB + BottomSheets)
 
 - [ ] [Web+RN] `CameraGrid` → `CameraCarousel` (горизонтальная прокрутка)
-- [ ] [Web+RN] ControlPanel и EventsPanel → BottomSheets (по иконке в FAB/menu)
-- [ ] [Web+RN] Управление запуском/остановкой через FAB
+- [✓] [Web+RN] ControlPanel и EventsPanel → BottomSheets (по иконке в FAB/menu)
+- [~] [Web+RN] Управление запуском/остановкой через FAB — в drawer меню
 
 ### 3.2. Header (Desktop ↔ Mobile)
 
-- [ ] [Web] Навигация (Дашборд/События/Настройки) → Hamburger-меню на `< 768px`
-- [ ] [Web+RN] Детекция modes dropdown → BottomSheet на мобильном
-- [ ] [Web+RN] Часы и пользователь → компактная строка
+- [✓] [Web] Навигация (Дашборд/События/Настройки) → Hamburger-меню на `< 768px`
+- [✓] [Web+RN] Детекция modes dropdown → drawer меню на мобильном
+- [✓] [Web+RN] Часы и пользователь → компактная строка
 - [ ] [RN] Header адаптировать под SafeAreaView (статус-бар, notch)
 
 ### 3.3. DispatcherPanel
@@ -177,9 +177,9 @@ type AppRoute = '/' | '/events' | '/settings' | '/login' | '/register'
 
 - [ ] [Web] Изменить `Dashboard.tsx:gridTemplateColumns` с `"260px 1fr 260px"` на `"clamp(200px, 20vw, 260px) 1fr clamp(200px, 20vw, 260px)"`
 - [ ] [Web] Заменить `fontSize: "0.75rem"` на `fontSize: "clamp(0.65rem, 1.5vw, 0.85rem)"`
-- [ ] [Web] Добавить мета-тег viewport в `index.html` (если ещё нет)
-- [ ] [Web+RN] Создать `tokens.ts` — вынести все цвета и размеры
-- [ ] [Web+RN] Создать `useWindowSize()` — хук для отслеживания размеров окна
+- [✓] [Web] Добавить мета-тег viewport в `index.html` (если ещё нет)
+- [✓] [Web+RN] Создать `tokens.ts` — вынести все цвета и размеры
+- [✓] [Web+RN] Создать `useWindowSize()` — хук для отслеживания размеров окна
 - [ ] [Web] Обновить `CameraGrid`: заменить жёсткие колонки на `auto-fit, minmax(300px, 1fr)`
 
 ---

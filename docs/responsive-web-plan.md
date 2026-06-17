@@ -20,40 +20,40 @@
 
 ## Этап 0: Токены и брейкпоинты (~1 день)
 
-- [ ] Создать `src/design/tokens.ts` — цвета, радиусы, отступы, шрифты, тени
-- [ ] Подключить токены через CSS-переменные в `index.css`
-- [ ] Создать `src/hooks/useBreakpoint.ts` на основе `matchMedia`
-- [ ] Определить брейкпоинты: `mobile: 768`, `tablet: 1200`
+- [✓] Создать `src/design/tokens.ts` — цвета, радиусы, отступы, шрифты, тени
+- [✓] Подключить токены через CSS-переменные в `index.css`
+- [✓] Создать `src/hooks/useBreakpoint.ts` на основе `matchMedia`
+- [✓] Определить брейкпоинты: `mobile: 768`, `tablet: 1200`
 
 ---
 
 ## Этап 1: Layout Primitives (~1-2 дня)
 
-- [ ] `Box` — универсальный div с props: `p`, `m`, `gap`, `flex`, `width`
-- [ ] `Flex` — Box с `display: flex` + `direction`, `align`, `justify`, `wrap`
-- [ ] `Grid` — CSS Grid wrapper: `columns`, `gap`, `minItemWidth`
-- [ ] `Responsive` — условный рендер `<Responsive mobile={...} tablet={...} desktop={...} />`
+- [✓] `Box` — универсальный div с props: `p`, `m`, `gap`, `flex`, `width`
+- [✓] `Flex` — Box с `display: flex` + `direction`, `align`, `justify`, `wrap`
+- [✓] `Grid` — CSS Grid wrapper: `columns`, `gap`, `minItemWidth`
+- [✓] `Responsive` — условный рендер `<Responsive mobile={...} tablet={...} desktop={...} />`
 
 ---
 
 ## Этап 2: Dashboard — 3 брейкпоинта (~3-4 дня)
 
 ### Desktop (≥ 1200px) — текущее состояние
-- [ ] Левая панель (фиксированная ширина)
-- [ ] CameraGrid (1-3 колонки)
-- [ ] Правая панель (фиксированная ширина)
+- [✓] Левая панель (фиксированная ширина)
+- [✓] CameraGrid (1-3 колонки)
+- [✓] Правая панель (фиксированная ширина)
 
 ### Tablet (768–1199px) — 2 колонки
 - [ ] LeftPanel + RightPanel → общий `Sidebar` с табами (Управление / События / Статус)
 - [ ] Сайдбар сворачивается по кнопке в Header
-- [ ] CameraGrid: 2 колонки
+- [✓] CameraGrid: 2 колонки
 
 ### Mobile (< 768px) — 1 колонка
 - [ ] `CameraGrid` → `CameraCarousel` (горизонтальный скролл, snap-x)
-- [ ] `LeftPanel`/`RightPanel` → BottomSheets (FAB + иконка в Header)
-- [ ] Header: сайдбар с навигацией (гамбургер)
-- [ ] Детекция modes → BottomSheet
-- [ ] FAB: запуск/остановка детекции
+- [✓] `LeftPanel`/`RightPanel` → BottomSheets (FAB внизу)
+- [✓] Header: сайдбар с навигацией (гамбургер)
+- [✓] Детекция modes → drawer меню
+- [✓] Запуск/остановка детекции → drawer меню (вместо FAB)
 
 ---
 
