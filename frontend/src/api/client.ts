@@ -153,10 +153,19 @@ export const api = {
   getReidStats: () => request<ReidStats>("/api/reid/stats"),
 
   // ---- События (для таймлайна) ----
-  getEvents: (cameraName?: string) => {
-    const params = cameraName ? `?camera=${cameraName}` : ""
-    return request<{ events: TimelineEvent[] }>(`/api/events${params}`)
+  getEvents: (opts?: { camera?: string; label?: string; limit?: number; offset?: number }) => {
+    const params = new URLSearchParams()
+    if (opts?.camera) params.set("camera", opts.camera)
+    if (opts?.label) params.set("label", opts.label)
+    if (opts?.limit) params.set("limit", String(opts.limit))
+    if (opts?.offset) params.set("offset", String(opts.offset))
+    const qs = params.toString()
+    return request<{ events: TimelineEvent[]; total: number; offset: number; limit: number }>(
+      `/api/events${qs ? `?${qs}` : ""}`
+    )
   },
+  getEventClipUrl: (eventId: string) => `/api/events/${eventId}/clip`,
+  getEventSnapshotUrl: (eventId: string) => `/api/events/${eventId}/snapshot`,
 
   // ---- Режимы детекции ----
   getDetectModes: () =>

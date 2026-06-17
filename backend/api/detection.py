@@ -82,10 +82,13 @@ def configure_detection_routes(app, state, annotated_buffers, generate_live_feed
         save_detect_modes()
         new_faces = DETECT_MODES.get("faces", True)
         if new_faces != old_faces:
-            if new_faces and start_face_workers:
-                start_face_workers()
-            elif not new_faces and stop_face_workers:
-                stop_face_workers()
+            try:
+                if new_faces and start_face_workers:
+                    start_face_workers()
+                elif not new_faces and stop_face_workers:
+                    stop_face_workers()
+            except Exception as exc:
+                print(f"[Detection] Face worker switch failed: {exc}")
         return jsonify({"status": "updated", "modes": dict(DETECT_MODES)})
 
     @app.route("/api/status")

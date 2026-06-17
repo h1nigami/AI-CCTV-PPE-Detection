@@ -43,8 +43,8 @@ RUN pip install --no-cache-dir --timeout=300 \
     sqlalchemy \
     alembic \
     pyjwt \
-    --extra-index-url https://download.pytorch.org/whl/cpu \
-    2>&1 | tail -10
+    --extra-index-url https://download.pytorch.org/whl/cpu && \
+    pip install --no-cache-dir boto3
 
 # ── Код приложения (backend package) ──────────────────────
 COPY backend/ ./backend/

@@ -1,59 +1,95 @@
 # 👷 AI CCTV PPE Detection System
 
-**Система видеоаналитики реального времени** для контроля средств индивидуальной защиты (СИЗ) на основе YOLOv8 и Flask. Детектирует людей, каски, маски, жилеты, опасные зоны и распознаёт жесты для управления доступом.
+**Система видеоаналитики реального времени** для контроля СИЗ на основе YOLOv8. Детектирует людей, каски, маски, жилеты, опасные зоны, распознаёт лица (Re-ID) и жесты. Включает адаптивный веб-интерфейс (десктоп/планшет/мобильный), ленту событий с видеоклипами, авторизацию и MinIO-хранилище.
 
 ---
 
 ## 🚀 Возможности
 
-- **Живой стрим** — подключение к RTSP/IP камерам, детекция СИЗ в реальном времени
-- **Управление камерами** — добавление, удаление, переименование и включение/отключение аналитики через веб-интерфейс (Settings → Камеры)
-- **Опасные зоны** — автоматическое построение зон по расположению конусов безопасности
-- **Re-ID лиц** — кросс-камерная идентификация через InsightFace (buffalo_l), адаптивный порог матчинга (quality-based), UI управления галереей
-- **ByteTrack** — трекинг людей между кадрами (persistent track IDs), имена не перескакивают между людьми
-- **Жест ОК** — распознавание жеста для выдачи пропуска в зону
-- **Обработка файлов** — загрузка и анализ изображений и видео
-- **Логирование** — история событий с временными метками и категориями
-- **Уведомления** — всплывающие оповещения в браузере о пропусках (ЖЕСТ-ОК) и нарушениях СИЗ; имя человека подставляется из сообщения лога
-- **Экспорт** — выгрузка логов в CSV
-- **Печать** — отправка кадра с информацией о СИЗ на принтер
+### Детекция & аналитика
+- **Режимы детекции** — выбор «Люди / СИЗ / Лица» через UI; выключение всех режимов пропускает YOLO полностью
+- **Живой стрим** — RTSP/IP камеры, MJPEG poll 100мс
+- **СИЗ** — каски, маски, жилеты с цветовыми статусами рамок
+- **Опасные зоны** — автоматическое построение по расположению конусов безопасности
+- **Re-ID лиц** — InsightFace (buffalo_l), адаптивный порог (качество лица), auto-merge дубликатов
+- **ByteTrack** — стабильные track_id между кадрами, `track_buffer: 90`
+- **Жест ОК** — распознавание жеста для пропуска в зону
+- **Динамические face workers** — запуск/остановка потока распознавания лиц по чекбоксу
+
+### Управление
+- **CRUD камер** — добавление/удаление/переименование через веб-интерфейс
+- **Группы камер** — объединение камер в группы для фильтрации
+- **Управление галереей лиц** — переименование, удаление, просмотр через UI
+- **Авторизация** — JWT (admin/operator/viewer/api роли), refresh-токены
+
+### События & хранение
+- **Лента событий** — отдельная страница с фильтрами (камера, тип), превью, плеером
+- **Видеоклипы** — запись MP4 (H.264) при нарушениях с пост-кадрами
+- **Снэпшоты** — кадр из середины клипа
+- **MinIO** — S3-совместимое хранилище для клипов и снимков
+- **Локальный fallback** — `violation_logs/` при недоступности MinIO
+- **Логирование** — история событий с временными метками, категориями, именем человека
+- **Экспорт CSV** — выгрузка логов
+- **Уведомления** — всплывающие оповещения в браузере о пропусках и нарушениях
+
+### Фронтенд
+- **Адаптивный дизайн** — 3 брейкпоинта: мобильный (<768) / планшет (768–1199) / десктоп (≥1200)
+- **Mobile drawer** — гамбургер-меню с навигацией, режимами детекции, старт/стоп
+- **BottomSheets** — информация о камере на мобильных устройствах
+- **FAB** — плавающие кнопки для быстрых действий на мобильных
+- **Токены дизайна** — единая система цветов, отступов, радиусов, шрифтов
+
+### Загрузка файлов
+- **Изображения** — загрузка для детекции; результат скачивается через `<a download>`
+- **Видео** — загрузка для детекции; результат скачивается как MP4
 
 ---
 
 ## 🛠️ Технологии
 
-- **Backend**: Python 3.11+, Flask, OpenCV, Ultralytics YOLOv8
-- **Frontend**: Vite 6 + React 19 + TypeScript
-- **Re-ID**: InsightFace (buffalo_l) + ONNX Runtime
-- **Детекция поз**: YOLOv8n-pose (распознавание жестов)
-- **Визуализация**: PIL/Pillow (кириллица на кадре)
-- **Сервер**: Waitress (production WSGI)
-- **Контейнеризация**: Docker (CPU / GPU / Jetson) + docker compose
+| Компонент | Технология |
+|-----------|-----------|
+| Backend | Python 3.11+, Flask, OpenCV, Ultralytics YOLOv8 |
+| Frontend | Vite 6 + React 19 + TypeScript |
+| Re-ID | InsightFace (buffalo_l) + ONNX Runtime CPU |
+| Позы | YOLOv8n-pose (жесты) |
+| Визуализация | PIL/Pillow (кириллица) |
+| Трекинг | ByteTrack (ultralytics) |
+| Хранилище | MinIO (S3) + local fallback |
+| БД | SQLAlchemy + SQLite |
+| Сервер | Waitress (production WSGI) |
+| Контейнеры | Docker multi-stage (CPU / GPU / Jetson) + docker compose |
+| Тесты | pytest + pytest-cov (87 тестов) |
 
 ---
 
 ## 📦 Установка
 
-### 1. Клонировать репозиторий
+### Требования
+- Docker & Docker Compose (рекомендуется)
+- Python 3.11+ (для локального запуска)
+
+### 1. Клонировать
 ```bash
 git clone https://github.com/your-username/AI-CCTV-PPE-Detection.git
 cd AI-CCTV-PPE-Detection
 ```
 
-### 2. Установить зависимости
-```bash
-pip install -r requirements.txt
+### 2. Модели
+
+YOLO-модели (`.pt`) встроены в репозиторий:
+
+```
+models/
+├── best.pt              ← YOLOv8 PPE
+├── yolov8n-pose.pt      ← жесты
+├── yolov8n.pt           ← лица
+└── buffalo_l/           ← InsightFace (скачать)
+    ├── det_10g.onnx
+    └── w600k_r50.onnx
 ```
 
-### 3. Скачать модели
-
-**YOLO-модели (.pt)** — встроены в репозиторий:
-- `models/best.pt` — детекция людей, СИЗ, опасных зон
-- `models/yolov8n-pose.pt` — распознавание жестов
-- `models/yolov8n.pt` — детекция лиц (Re-ID)
-
-**InsightFace buffalo_l** (∼190 MB) — скачивается отдельно, т.к. превышает лимит GitHub:
-
+InsightFace buffalo_l (~190 MB):
 ```bash
 mkdir -p models/buffalo_l
 wget -qO /tmp/buffalo_l.zip \
@@ -62,291 +98,132 @@ unzip -q -o /tmp/buffalo_l.zip -d models/buffalo_l/
 rm /tmp/buffalo_l.zip
 ```
 
-Итоговая структура:
-```
-models/
-├── best.pt              ← YOLOv8 PPE (встроена)
-├── yolov8n-pose.pt      ← жесты (встроена)
-├── yolov8n.pt           ← лица (встроена)
-└── buffalo_l/
-    ├── det_10g.onnx     ← SCRFD детекция (скачать)
-    └── w600k_r50.onnx   ← ArcFace распознавание (скачать)
+### 3. Запуск
+
+```bash
+# Быстрый старт (CPU)
+docker compose --profile cpu up --build -d
+
+# GPU (NVIDIA CUDA)
+docker compose --profile gpu up --build -d
 ```
 
-> Модель `buffalo_l` автоматически подхватывается через `INSIGHTFACE_ROOT=/app`.
-> Источник: [GitHub deepinsight/insightface](https://github.com/deepinsight/insightface/releases/tag/v0.7).
+Открыть: `http://localhost:8000`  
+Логин: `admin` / пароль: `admin123` (переопределяется через `ADMIN_PASSWORD`)
+
+### Локальная разработка
+```bash
+pip install -r requirements.txt
+python app.py
+# Фронтенд: cd frontend && npm run dev
+```
 
 ---
 
 ## ⚙️ Конфигурация
 
-Все настройки в `config.py`:
+Основные настройки в `backend/config.py`:
 
 ```python
-# Камеры: RTSP URL или число — индекс локальной камеры (/dev/videoN)
-CAMERAS = {
-    "cam1": "rtsp://admin:password@192.168.1.100:554/stream1",
-    "usb": 0,  # /dev/video0
-}
-
-# Порог уверенности детекции
+CAMERAS = {"cam1": "rtsp://admin:pass@192.168.1.100:554/stream1"}
 CONF_THRESH = 0.75
-
-# Пропуск действует N секунд после жеста ОК
-APPROVAL_DURATION = 300
-
-# Re-ID (распознавание лиц)
-REID_SIM_THRESHOLD = 0.55        # базовый порог (адаптивный: 0.60-0.80 в зависимости от качества лица)
-REID_MAX_EMBEDDINGS = 5          # макс. эмбеддингов на личность
-REID_MAX_AGE_DAYS = 30           # авто-чистка старых записей
-REID_GALLERY_PATH = BASE_DIR / "data/face_gallery.pkl"
-REID_FRAME_SKIP = 3              # запускать рекогнайшн каждый N-й кадр
-
+REID_SIM_THRESHOLD = 0.55          # базовый порог (адаптивный 0.50–0.80)
+REID_MAX_EMBEDDINGS = 5
+REID_MAX_AGE_DAYS = 30
+EVENT_CLIP_FPS = 10                # FPS видео-клипов
+EVENT_PRE_FRAMES = 30              # кадров до нарушения
+EVENT_POST_FRAMES = 30             # кадров после разрешения
+EVENT_MAX_FRAMES = 300             # макс. кадров клипа
+MINIO_ENDPOINT = "minio:9000"
+MINIO_BUCKET_EVENTS = "events"
 ```
 
----
-
-## 🖥️ Запуск
-
-### Локально
-```bash
-python app.py
-```
-Открыть в браузере: `http://localhost:8000`
-
-### Docker
-
-#### Быстрый старт (CPU)
-```bash
-# Создать файл .env с паролем админа (опционально)
-echo JWT_SECRET=$(openssl rand -hex 32) > .env
-echo ADMIN_PASSWORD=your-password >> .env
-
-# Запуск
-docker compose --profile cpu up --build -d
-```
-Открыть в браузере: `http://localhost:8000`  
-Логин: `admin` / пароль из `ADMIN_PASSWORD` (по умолч. `admin123`)
-
-#### GPU (NVIDIA CUDA)
-```bash
-# .env как выше
-docker compose --profile gpu up --build -d
-```
-
-#### Разработка (hot-reload кода)
-```bash
-# После изменений в Python — просто перезапустить контейнер:
-docker compose --profile cpu restart app-cpu
-
-# После изменений в React — сначала пересобрать фронт:
-cd frontend && npm run build
-docker compose --profile cpu restart app-cpu
-```
-
-#### Переменные окружения (.env)
+Окружение (`.env`):
 ```ini
-JWT_SECRET=your-random-secret-64-chars
+JWT_SECRET=your-random-secret
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=your-password
-ADMIN_EMAIL=admin@example.com
 ```
-
-> `INSIGHTFACE_ROOT` по умолчанию `/app` — модель buffalo_l лежит в `/app/models/buffalo_l/`.
-> Если нужно использовать другую директорию с моделями, установите `INSIGHTFACE_ROOT` в `.env`.
-
-#### Остановка
-```bash
-docker compose --profile cpu down
-docker compose --profile gpu down
-```
-
-#### Ручная сборка (CPU)
-```bash
-docker build -t ppe-detection:cpu -f Dockerfile .
-docker run -d --name ppe-detector -p 8000:8000 ppe-detection:cpu
-```
-
-#### Ручная сборка (GPU)
-```bash
-docker build -t ppe-detection:gpu -f Dockerfile.gpu .
-docker run -d --gpus all --name ppe-detector -p 8000:8000 ppe-detection:gpu
-```
-
-#### ARM64 + GPU (NVIDIA Jetson)
-
-**Сборка:**
-```bash
-# Проверить версию JetPack: dpkg -l | grep nvidia-l4t-core
-# JetPack 6.x → r36.4.0
-docker build --network host \
-  --build-arg L4T_TAG=r36.4.0 \
-  -t ppe-detection -f Dockerfile.jetson .
-```
-
-**Запуск:**
-```bash
-docker rm -f ppe-detection 2>/dev/null
-docker run -d --name ppe-detection \
-  --network host \
-  --runtime nvidia \
-  --device /dev/video0:/dev/video0 \
-  --device /dev/video1:/dev/video1 \
-  ppe-detection
-```
-
-> `--network host` — обязателен для доступа к RTSP-камерам в локальной сети.
-> `--runtime nvidia` — включает GPU (CUDA) на Jetson.
-> `--device /dev/videoN` — пробрасывает USB/CSI-камеру в контейнер.
-> На **Windows Docker Desktop** host-сеть недоступна — запускайте локально (`python app.py`).
-
-#### Обслуживание на Jetson
-```bash
-docker container prune -f
-docker image prune -af
-docker buildx prune -af
-```
-
----
-
-### 🔧 Особенности сборки на Jetson
-
-| Проблема | Решение |
-|---|---|
-| `Errno -2 Name or service not known` при pip install | `PIP_INDEX_URL="https://pypi.org/simple"` (образ `dustynv/l4t-pytorch` по умолчанию использует `jetson.webredirect.org`, который не резолвится внутри build-контейнера) |
-| `Cannot uninstall blinker 1.4` (distutils) | `pip install --ignore-installed blinker==1.9.0` перед установкой Flask |
-| `NumPy ABI mismatch` — torch собран с numpy 1.x | Отдельный `RUN pip install "numpy<2"` после основных пакетов |
-| `ffmpeg: not found` | `apt-get install ffmpeg` |
-| `The "timeout" option is deprecated` — ffmpeg на L4T трактует `-timeout` как listen-режим | Замена на `-stimeout` в `camera.py` |
-| `python: executable file not found` | `CMD ["python3", ...]` вместо `python` |
-| USB-вебкамера не открывается через `cv2.VideoCapture` на Jetson | OpenCV на L4T несовместим с V4L2 для UVC-устройств. Автоматический fallback на `ffmpeg -f v4l2` в `camera.py:_loop_opencv` |
-| В контейнере нет `/dev/video0` | Пробросить устройство: `--device /dev/video0:/dev/video0` |
 
 ---
 
 ## 🗂️ Структура проекта
 
 ```
-AI-CCTV-PPE-Detection/
-│
-├── backend/                # 🔧 Clean code архитектура
-│   ├── app.py              #   Flask + регистрация роутов
-│   ├── config.py           #   Константы
-│   ├── main.py             #   Оркестратор (start/stop, process_frame)
-│   ├── core/
-│   │   ├── state.py        #   DetectionState (треки, пропуска, логи, жесты)
-│   │   └── models.py       #   LogEntry
-│   ├── capture/
-│   │   ├── buffer.py       #   FrameBuffer
-│   │   └── camera.py       #   CameraCapture (RTSP/ffmpeg/local)
-│   ├── detection/
-│   │   └── engine.py       #   run_detection, has_item_on_person, danger_zone
-│   ├── gestures/
-│   │   └── detector.py     #   detect_ok_gesture, detect_raised_hand
-│   ├── reid/
-│   │   ├── gallery.py      #   FaceGallery
-│   │   ├── recognizer.py   #   FaceRecognizer + FaceRecognitionWorker
-│   │   └── worker.py       #   FaceDetector (YOLO face)
-│   ├── visualization/
-│   │   └── renderer.py     #   put_text, draw_person, draw_legend...
-│   └── api/
-│       ├── detection.py    #   /start, /stop, /video_feed, /upload, /logs
-│       ├── cameras.py      #   CRUD камер
-│       └── reid.py         #   Управление галереей лиц
-│
-├── app.py                  # 📄 Тонкий реэкспорт → backend.app
-├── config.py               # 📄 Тонкий реэкспорт → backend.config
-├── main.py                 # 📄 Тонкий реэкспорт → backend.main
-├── state.py                # 📄 Тонкий реэкспорт → backend.core.state
-├── reid.py                 # 📄 Тонкий реэкспорт → backend.reid
-├── camera.py               # 📄 Тонкий реэкспорт → backend.capture
-├── detection.py            # 📄 Тонкий реэкспорт → backend.detection
-├── gestures.py             # 📄 Тонкий реэкспорт → backend.gestures
-├── visualization.py        # 📄 Тонкий реэкспорт → backend.visualization
-│
-├── frontend/               # 🌐 Vite + React + TypeScript
-│   ├── src/
-│   ├── public/
-│   ├── dist/               # сборка для production
-│   ├── package.json
-│   └── vite.config.ts
-│
-├── models/
-│   ├── best.pt
-│   ├── yolov8n-pose.pt
-│   ├── yolov8n-face.pt
-│   └── buffalo_l/
-├── data/
-│   ├── cameras.json        # конфигурация камер (RTSP URL)
-│   └── face_gallery.pkl    # галерея лиц Re-ID (авто)
-├── templates/
-│   └── index.html          # fallback для старого фронтенда
-├── uploads/
-├── models/
-│   ├── best.pt             # YOLOv8 PPE detection
-│   ├── yolov8n-pose.pt     # YOLOv8 pose (жесты)
-│   ├── yolov8n-face.pt     # YOLOv8 face (Re-ID)
-│   └── buffalo_l/
-│       ├── det_10g.onnx    # SCRFD face detection
-│       └── w600k_r50.onnx  # ArcFace recognition
-├── requirements.txt
-├── Dockerfile              # CPU multi-stage
-├── Dockerfile.gpu          # GPU (CUDA 12.4)
-├── Dockerfile.jetson       # ARM64 + GPU (NVIDIA Jetson)
-├── docker-compose.yml      # docker compose (cpu/gpu профили + MQTT)
-├── docker-compose.override.yml  # dev hot-reload
-└── PLAN.md                 # Дорожная карта трансформации
-```
+backend/
+├── app.py                 # Flask entrypoint
+├── config.py              # Константы
+├── main.py                # Оркестратор (start/stop, detection_loop, recording)
+├── core/
+│   ├── state.py           # DetectionState (треки, пропуска, логи, жесты)
+│   └── models.py          # LogEntry
+├── capture/
+│   ├── buffer.py          # FrameBuffer
+│   └── camera.py          # CameraCapture (RTSP/ffmpeg/local)
+├── detection/
+│   └── engine.py          # run_detection, danger_zone
+├── gestures/
+│   └── detector.py        # detect_ok_gesture, detect_raised_hand
+├── reid/
+│   ├── gallery.py         # FaceGallery (адаптивный порог, merge)
+│   ├── recognizer.py      # FaceRecognizer + FaceRecognitionWorker
+│   └── worker.py          # FaceDetector (YOLO face)
+├── visualization/
+│   └── renderer.py        # put_text, draw_person, draw_legend
+├── storage/
+│   └── minio_client.py    # EventStorage (MinIO + local fallback)
+├── db/
+│   ├── engine.py          # SQLAlchemy engine
+│   └── models.py          # Event, User, Camera, ApiKey
+├── auth/
+│   ├── routes.py          # login/refresh/me
+│   └── service.py         # JWT, init_admin
+└── api/
+    ├── detection.py       # /start, /stop, /video_feed, /detect-modes, /upload
+    ├── cameras.py         # CRUD камер + группы
+    ├── reid.py            # Управление галереей лиц
+    └── events.py          # События: GET, clip, snapshot
 
----
+frontend/
+├── src/
+│   ├── App.tsx            # Роутинг (Dashboard, Events, Settings, Login)
+│   ├── components/
+│   │   ├── Header.tsx     # Навигация, режимы детекции, mobile drawer
+│   │   ├── CameraCard.tsx # Карточка камеры с MJPEG
+│   │   ├── CameraGrid.tsx # Адаптивная сетка камер
+│   │   ├── Dashboard.tsx  # Главная: 3 breakpoint layout
+│   │   ├── LeftPanel.tsx  # Информационная панель
+│   │   ├── DispatcherPanel.tsx
+│   │   └── ui/            # Box, Flex, Grid, Responsive, BottomSheet
+│   ├── pages/
+│   │   ├── EventsPage.tsx # Лента событий с фильтрами и плеером
+│   │   └── SettingsPage.tsx
+│   ├── contexts/
+│   │   ├── CameraContext.tsx
+│   │   └── AuthContext.tsx
+│   ├── hooks/
+│   │   ├── useBreakpoint.ts
+│   │   ├── useOrientation.ts
+│   │   └── useClock.ts
+│   └── api/
+│       └── client.ts      # HTTP-клиент с JWT refresh
+```
 
 ---
 
 ## 🔧 Производительность
 
-- **Последовательная детекция** — камеры обрабатываются по одной в цикле, а не параллельно (4 потока перегружали CPU Jetson до 221%)
-- **Polling JPEG** — `/video_frame/<cam_id>` отдаёт одиночный JPEG, фронтенд опрашивает каждые 100мс (10 FPS). Настраивается через `POLL_INTERVAL` в `index.html`.
-- **Счётчик людей на камере** — каждая видео-ячейка отображает количество обнаруженных людей под камерой (бейдж `<div class="cam-counter">`)
-- **FFmpeg PID cleanup** — при переподключении к RTSP старый процесс ffmpeg корректно завершается (`_stop_ffmpeg` в `camera.py`)
-- **Re-ID (лица)** — распознавание запускается каждый `REID_FRAME_SKIP` (по умолч. 3) кадр для снижения нагрузки на GPU. Порог матчинга адаптивный: 0.60 для качественных лиц, до 0.80 для размытых/мелких
-- **ByteTrack** — YOLO запускается с `model.track(persist=True)` вместо `model()`. Каждому человеку присваивается стабильный `track_id`, что исключает перескакивание имён между людьми при появлении/уходе из кадра. Старые треки очищаются через 60с бездействия
-- **FFmpeg fallback** — если `ffmpeg` не найден в системе, RTSP читается через `cv2.VideoCapture(rtsp://...)` вместо падения с ошибкой
-- **CPU на Jetson** — ~50-60% при 3-4 активных камерах, против 221% с параллельными потоками
-- **GPU (CUDA)** — детекция YOLO на Jetson работает через CUDA (флаг `--runtime nvidia`). Без GPU используется CPU (~1-2 FPS)
-- **Цикл детекции** — `time.sleep(0.05)` между итерациями вместо 1с, что убирает искусственное ограничение до 1 FPS
+- **Последовательная детекция** — камеры обрабатываются по одной в цикле (CPU ~50-60% на 3-4 камерах)
+- **MJPEG polling** — `/video_frame/<cam_id>` каждые 100мс (10 FPS)
+- **Re-ID** — распознавание каждый `REID_FRAME_SKIP` (3) кадр; порог матчинга адаптивный 0.50–0.80
+- **ByteTrack** — `persist=True` + `track_buffer: 90` для стабильных ID
+- **FFmpeg subprocess** — чтение RTSP через ffmpeg, корректный PID cleanup
+- **GPU (CUDA)** — Jetson через `--runtime nvidia`; CPU ~1-2 FPS без GPU
 
----
-
-## 🎯 Логика работы
-
-```
-Камера (RTSP / USB)
-    │
-    ▼
-CameraCapture → FrameBuffer
-                    │
-        ┌───────────┴───────────┐
-        ▼                       ▼
-detection_worker          generate_live_feed
-(лог, пропуска)           (видео + визуализация)
-        │
-        ▼
-   ┌────┴────┐
-   │         │
-   ▼         ▼
-Детекция   Re-ID (InsightFace)
-СИЗ, зона  матчинг лиц → global_id
-жест ОК    русское имя на кадре
-   │         │
-   └────┬────┘
-        ▼
-   Пропуск / Нарушение
-```
-
-### Статусы людей
+## 🎯 Статусы людей
 
 | Цвет рамки | Статус |
-|---|---|
+|-----------|--------|
 | 🟢 Зелёный | Все СИЗ, вне зоны |
 | 🟠 Оранжевый | В зоне, СИЗ есть |
 | 🔴 Красный | В зоне, нарушение СИЗ |
@@ -355,52 +232,92 @@ detection_worker          generate_live_feed
 
 ---
 
-## 📋 Формат логов
+## 📋 API
 
-```json
-{
-  "id": "1717839045.123",
-  "timestamp": "14:30:45",
-  "message": "Людей: 2 | Александр: Вне зоны | Все СИЗ на месте",
-  "category": "норма",
-  "cam_id": "cam1",
-  "global_id": 42
-}
-```
+### Детекция
+| Метод | Эндпоинт | Описание |
+|-------|----------|----------|
+| `POST` | `/start` | Запуск детекции |
+| `POST` | `/stop` | Остановка детекции |
+| `GET` | `/api/status` | Статус (running: bool) |
+| `GET` | `/api/detect-modes` | Получить режимы |
+| `PUT` | `/api/detect-modes` | Установить режимы |
 
-Категории: `норма` / `внимание` / `нарушение`
+### События
+| Метод | Эндпоинт | Описание |
+|-------|----------|----------|
+| `GET` | `/api/events` | Список событий (camera, label, limit, offset) |
+| `GET` | `/api/events/<id>` | Детали события |
+| `GET` | `/api/events/<id>/clip` | Видеоклип (MP4) |
+| `GET` | `/api/events/<id>/snapshot` | Снимок (JPEG) |
 
-Сообщение лога парсится на фронтенде для извлечения имени человека. Формат части сообщения:
-```
-<имя> [<СИЗ>]: <статус>
-```
-Статус может быть: `ПРОПУСК`, `ОПАСНАЯ ЗОНА`, `Вне зоны`, `ЖЕСТ-ОК`. Если статус содержит `ЖЕСТ-ОК`, браузер показывает всплывающее уведомление.
+### Re-ID
+| Метод | Эндпоинт | Описание |
+|-------|----------|----------|
+| `GET` | `/api/reid/persons` | Список личностей |
+| `POST` | `/api/reid/persons/<id>/rename` | Переименовать |
+| `DELETE` | `/api/reid/persons/<id>` | Удалить |
+| `GET` | `/api/reid/stats` | Статистика |
+
+### Камеры
+| Метод | Эндпоинт | Описание |
+|-------|----------|----------|
+| `GET` | `/api/cameras` | Список камер |
+| `POST` | `/api/cameras` | Добавить камеру |
+| `PUT` | `/api/cameras/<id>` | Обновить камеру |
+| `DELETE` | `/api/cameras/<id>` | Удалить камеру |
+
+### Авторизация
+| Метод | Эндпоинт | Описание |
+|-------|----------|----------|
+| `POST` | `/auth/login` | Вход |
+| `POST` | `/auth/refresh` | Refresh токена |
+| `GET` | `/auth/me` | Текущий пользователь |
 
 ---
 
-## 🔁 API Re-ID (управление галереей лиц)
+## 🔁 Docker Compose
 
-| Метод | Эндпоинт | Описание |
-|-------|----------|----------|
-| `GET` | `/api/reid/persons` | Список всех личностей (ID, имя, камеры, кол-во эмбеддингов) |
-| `POST` | `/api/reid/persons/<id>/rename` | Переименовать личность `{"name": "Сергей"}` |
-| `DELETE` | `/api/reid/persons/<id>` | Удалить личность по global_id |
-| `POST` | `/api/reid/clear` | Очистить всю галерею |
-| `GET` | `/api/reid/stats` | Статистика (всего личностей, пропусков) |
+```bash
+# CPU profile (по умолчанию)
+docker compose --profile cpu up --build -d
 
-Каждому новому лицу автоматически присваивается имя `Гость_X`.
-Имена можно переименовывать через UI (кнопка "👤 Управление лицами" в левой панели) или через API.
+# GPU profile
+docker compose --profile gpu up --build -d
+
+# Остановка
+docker compose --profile cpu down
+
+# Dev (hot-reload кода)
+docker compose --profile cpu up -d
+# Python-изменения → restart
+docker compose --profile cpu restart app-cpu
+# React-изменения → cd frontend && npm run build → restart
+```
+
+Сервисы:
+- `app-cpu` / `app-gpu` — основное приложение
+- `minio` — S3-хранилище клипов (порт 9000 API, 9002 console)
+- `createbuckets` — инициализация bucket'ов при старте
+- `mqtt` — Mosquitto брокер (для будущей архитектуры)
+
+---
+
+## 🧪 Тестирование
+
+```bash
+# В контейнере (автоматически перед стартом)
+python3 -m pytest tests/ -v --tb=short
+
+# Локально
+pip install -r requirements.txt
+python3 -m pytest tests/ -v --cov=backend
+```
+
+87 тестов: галерея (50), состояние (19), движок (5), конфиг (11).
 
 ---
 
 ## 📄 Лицензия
 
 MIT © 2026
-
----
-
-## 🔗 Ссылки
-
-- [Ultralytics YOLOv8](https://docs.ultralytics.com/)
-- [Flask](https://flask.palletsprojects.com/)
-- [OpenCV](https://opencv.org/)

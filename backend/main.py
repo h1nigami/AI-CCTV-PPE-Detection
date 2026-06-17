@@ -1,9 +1,15 @@
 from __future__ import annotations
+import io
+import os
+import subprocess
 import cv2
 import threading
 import time
 import traceback
+from collections import deque
 from datetime import datetime
+from pathlib import Path
+from typing import Optional
 from ultralytics import YOLO
 import torch
 
@@ -12,7 +18,8 @@ cv2.INTER_NEAREST_EXACT = getattr(cv2, 'INTER_NEAREST_EXACT', cv2.INTER_NEAREST)
 from backend.config import (
     MODEL_PATH, POSE_MODEL_PATH, CLASS_NAMES, CAMERAS, CONF_THRESH,
     REID_GALLERY_PATH, REID_DET_SIZE, REID_FRAME_SKIP, REID_MAX_AGE_DAYS,
-    get_camera_config,
+    EVENT_PRE_FRAMES, EVENT_POST_FRAMES, EVENT_MAX_FRAMES, EVENT_CLIP_FPS,
+    VIOLATION_LOGS_DIR, get_camera_config,
 )
 from backend.capture.buffer import FrameBuffer
 from backend.capture.camera import CameraCapture
@@ -23,6 +30,9 @@ from backend.visualization.renderer import (
     draw_legend, draw_stats_panel, put_text, FONT_LARGE
 )
 from backend.core.state import DetectionState, LogEntry
+from backend.api.events import create_event_record, update_event_clip, update_event_snapshot
+from backend.db.models import EventLabel
+from backend.storage.minio_client import get_storage
 
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 print(f"Используется устройство: {DEVICE}")
@@ -152,6 +162,10 @@ def rename_camera(old_id: str, new_id: str) -> bool:
 
 detection_threads: dict[str, threading.Thread] = {}
 face_workers: dict[str, 'FaceRecognitionWorker'] = {}
+
+# ── Event recording ──
+_event_recordings: dict[str, Optional[dict]] = {}
+_frame_prebuf: dict[str, deque] = {}
 
 
 def process_frame(frame, cam_id: str, face_worker=None):
@@ -382,15 +396,17 @@ def stop_live():
         t.join(timeout=2)
     detection_threads.clear()
     stop_face_workers()
+    for cam_id, rec in list(_event_recordings.items()):
+        if rec.get('active'):
+            rec['active'] = False
+            print(f"[Events] Финализация {rec['event_id']} при остановке")
+            _finalize_recording(cam_id, rec)
     for buf in annotated_buffers.values():
         buf.clear()
     print("Детекция остановлена")
 
 
 def detection_loop():
-    """Основной цикл детекции. Проходит по всем камерам,
-    делает YOLO + аннотацию на каждом кадре.
-    """
     while state.live_active:
         had_any = False
         for cam_id in list(CAMERAS.keys()):
@@ -405,7 +421,10 @@ def detection_loop():
                 continue
             had_any = True
 
-            # Если детекция выключена — просто копируем raw кадр в аннотированный буфер
+            if cam_id not in _frame_prebuf:
+                _frame_prebuf[cam_id] = deque(maxlen=EVENT_PRE_FRAMES)
+            _frame_prebuf[cam_id].append(frame.copy())
+
             if not get_camera_config(cam_id).get("detect_enabled", True):
                 out_buf.write(frame)
                 continue
@@ -414,6 +433,42 @@ def detection_loop():
                 annotated, message, category, global_ids, statuses = process_frame(
                     frame, cam_id, face_worker=face_workers.get(cam_id))
                 out_buf.write(annotated)
+
+                is_violation = category == "нарушение"
+                rec = _event_recordings.get(cam_id)
+                if is_violation:
+                    if rec is None or not rec.get('active'):
+                        gid = global_ids[0] if global_ids else 0
+                        person_name = state.get_person_name(gid, cam_id, has_face=True) if gid else ""
+                        event_id = create_event_record(
+                            cam_id=cam_id,
+                            label=EventLabel.VIOLATION,
+                            person_name=person_name or None,
+                            person_id=gid or None,
+                        )
+                        rec = {
+                            'active': True,
+                            'event_id': event_id,
+                            'start_time': time.time(),
+                            'frames': list(_frame_prebuf[cam_id]),
+                            'cam_id': cam_id,
+                        }
+                        _event_recordings[cam_id] = rec
+                        print(f"[Events] Запись {event_id} начата на {cam_id}")
+                    if rec is not None and rec.get('active'):
+                        rec['frames'].append(annotated.copy())
+                        if len(rec['frames']) >= EVENT_MAX_FRAMES:
+                            rec['active'] = False
+                            _finalize_recording(cam_id, rec)
+                else:
+                    if rec is not None and rec.get('active'):
+                        post = rec.get('post_count', 0) + 1
+                        rec['post_count'] = post
+                        rec['frames'].append(annotated.copy())
+                        if post >= EVENT_POST_FRAMES:
+                            rec['active'] = False
+                            _finalize_recording(cam_id, rec)
+
                 any_changed = any(state.is_status_changed(cam_id, int(k.split(":")[1]), v) for k, v in statuses.items())
                 if any_changed:
                     gid = global_ids[0] if global_ids else 0
@@ -431,3 +486,51 @@ def detection_loop():
                 traceback.print_exc()
         if not had_any:
             time.sleep(0.01)
+
+
+def _finalize_recording(cam_id: str, rec: dict):
+    frames = rec.get('frames', [])
+    if not frames:
+        return
+    event_id = rec['event_id']
+    h, w = frames[0].shape[:2]
+    raw_path = os.path.join(VIOLATION_LOGS_DIR, f"_{event_id}_raw.mp4")
+    final_path = os.path.join(VIOLATION_LOGS_DIR, f"_{event_id}.mp4")
+    try:
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        out = cv2.VideoWriter(raw_path, fourcc, EVENT_CLIP_FPS, (w, h))
+        for f in frames:
+            out.write(f)
+        out.release()
+
+        subprocess.run([
+            "ffmpeg", "-y",
+            "-i", raw_path,
+            "-c:v", "libx264",
+            "-preset", "ultrafast",
+            "-pix_fmt", "yuv420p",
+            final_path
+        ], capture_output=True, timeout=60)
+
+        data = Path(final_path).read_bytes()
+
+        storage = get_storage()
+        storage.upload_clip(event_id, cam_id, data)
+
+        update_event_clip(event_id, time.time())
+
+        mid = frames[len(frames) // 2]
+        ret, jpg = cv2.imencode('.jpg', mid, [int(cv2.IMWRITE_JPEG_QUALITY), 85])
+        if ret:
+            storage.upload_snapshot(event_id, cam_id, jpg.tobytes())
+            update_event_snapshot(event_id)
+
+        print(f"[Events] Клип {event_id} сохранён ({len(frames)} кадров)")
+    except Exception as e:
+        print(f"[Events] Ошибка сохранения {event_id}: {e}")
+    finally:
+        for p in [raw_path, final_path]:
+            try:
+                Path(p).unlink(missing_ok=True)
+            except Exception:
+                pass

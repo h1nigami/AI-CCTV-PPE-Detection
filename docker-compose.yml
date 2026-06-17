@@ -23,6 +23,9 @@ services:
     build:
       dockerfile: Dockerfile
     container_name: kontroler-cpu
+    depends_on:
+      createbuckets:
+        condition: service_completed_successfully
 
   # ─────────────────────────────────────────────────
   #  GPU profile (NVIDIA CUDA)
@@ -33,6 +36,9 @@ services:
     build:
       dockerfile: Dockerfile.gpu
     container_name: kontroler-gpu
+    depends_on:
+      createbuckets:
+        condition: service_completed_successfully
     deploy:
       resources:
         reservations:
@@ -60,6 +66,42 @@ services:
       - mosquitto_log:/mosquitto/log
     restart: unless-stopped
 
+  # ─────────────────────────────────────────────────
+  #  MinIO (S3-совместимое хранилище для клипов событий)
+  # ─────────────────────────────────────────────────
+  minio:
+    image: minio/minio:latest
+    profiles: ["cpu", "gpu"]
+    container_name: kontroler-minio
+    command: server /data --console-address ":9002"
+    ports:
+      - "9000:9000"
+      - "9002:9002"
+    volumes:
+      - minio_data:/data
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+      MINIO_BROWSER_REDIRECT_URL: http://localhost:9001
+    restart: unless-stopped
+
+  # Создание bucket'ов при старте MinIO
+  createbuckets:
+    image: minio/mc:latest
+    profiles: ["cpu", "gpu"]
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      sleep 3;
+      /usr/bin/mc alias set myminio http://minio:9000 minioadmin minioadmin;
+      /usr/bin/mc mb myminio/events --ignore-existing;
+      /usr/bin/mc policy set public myminio/events;
+      echo 'MinIO buckets ready';
+      exit 0;
+      "
+
 volumes:
   mosquitto_data:
   mosquitto_log:
+  minio_data:

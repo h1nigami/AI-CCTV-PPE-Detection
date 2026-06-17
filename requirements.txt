@@ -46,3 +46,4 @@ PyJWT==2.13.0
 SQLAlchemy==2.0.51
 pytest==8.3.5
 pytest-cov==6.1.1
+boto3==1.37.0

@@ -95,11 +95,25 @@ export interface CameraGroup {
 export interface TimelineEvent {
   id: string
   cameraName: string
-  timestamp: string
-  type: "alert" | "detection" | "motion"
+  timestamp: number
   label: string
-  confidence: number
-  thumbnailUrl?: string
+  subLabel: string | null
+  personName: string | null
+  personId: number | null
+  hasClip: boolean
+  hasSnapshot: boolean
+  clipUrl: string | null
+  snapshotUrl: string | null
+  score: number | null
+  ppeHelmet: boolean
+  ppeMask: boolean
+  ppeVest: boolean
+  startTime: number
+  endTime: number | null
+  boxX: number | null
+  boxY: number | null
+  boxW: number | null
+  boxH: number | null
 }
 
 /** Состояние диспетчерской панели */

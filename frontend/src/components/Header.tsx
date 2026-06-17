@@ -57,8 +57,10 @@ export function Header() {
     }
     setModes(next)
     try {
-      await api.setDetectModes(next)
-    } catch {
+      const res = await api.setDetectModes(next)
+      if (res.modes) setModes(res.modes)
+    } catch (e) {
+      console.error("[Header] toggleMode failed:", e)
       setModes(modes)
     }
   }, [modes])
