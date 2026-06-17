@@ -9,9 +9,38 @@
   --red:      #f44336;
   --orange:   #ff9800;
   --yellow:   #ffd600;
+  --blue:     #00b0ff;
+  --cyan:     #00e5ff;
   --text:     #ffffff;
   --text-dim: #888888;
   --text-mid: #cccccc;
+  --text-muted: #aaaaaa;
+
+  --sp-xs:  4px;
+  --sp-sm:  6px;
+  --sp-md:  10px;
+  --sp-lg:  12px;
+  --sp-xl:  16px;
+  --sp-xxl: 24px;
+  --sp-xxxl: 32px;
+
+  --radius-sm:  4px;
+  --radius-md:  6px;
+  --radius-lg:  8px;
+  --radius-xl:  12px;
+
+  --font-xs: 0.6rem;
+  --font-sm: 0.65rem;
+  --font-md: 0.7rem;
+  --font-lg: 0.75rem;
+  --font-xl: 0.8rem;
+  --font-xxl: 0.85rem;
+  --font-xxxl: 1rem;
+  --font-hero: 4rem;
+
+  --header-h: 56px;
+
+  --sidebar-w: 260px;
 }
 
 *, *::before, *::after {
