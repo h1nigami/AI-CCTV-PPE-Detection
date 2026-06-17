@@ -69,11 +69,14 @@ class FaceGallery:
         threshold = self._adaptive_threshold(quality)
         with self._lock:
             best_id = None
-            best_sim = threshold
+            best_sim = -1.0
             for gid, data in self._gallery.items():
                 mean_emb = np.mean(data['embeddings'], axis=0)
                 sim = self._cosine_sim(embedding, mean_emb)
-                if sim > best_sim:
+                person_threshold = threshold
+                if len(data['embeddings']) >= 2:
+                    person_threshold -= 0.05
+                if sim > person_threshold and sim > best_sim:
                     best_sim = sim
                     best_id = gid
             if best_id is not None:
@@ -98,6 +101,29 @@ class FaceGallery:
             print(f"[ReID] Новый: {name} (ID={new_id}, камера {cam_id}, "
                   f"sim={best_sim:.3f}, кач={quality:.2f} [{q_label}])")
             return new_id
+
+    def has_id(self, global_id: int) -> bool:
+        with self._lock:
+            return global_id in self._gallery
+
+    def merge_entries(self, source_id: int, target_id: int) -> bool:
+        with self._lock:
+            if source_id not in self._gallery or target_id not in self._gallery:
+                return False
+            source = self._gallery[source_id]
+            target = self._gallery[target_id]
+            target['embeddings'].extend(source['embeddings'])
+            if len(target['embeddings']) > self.max_embeddings * 2:
+                target['embeddings'] = target['embeddings'][-self.max_embeddings:]
+            target['cameras'].update(source['cameras'])
+            target['last_seen'] = max(target['last_seen'], source['last_seen'])
+            del self._gallery[source_id]
+            self._save()
+            src_name = source.get('name', f"ID{source_id}")
+            tgt_name = target.get('name', f"ID{target_id}")
+            print(f"[ReID] Слит {source_id} ({src_name}) -> {target_id} ({tgt_name}), "
+                  f"эмбеддингов: {len(target['embeddings'])}")
+            return True
 
     def rename(self, global_id: int, new_name: str) -> bool:
         with self._lock:
