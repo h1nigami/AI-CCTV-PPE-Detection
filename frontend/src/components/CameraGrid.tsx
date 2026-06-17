@@ -1,6 +1,7 @@
 import { useMemo } from "react"
 import { CameraCard } from "./CameraCard"
 import { useCamerasContext } from "../contexts/CameraContext"
+import { useBreakpoint } from "../hooks/useBreakpoint"
 import type { CameraInfo } from "../types"
 
 // ============================================================
@@ -18,6 +19,7 @@ interface CameraGridProps {
 }
 
 export function CameraGrid({ fullscreenCam, onCamClick, isRunning }: CameraGridProps) {
+  const bp = useBreakpoint()
   const { filteredCameras, openDispatcher } = useCamerasContext()
 
   // Если полноэкран — показываем только выбранную камеру
@@ -27,12 +29,13 @@ export function CameraGrid({ fullscreenCam, onCamClick, isRunning }: CameraGridP
 
   // Определяем количество колонок
   const cols = useMemo(() => {
+    if (bp === 'mobile') return 1
     const count = visibleCams.length
     if (fullscreenCam) return 1
     if (count <= 1) return 1
     if (count <= 4) return 2
     return 3
-  }, [visibleCams.length, fullscreenCam])
+  }, [visibleCams.length, fullscreenCam, bp])
 
   const handleClick = (camName: string) => {
     if (onCamClick) {

@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from "react-router-dom"
 import { useAuth } from "../contexts/AuthContext"
 import { api } from "../api/client"
 import { useClock } from "../hooks/useClock"
+import { useBreakpoint } from "../hooks/useBreakpoint"
 
 const MODE_LABELS: Record<string, string> = {
   people: "Люди",
@@ -15,6 +16,8 @@ export function Header() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
+  const bp = useBreakpoint()
+  const isMobile = bp === 'mobile'
 
   const [modesOpen, setModesOpen] = useState(false)
   const [modes, setModes] = useState<Record<string, boolean>>({
@@ -22,6 +25,7 @@ export function Header() {
     ppe: true,
     faces: true,
   })
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const modesRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -69,109 +73,94 @@ export function Header() {
     navigate("/login")
   }
 
+  const handleNav = (path: string) => {
+    navigate(path)
+    setMobileMenuOpen(false)
+  }
+
   return (
     <header style={styles.header}>
+      {/* Левая часть: гамбургер (mobile) или навигация (desktop) */}
       <div style={styles.headerLeft}>
+        {isMobile ? (
+          <button style={styles.hamburger} onClick={() => setMobileMenuOpen((o) => !o)}>
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+              <path d="M3 5h14M3 10h14M3 15h14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+          </button>
+        ) : (
+          <nav style={styles.nav}>
+            <button style={{ ...styles.navBtn, ...(location.pathname === "/" ? styles.navActive : {}) }} onClick={() => navigate("/")}>
+              ДАШБОРД
+            </button>
+            <button style={{ ...styles.navBtn, ...(location.pathname === "/events" ? styles.navActive : {}) }} onClick={() => navigate("/events")}>
+              СОБЫТИЯ
+            </button>
+            <button style={{ ...styles.navBtn, ...(location.pathname === "/settings" ? styles.navActive : {}) }} onClick={() => navigate("/settings")}>
+              НАСТРОЙКИ
+            </button>
+          </nav>
+        )}
         <div style={styles.logo}>
           <span style={styles.logoText}>Видеоаналитика в реальном времени</span>
         </div>
-
-        <nav style={styles.nav}>
-          <button
-            style={{
-              ...styles.navBtn,
-              ...(location.pathname === "/" ? styles.navActive : {}),
-            }}
-            onClick={() => navigate("/")}
-          >
-            ДАШБОРД
-          </button>
-          <button
-            style={{
-              ...styles.navBtn,
-              ...(location.pathname === "/events" ? styles.navActive : {}),
-            }}
-            onClick={() => navigate("/events")}
-          >
-            СОБЫТИЯ
-          </button>
-          <button
-            style={{
-              ...styles.navBtn,
-              ...(location.pathname === "/settings" ? styles.navActive : {}),
-            }}
-            onClick={() => navigate("/settings")}
-          >
-            НАСТРОЙКИ
-          </button>
-        </nav>
       </div>
 
       <div style={styles.headerCenter}>
         <img src="/logo.svg" alt="" style={styles.centerLogo} />
-        <span>Нейроконтролер</span>
+        {!isMobile && <span>Нейроконтролер</span>}
       </div>
 
       <div style={styles.headerRight}>
-        <div ref={modesRef} style={styles.modesWrapper}>
-          <button
-            style={styles.modesBtn}
-            onClick={() => setModesOpen((o) => !o)}
-          >
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-              <rect x="1" y="1" width="5" height="5" rx="1" stroke="#888" strokeWidth="1.2" />
-              <rect x="8" y="1" width="5" height="5" rx="1" stroke="#888" strokeWidth="1.2" />
-              <rect x="1" y="8" width="5" height="5" rx="1" stroke="#888" strokeWidth="1.2" />
-              <rect x="8" y="8" width="5" height="5" rx="1" stroke="#888" strokeWidth="1.2" />
-            </svg>
-            Детекция
-            <svg width="10" height="6" viewBox="0 0 10 6" fill="none" style={{ marginLeft: "4px" }}>
-              <path d="M1 1l4 4 4-4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </button>
+        {!isMobile && (
+          <div ref={modesRef} style={styles.modesWrapper}>
+            <button style={styles.modesBtn} onClick={() => setModesOpen((o) => !o)}>
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                <rect x="1" y="1" width="5" height="5" rx="1" stroke="#888" strokeWidth="1.2" />
+                <rect x="8" y="1" width="5" height="5" rx="1" stroke="#888" strokeWidth="1.2" />
+                <rect x="1" y="8" width="5" height="5" rx="1" stroke="#888" strokeWidth="1.2" />
+                <rect x="8" y="8" width="5" height="5" rx="1" stroke="#888" strokeWidth="1.2" />
+              </svg>
+              Детекция
+              <svg width="10" height="6" viewBox="0 0 10 6" fill="none" style={{ marginLeft: "4px" }}>
+                <path d="M1 1l4 4 4-4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+            {modesOpen && (
+              <div style={styles.modesDropdown}>
+                {Object.entries(MODE_LABELS).map(([key, label]) => {
+                  const disabled = key !== "people" && isPeopleDisabled
+                  return (
+                    <label key={key} style={{ ...styles.modeOption, opacity: disabled ? 0.4 : 1 }}>
+                      <input type="checkbox" checked={!!modes[key]} disabled={disabled} onChange={() => toggleMode(key)} style={styles.modeCheckbox} />
+                      <span>{label}</span>
+                      <span style={{ ...styles.modeDot, background: modes[key] ? "#00e676" : "#333" }} />
+                    </label>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
-          {modesOpen && (
-            <div style={styles.modesDropdown}>
-              {Object.entries(MODE_LABELS).map(([key, label]) => {
-                const disabled = key !== "people" && isPeopleDisabled
-                return (
-                  <label key={key} style={{
-                    ...styles.modeOption,
-                    opacity: disabled ? 0.4 : 1,
-                  }}>
-                    <input
-                      type="checkbox"
-                      checked={!!modes[key]}
-                      disabled={disabled}
-                      onChange={() => toggleMode(key)}
-                      style={styles.modeCheckbox}
-                    />
-                    <span>{label}</span>
-                    <span style={{
-                      ...styles.modeDot,
-                      background: modes[key] ? "#00e676" : "#333",
-                    }} />
-                  </label>
-                )
-              })}
-            </div>
-          )}
-        </div>
-
-        <div style={styles.clock}>
-          <div style={styles.clockTime}>{timeStr}</div>
-          <div style={styles.clockDate}>{dateStr}</div>
-        </div>
+        {!isMobile && (
+          <div style={styles.clock}>
+            <div style={styles.clockTime}>{timeStr}</div>
+            <div style={styles.clockDate}>{dateStr}</div>
+          </div>
+        )}
 
         {user && (
-          <div style={styles.userSection}>
+          <div style={isMobile ? styles.userSectionCompact : styles.userSection}>
             <div style={styles.userAvatar}>
               {user.username.charAt(0).toUpperCase()}
             </div>
-            <div style={styles.userInfo}>
-              <div style={styles.userName}>{user.username}</div>
-              <div style={styles.userRole}>{user.role}</div>
-            </div>
+            {!isMobile && (
+              <div style={styles.userInfo}>
+                <div style={styles.userName}>{user.username}</div>
+                <div style={styles.userRole}>{user.role}</div>
+              </div>
+            )}
             <button style={styles.logoutBtn} onClick={handleLogout} title="Выйти">
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
                 <path d="M6 14H3a1 1 0 01-1-1V3a1 1 0 011-1h3M11 11l3-3-3-3M14 8H6" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
@@ -180,6 +169,50 @@ export function Header() {
           </div>
         )}
       </div>
+
+      {/* Мобильное меню (полноэкранный overlay) */}
+      {isMobile && mobileMenuOpen && (
+        <>
+          <div style={menuOverlay} onClick={() => setMobileMenuOpen(false)} />
+          <div style={menuDrawer}>
+            <div style={menuDrawerHeader}>
+              <span style={{ fontWeight: 600, color: '#fff', fontSize: '0.9rem' }}>Меню</span>
+              <button style={menuCloseBtn} onClick={() => setMobileMenuOpen(false)}>
+                <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+                  <path d="M4 4l10 10M14 4l-10 10" stroke="#888" strokeWidth="1.5" strokeLinecap="round" />
+                </svg>
+              </button>
+            </div>
+
+            <button style={menuItem(location.pathname === "/")} onClick={() => handleNav("/")}>
+              📺 Дашборд
+            </button>
+            <button style={menuItem(location.pathname === "/events")} onClick={() => handleNav("/events")}>
+              📋 События
+            </button>
+            <button style={menuItem(location.pathname === "/settings")} onClick={() => handleNav("/settings")}>
+              ⚙️ Настройки
+            </button>
+
+            <div style={{ borderTop: '1px solid #333', marginTop: 12, paddingTop: 12 }}>
+              <div style={{ fontSize: '0.75rem', color: '#888', marginBottom: 8 }}>Режимы детекции</div>
+              {Object.entries(MODE_LABELS).map(([key, label]) => {
+                const disabled = key !== "people" && isPeopleDisabled
+                return (
+                  <label key={key} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', opacity: disabled ? 0.4 : 1 }}>
+                    <input type="checkbox" checked={!!modes[key]} disabled={disabled} onChange={() => toggleMode(key)} style={{ accentColor: '#00e676' }} />
+                    <span style={{ fontSize: '0.85rem', color: '#ccc' }}>{label}</span>
+                  </label>
+                )
+              })}
+            </div>
+
+            <div style={{ borderTop: '1px solid #333', marginTop: 12, paddingTop: 12 }}>
+              <div style={{ fontSize: '0.75rem', color: '#888' }}>{timeStr} · {dateStr}</div>
+            </div>
+          </div>
+        </>
+      )}
     </header>
   )
 }
@@ -376,4 +409,74 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: "center",
     transition: "all 0.2s",
   },
+  hamburger: {
+    background: 'none',
+    border: 'none',
+    color: '#888',
+    cursor: 'pointer',
+    padding: '4px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  userSectionCompact: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '4px',
+    paddingLeft: '8px',
+  },
 }
+
+const menuOverlay: React.CSSProperties = {
+  position: 'fixed',
+  inset: 0,
+  zIndex: 200,
+  background: 'rgba(0,0,0,0.5)',
+}
+
+const menuDrawer: React.CSSProperties = {
+  position: 'fixed',
+  top: 0,
+  left: 0,
+  bottom: 0,
+  width: '280px',
+  zIndex: 201,
+  background: '#1a1a1a',
+  borderRight: '1px solid #333',
+  padding: 16,
+  overflow: 'auto',
+  animation: 'fadeIn 0.15s ease',
+}
+
+const menuDrawerHeader: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  marginBottom: 16,
+  paddingBottom: 12,
+  borderBottom: '1px solid #333',
+}
+
+const menuCloseBtn: React.CSSProperties = {
+  background: 'none',
+  border: 'none',
+  color: '#888',
+  cursor: 'pointer',
+  padding: 4,
+}
+
+const menuItem = (active: boolean): React.CSSProperties => ({
+  display: 'block',
+  width: '100%',
+  textAlign: 'left',
+  padding: '10px 12px',
+  borderRadius: 8,
+  background: active ? '#00e67610' : 'transparent',
+  border: active ? '1px solid #00e67640' : '1px solid transparent',
+  color: active ? '#00e676' : '#ccc',
+  cursor: 'pointer',
+  fontSize: '0.85rem',
+  fontFamily: "'Inter', sans-serif",
+  fontWeight: active ? 600 : 400,
+  marginBottom: 4,
+})
