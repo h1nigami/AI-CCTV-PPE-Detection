@@ -41,6 +41,12 @@ interface CameraContextType {
   // ---- Статус камер ----
   /** Получить расширенную инфу для карточки */
   getCardInfo: (cam: CameraInfo) => CameraCardInfo
+
+  // ---- Детекция ----
+  /** Запущена ли детекция на бэке */
+  isRunning: boolean
+  /** Установить флаг детекции (вызывается после api.start/api.stop) */
+  setDetectionRunning: (running: boolean) => void
 }
 
 const CameraContext = createContext<CameraContextType | null>(null)
@@ -59,6 +65,7 @@ export function CameraProvider({ children }: { children: ReactNode }) {
   const [activeGroupId, setActiveGroupId] = useState<string | null>("all")
   const [dispatcher, setDispatcher] = useState<DispatcherState>({ open: false, cameraName: null })
   const [groups] = useState<CameraGroup[]>(DEFAULT_GROUPS)
+  const [isRunning, setDetectionRunning] = useState(false)
 
   // Храним последние события для каждой камеры (симуляция)
   const eventsByCamera = useRef<Record<string, TimelineEvent[]>>({})
@@ -83,6 +90,13 @@ export function CameraProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     refresh()
   }, [refresh])
+
+  // Получаем статус детекции при монтировании провайдера (один раз)
+  useEffect(() => {
+    api.getStatus().then((data) => {
+      if (data.running) setDetectionRunning(true)
+    }).catch(() => {})
+  }, [])
 
   // ---- Логика групп ----
   const setActiveGroup = useCallback((id: string | null) => {
@@ -143,6 +157,8 @@ export function CameraProvider({ children }: { children: ReactNode }) {
         getEventsForCamera,
         recentEvents,
         getCardInfo,
+        isRunning,
+        setDetectionRunning,
       }}
     >
       {children}

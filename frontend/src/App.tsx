@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom"
+import { BrowserRouter, Routes, Route, Navigate, Outlet } from "react-router-dom"
 import { AuthProvider, useAuth } from "./contexts/AuthContext"
 import { CameraProvider } from "./contexts/CameraContext"
 import { Header } from "./components/Header"
@@ -20,13 +20,13 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
-function ProtectedLayout({ children }: { children: React.ReactNode }) {
+function ProtectedLayout() {
   return (
     <ProtectedRoute>
       <CameraProvider>
         <div style={{ height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
           <Header />
-          {children}
+          <Outlet />
         </div>
       </CameraProvider>
     </ProtectedRoute>
@@ -42,31 +42,12 @@ export default function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
 
-          {/* Защищённые страницы */}
-          <Route
-            path="/"
-            element={
-              <ProtectedLayout>
-                <DashboardPage />
-              </ProtectedLayout>
-            }
-          />
-          <Route
-            path="/events"
-            element={
-              <ProtectedLayout>
-                <EventsPage />
-              </ProtectedLayout>
-            }
-          />
-          <Route
-            path="/settings"
-            element={
-              <ProtectedLayout>
-                <SettingsPage />
-              </ProtectedLayout>
-            }
-          />
+          {/* Защищённые страницы — layout один для всех */}
+          <Route element={<ProtectedLayout />}>
+            <Route path="/" element={<DashboardPage />} />
+            <Route path="/events" element={<EventsPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
+          </Route>
 
           {/* Редирект на дашборд по умолчанию */}
           <Route path="*" element={<Navigate to="/" replace />} />

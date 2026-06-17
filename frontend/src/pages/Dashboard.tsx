@@ -11,8 +11,7 @@ import { api } from "../api/client"
 import type { LogEntry } from "../types"
 
 export default function DashboardPage() {
-  const { cameras, dispatcher, openDispatcher, closeDispatcher } = useCamerasContext()
-  const [isRunning, setIsRunning] = useState(false)
+  const { cameras, dispatcher, openDispatcher, closeDispatcher, isRunning, setDetectionRunning } = useCamerasContext()
   const [fullscreenCam, setFullscreenCam] = useState<string | null>(null)
   const [logs, setLogs] = useState<LogEntry[]>([])
   const [notifications, setNotifications] = useState<
@@ -57,21 +56,21 @@ export default function DashboardPage() {
   const handleStart = useCallback(async () => {
     try {
       await api.start()
-      setIsRunning(true)
+      setDetectionRunning(true)
     } catch {
       addNotification("violation", "Ошибка запуска")
     }
-  }, [addNotification])
+  }, [addNotification, setDetectionRunning])
 
   const handleStop = useCallback(async () => {
     try {
       await api.stop()
-      setIsRunning(false)
+      setDetectionRunning(false)
       setLogs([])
     } catch {
       // ignore
     }
-  }, [])
+  }, [setDetectionRunning])
 
   const selectedCam = dispatcher.open ? dispatcher.cameraName : fullscreenCam
 
@@ -95,11 +94,6 @@ export default function DashboardPage() {
     }
   }, [isRunning])
 
-  useEffect(() => {
-    api.getStatus().then((data) => {
-      if (data.running) setIsRunning(true)
-    }).catch(() => {})
-  }, [])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
