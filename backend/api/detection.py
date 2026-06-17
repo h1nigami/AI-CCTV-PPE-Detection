@@ -74,6 +74,9 @@ def configure_detection_routes(app, state, annotated_buffers, generate_live_feed
         for key in ("people", "ppe", "faces"):
             if key in data:
                 DETECT_MODES[key] = bool(data[key])
+        if not DETECT_MODES["people"]:
+            DETECT_MODES["ppe"] = False
+            DETECT_MODES["faces"] = False
         save_detect_modes()
         return jsonify({"status": "updated", "modes": dict(DETECT_MODES)})
 

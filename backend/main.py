@@ -133,6 +133,9 @@ face_workers: dict[str, 'FaceRecognitionWorker'] = {}
 
 def process_frame(frame, cam_id: str, face_worker=None):
     from backend.config import DETECT_MODES
+    if not any(DETECT_MODES.values()):
+        frame = draw_legend(frame)
+        return frame, f"{datetime.now().strftime('%H:%M:%S')} [{cam_id}] Детекция отключена", "норма", [], {}
     state.cleanup_stale_tracks()
     detected = run_detection(frame, model)
     danger_zone = get_danger_zone(detected["cones"]) if DETECT_MODES.get("ppe", True) else None
@@ -339,10 +342,12 @@ def start_live():
         _init_camera_resources(cam_id, CAMERAS[cam_id])
         camera_captures[cam_id].start()
         if face_recognizer is not None and cam_id not in face_workers:
-            from backend.reid.recognizer import FaceRecognitionWorker
-            fw = FaceRecognitionWorker(frame_buffers[cam_id], face_recognizer, REID_FRAME_SKIP)
-            fw.start()
-            face_workers[cam_id] = fw
+            from backend.config import DETECT_MODES
+            if DETECT_MODES.get("faces", True):
+                from backend.reid.recognizer import FaceRecognitionWorker
+                fw = FaceRecognitionWorker(frame_buffers[cam_id], face_recognizer, REID_FRAME_SKIP)
+                fw.start()
+                face_workers[cam_id] = fw
     t = threading.Thread(target=detection_loop, daemon=True)
     detection_threads["main"] = t
     t.start()
