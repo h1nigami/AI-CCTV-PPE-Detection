@@ -43,6 +43,8 @@ class DetectionState:
         self._track_last_seen: Dict[Tuple[str, int], float] = {}
         self._fallback_names: Dict[int, str] = {}
         self._used_fallback: set = set()
+        # Статусы последнего залогированного события (cam_id+track_id → compact_status)
+        self._last_logged_status: Dict[Tuple[str, int], str] = {}
 
     def init_gallery(self, gallery_path: Optional[Path] = None):
         from backend.reid.gallery import FaceGallery
@@ -132,6 +134,7 @@ class DetectionState:
             self._track_last_seen.clear()
             self._fallback_names.clear()
             self._used_fallback.clear()
+            self._last_logged_status.clear()
 
     def get_person_name(self, global_id: int, cam_id: str, has_face: bool = False) -> str:
         name = self._fallback_names.get(global_id)
@@ -186,3 +189,18 @@ class DetectionState:
     def set_gesture_time(self, global_id: int):
         with self._lock:
             self._last_gesture_time[global_id] = time.time()
+
+    def is_status_changed(self, cam_id: str, track_id: int, compact_status: str) -> bool:
+        """Проверить, изменился ли статус СИЗ для данного трека.
+        Если статус совпадает с предыдущим — False, иначе True (и обновляем)."""
+        key = (cam_id, track_id)
+        with self._lock:
+            prev = self._last_logged_status.get(key)
+            if prev == compact_status:
+                return False
+            self._last_logged_status[key] = compact_status
+            return True
+
+    def clear_tracked_statuses(self):
+        with self._lock:
+            self._last_logged_status.clear()

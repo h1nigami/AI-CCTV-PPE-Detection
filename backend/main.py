@@ -248,7 +248,18 @@ def process_frame(frame, cam_id: str, face_worker=None):
     message = " | ".join(msg_parts)
     category = "нарушение" if has_any_violation else \
         "внимание" if danger_zone is not None and detected["persons"] else "норма"
-    return frame, message, category, global_ids
+    statuses: dict[str, str] = {}
+    for idx, pbox in enumerate(detected["persons"]):
+        track_id = person_track_ids[idx] if idx < len(person_track_ids) else -1
+        if track_id < 0:
+            track_id = idx
+        helmet = any(has_item_on_person(pbox, h) for h in detected["helmets"]) if DETECT_MODES.get("ppe", True) else False
+        mask = any(has_item_on_person(pbox, m) for m in detected["masks"]) if DETECT_MODES.get("ppe", True) else False
+        vest = any(has_item_on_person(pbox, v) for v in detected["vests"]) if DETECT_MODES.get("ppe", True) else False
+        dz = is_in_danger_zone(pbox, danger_zone) if danger_zone is not None else False
+        key = f"{cam_id}:{track_id}"
+        statuses[key] = f"{'К' if helmet else 'к'}{'М' if mask else 'м'}{'Ж' if vest else 'ж'}{'З' if dz else 'з'}"
+    return frame, message, category, global_ids, statuses
 
 
 def detection_worker(cam_id: str):
@@ -263,20 +274,23 @@ def detection_worker(cam_id: str):
             time.sleep(0.01)
             continue
         try:
-            annotated, message, category, global_ids = process_frame(
+            annotated, message, category, global_ids, statuses = process_frame(
                 frame.copy(), cam_id, face_worker=face_workers.get(cam_id))
             frame_idx += 1
             out_buf.write(annotated)
-            gid = global_ids[0] if global_ids else 0
-            state.add_log(LogEntry(
-                id=str(datetime.now().timestamp()),
-                timestamp=datetime.now().strftime('%H:%M:%S'),
-                message=message,
-                category=category,
-                cam_id=cam_id,
-                global_id=gid,
-            ))
-            print(message)
+            any_changed = any(state.is_status_changed(cam_id, int(k.split(":")[1]), v) for k, v in statuses.items())
+            if any_changed or frame_idx % 30 == 0:
+                gid = global_ids[0] if global_ids else 0
+                state.add_log(LogEntry(
+                    id=str(datetime.now().timestamp()),
+                    timestamp=datetime.now().strftime('%H:%M:%S'),
+                    message=message,
+                    category=category,
+                    cam_id=cam_id,
+                    global_id=gid,
+                ))
+            if any_changed:
+                print(message)
         except Exception as e:
             print(f"[{cam_id}] Ошибка детекции: {e}")
             traceback.print_exc()
@@ -376,19 +390,21 @@ def detection_loop():
                 continue
 
             try:
-                annotated, message, category, global_ids = process_frame(
+                annotated, message, category, global_ids, statuses = process_frame(
                     frame, cam_id, face_worker=face_workers.get(cam_id))
                 out_buf.write(annotated)
-                gid = global_ids[0] if global_ids else 0
-                state.add_log(LogEntry(
-                    id=str(datetime.now().timestamp()),
-                    timestamp=datetime.now().strftime('%H:%M:%S'),
-                    message=message,
-                    category=category,
-                    cam_id=cam_id,
-                    global_id=gid,
-                ))
-                print(message)
+                any_changed = any(state.is_status_changed(cam_id, int(k.split(":")[1]), v) for k, v in statuses.items())
+                if any_changed:
+                    gid = global_ids[0] if global_ids else 0
+                    state.add_log(LogEntry(
+                        id=str(datetime.now().timestamp()),
+                        timestamp=datetime.now().strftime('%H:%M:%S'),
+                        message=message,
+                        category=category,
+                        cam_id=cam_id,
+                        global_id=gid,
+                    ))
+                    print(message)
             except Exception as e:
                 print(f"[{cam_id}] Ошибка детекции: {e}")
                 traceback.print_exc()
