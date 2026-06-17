@@ -26,6 +26,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxrender1 \
     ffmpeg \
     g++ \
+    unzip \
     && rm -rf /var/lib/apt/lists/*
 
 # ── Python зависимости (CPU) ──────────────────────────────
@@ -49,9 +50,15 @@ COPY backend/ ./backend/
 # ── Корневые реэкспорты и конфигурация ───────────────────
 COPY app.py config.py main.py state.py \
      camera.py detection.py gestures.py visualization.py reid.py ./
-# ── Шаблоны и модели ─────────────────────────────────────
+# ── Шаблоны и YOLO-модели (.pt файлы) ─────────────────────
 COPY templates/ ./templates/
-COPY models/ ./models/
+COPY models/*.pt ./models/
+# ── Buffalo_l (InsightFace Re-ID) — скачивается отдельно ──
+RUN mkdir -p /app/models/buffalo_l && \
+    wget -qO /tmp/buffalo_l.zip \
+      "https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_l.zip" && \
+    unzip -q -o /tmp/buffalo_l.zip -d /app/models/buffalo_l/ && \
+    rm /tmp/buffalo_l.zip
 COPY data/ ./data/
 # ── Скрипты ──────────────────────────────────────────────
 COPY export_models.py entrypoint.sh ./
@@ -63,10 +70,8 @@ COPY --from=frontend-builder /frontend/dist /app/frontend/dist
 # ── YOLO config directory ────────────────────────────────
 ENV YOLO_CONFIG_DIR=/tmp/Ultralytics
 
-# ── InsightFace buffalo_l — встроенная модель (загружена с HuggingFace immich-app/buffalo_l) ──
-# Модель лежит в /app/models/buffalo_l/ ; insightface ищет <root>/models/<name> → root=/app
+# insightface ищет <root>/models/<name>; buffalo_l скачан выше в /app/models/buffalo_l/
 ENV INSIGHTFACE_ROOT=/app
-# models/buffalo_l/ копируется шагом COPY models/ ./models/ ниже
 
 EXPOSE 8000
 CMD ["python3", "-u", "app.py"]

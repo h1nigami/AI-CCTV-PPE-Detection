@@ -45,20 +45,36 @@ cd AI-CCTV-PPE-Detection
 pip install -r requirements.txt
 ```
 
-### 3. Положить модель
-```
-models/
-├── best.pt            ← обученная YOLOv8 модель
-├── yolov8n-pose.pt    ← распознавание жестов
-├── yolov8n-face.pt    ← детекция лиц (Re-ID)
-└── buffalo_l/
-    ├── det_10g.onnx   ← детекция лиц (InsightFace SCRFD)
-    └── w600k_r50.onnx ← распознавание лиц (InsightFace ArcFace)
+### 3. Скачать модели
+
+**YOLO-модели (.pt)** — встроены в репозиторий:
+- `models/best.pt` — детекция людей, СИЗ, опасных зон
+- `models/yolov8n-pose.pt` — распознавание жестов
+- `models/yolov8n.pt` — детекция лиц (Re-ID)
+
+**InsightFace buffalo_l** (∼190 MB) — скачивается отдельно, т.к. превышает лимит GitHub:
+
+```bash
+mkdir -p models/buffalo_l
+wget -qO /tmp/buffalo_l.zip \
+  "https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_l.zip"
+unzip -q -o /tmp/buffalo_l.zip -d models/buffalo_l/
+rm /tmp/buffalo_l.zip
 ```
 
-> Модель `buffalo_l` (InsightFace Re-ID) встроена в репозиторий и автоматически
-> подхватывается через `INSIGHTFACE_ROOT=/app`. Источник: HuggingFace
-> [`immich-app/buffalo_l`](https://huggingface.co/immich-app/buffalo_l).
+Итоговая структура:
+```
+models/
+├── best.pt              ← YOLOv8 PPE (встроена)
+├── yolov8n-pose.pt      ← жесты (встроена)
+├── yolov8n.pt           ← лица (встроена)
+└── buffalo_l/
+    ├── det_10g.onnx     ← SCRFD детекция (скачать)
+    └── w600k_r50.onnx   ← ArcFace распознавание (скачать)
+```
+
+> Модель `buffalo_l` автоматически подхватывается через `INSIGHTFACE_ROOT=/app`.
+> Источник: [GitHub deepinsight/insightface](https://github.com/deepinsight/insightface/releases/tag/v0.7).
 
 ---
 
@@ -80,7 +96,7 @@ CONF_THRESH = 0.75
 APPROVAL_DURATION = 300
 
 # Re-ID (распознавание лиц)
-REID_SIM_THRESHOLD = 0.55        # базовый порог (адаптивный: 0.48-0.72 в зависимости от качества лица)
+REID_SIM_THRESHOLD = 0.55        # базовый порог (адаптивный: 0.60-0.80 в зависимости от качества лица)
 REID_MAX_EMBEDDINGS = 5          # макс. эмбеддингов на личность
 REID_MAX_AGE_DAYS = 30           # авто-чистка старых записей
 REID_GALLERY_PATH = BASE_DIR / "data/face_gallery.pkl"
@@ -292,7 +308,7 @@ AI-CCTV-PPE-Detection/
 - **Polling JPEG** — `/video_frame/<cam_id>` отдаёт одиночный JPEG, фронтенд опрашивает каждые 100мс (10 FPS). Настраивается через `POLL_INTERVAL` в `index.html`.
 - **Счётчик людей на камере** — каждая видео-ячейка отображает количество обнаруженных людей под камерой (бейдж `<div class="cam-counter">`)
 - **FFmpeg PID cleanup** — при переподключении к RTSP старый процесс ffmpeg корректно завершается (`_stop_ffmpeg` в `camera.py`)
-- **Re-ID (лица)** — распознавание запускается каждый `REID_FRAME_SKIP` (по умолч. 3) кадр для снижения нагрузки на GPU. Порог матчинга адаптивный: 0.48 для качественных лиц, до 0.72 для размытых/мелких
+- **Re-ID (лица)** — распознавание запускается каждый `REID_FRAME_SKIP` (по умолч. 3) кадр для снижения нагрузки на GPU. Порог матчинга адаптивный: 0.60 для качественных лиц, до 0.80 для размытых/мелких
 - **ByteTrack** — YOLO запускается с `model.track(persist=True)` вместо `model()`. Каждому человеку присваивается стабильный `track_id`, что исключает перескакивание имён между людьми при появлении/уходе из кадра. Старые треки очищаются через 60с бездействия
 - **FFmpeg fallback** — если `ffmpeg` не найден в системе, RTSP читается через `cv2.VideoCapture(rtsp://...)` вместо падения с ошибкой
 - **CPU на Jetson** — ~50-60% при 3-4 активных камерах, против 221% с параллельными потоками
