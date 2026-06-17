@@ -70,7 +70,16 @@ for cam_id, rec in list(_event_recordings.items()):
 
 **Причина 2**: Исключение в `_finalize_recording` (MinIO недоступен, ffmpeg упал) — `update_event_clip` не вызывается.
 
-**Фикс**: Уже обёрнуто в `try/except` с логом. Нужно проверить `docker logs kontroler-cpu | grep Events`.
+**Фикс** (`backend/storage/minio_client.py`): `upload_clip`/`upload_snapshot` теперь при падении `put_object` (MinIO упал уже в процессе сессии, а не на старте) пишут в локальное хранилище вместо проброса исключения — клип не теряется, `update_event_clip` вызывается. Симметрично `get_clip_data`/`get_snapshot_data` при промахе MinIO читают локальную копию.
+```python
+if self._available:
+    try:
+        self._client.put_object(...)
+        return ...
+    except Exception as e:
+        print(f"[Storage] ... не удалась ({e}), пишу локально")
+# fallback на локальный диск
+```
 
 ---
 
@@ -80,9 +89,19 @@ for cam_id, rec in list(_event_recordings.items()):
 
 **Причина**: `detection_loop` заблокирован на `raw_buf.read()` (RTSP поток не отдаёт кадр). `CameraCapture.stop()` не успевает разблокировать чтение до вызова `t.join(timeout=2)`.
 
-**Диагностика**: Перезапустить контейнер (`docker compose restart app-cpu`). Если после рестарта /stop работает, проблема была в зависшем RTSP.
+**Фикс** (`backend/capture/camera.py` → `CameraCapture.stop`): источник рвётся ДО `join`. Поток захвата висит в блокирующем `read()` и не проверяет `_running`, поэтому сначала `_unblock_capture()` (terminate ffmpeg / `release()` cv2 — разблокирует `read`), затем `join`, затем `_unblock_capture()` повторно (цикл переподключения мог поднять новый процесс). Раньше `join(timeout=5)` выжидал полный таймаут на каждую камеру.
+```python
+def stop(self):
+    self._running = False
+    self._unblock_capture()      # разблокировать висящий read()
+    if self._thread:
+        self._thread.join(timeout=5)
+    self._unblock_capture()      # добить переподключившийся процесс
+    self.buffer.clear()
+```
+Доп. (`_open_opencv`): RTSP-фоллбэк через OpenCV открывается с `CAP_PROP_OPEN_TIMEOUT_MSEC`/`READ_TIMEOUT_MSEC = 5000`, чтобы зависший поток не блокировал `read()` бесконечно.
 
-**Не решено полностью**: Если поток зависает намертво, `/stop` не сработает — нужен `docker compose restart`.
+**Диагностика**: Если `/stop` всё ещё долго отвечает — проверить `docker logs ... | grep "Захват камеры остановлен"`; при экстремальном зависании источника остаётся `docker compose restart`.
 
 ---
 

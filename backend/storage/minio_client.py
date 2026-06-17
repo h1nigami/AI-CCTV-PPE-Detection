@@ -44,8 +44,12 @@ class EventStorage:
     def upload_clip(self, event_id: str, cam_id: str, data: bytes) -> str:
         key = f"clips/{cam_id}/{event_id}.mp4"
         if self._available:
-            self._client.put_object(Bucket=self._bucket, Key=key, Body=data)
-            return f"/api/events/{event_id}/clip"
+            try:
+                self._client.put_object(Bucket=self._bucket, Key=key, Body=data)
+                return f"/api/events/{event_id}/clip"
+            except Exception as e:
+                # MinIO упал в процессе сессии — не теряем клип, пишем локально
+                print(f"[Storage] Загрузка клипа {event_id} в MinIO не удалась ({e}), пишу локально")
         local_path = self._local_dir / cam_id / f"{event_id}.mp4"
         local_path.parent.mkdir(parents=True, exist_ok=True)
         local_path.write_bytes(data)
@@ -54,8 +58,11 @@ class EventStorage:
     def upload_snapshot(self, event_id: str, cam_id: str, data: bytes) -> str:
         key = f"snapshots/{cam_id}/{event_id}.jpg"
         if self._available:
-            self._client.put_object(Bucket=self._bucket, Key=key, Body=data)
-            return f"/api/events/{event_id}/snapshot"
+            try:
+                self._client.put_object(Bucket=self._bucket, Key=key, Body=data)
+                return f"/api/events/{event_id}/snapshot"
+            except Exception as e:
+                print(f"[Storage] Загрузка снимка {event_id} в MinIO не удалась ({e}), пишу локально")
         local_path = self._local_dir / cam_id / f"{event_id}.jpg"
         local_path.parent.mkdir(parents=True, exist_ok=True)
         local_path.write_bytes(data)
@@ -76,7 +83,7 @@ class EventStorage:
                 obj = self._client.get_object(Bucket=self._bucket, Key=key)
                 return obj["Body"].read()
             except Exception:
-                return None
+                pass  # промах MinIO — пробуем локальную копию (могла осесть при сбое загрузки)
         local_path = self.get_clip_path(event_id, cam_id)
         return local_path.read_bytes() if local_path else None
 
@@ -87,7 +94,7 @@ class EventStorage:
                 obj = self._client.get_object(Bucket=self._bucket, Key=key)
                 return obj["Body"].read()
             except Exception:
-                return None
+                pass  # промах MinIO — пробуем локальную копию
         local_path = self.get_snapshot_path(event_id, cam_id)
         return local_path.read_bytes() if local_path else None
 

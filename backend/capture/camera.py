@@ -26,19 +26,37 @@ class CameraCapture:
 
     def stop(self):
         self._running = False
+        # Поток захвата висит в блокирующем read() (subprocess.stdout / cv2)
+        # и не проверяет _running, поэтому сначала рвём источник — это
+        # разблокирует read, — и только потом join. Иначе join выжидает
+        # весь таймаут (по 5с на камеру) и /stop тормозит.
+        self._unblock_capture()
         if self._thread:
             self._thread.join(timeout=5)
-        if self._cap:
-            if isinstance(self._cap, subprocess.Popen):
-                try:
-                    self._cap.terminate()
-                    self._cap.wait(timeout=3)
-                except:
-                    self._cap.kill()
-            else:
-                self._cap.release()
+        # Цикл переподключения мог создать новый процесс уже после первого
+        # terminate — добиваем его.
+        self._unblock_capture()
         self.buffer.clear()
         print("Захват камеры остановлен")
+
+    def _unblock_capture(self):
+        cap = self._cap
+        if cap is None:
+            return
+        if isinstance(cap, subprocess.Popen):
+            try:
+                cap.terminate()
+                cap.wait(timeout=3)
+            except Exception:
+                try:
+                    cap.kill()
+                except Exception:
+                    pass
+        else:
+            try:
+                cap.release()
+            except Exception:
+                pass
 
     def _is_rtsp(self):
         if isinstance(self.source, int):
@@ -230,8 +248,22 @@ class CameraCapture:
             print(f"[{self.source}] ошибка запуска ffmpeg: {e}")
             return None
 
+    def _open_opencv(self):
+        # Для RTSP открываем через FFMPEG-бэкенд с таймаутами, чтобы
+        # зависший поток не блокировал read() навсегда (иначе stop() ждёт
+        # полный join-таймаут). Локальные камеры — дефолтный бэкенд.
+        if self._is_rtsp():
+            cap = cv2.VideoCapture(self.source, cv2.CAP_FFMPEG)
+            try:
+                cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 5000)
+                cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, 5000)
+            except Exception:
+                pass
+            return cap
+        return cv2.VideoCapture(self.source)
+
     def _loop_opencv(self):
-        self._cap = cv2.VideoCapture(self.source)
+        self._cap = self._open_opencv()
         if not self._cap.isOpened():
             print(f"Не удалось открыть камеру через OpenCV: {self.source}")
             print(f"[{self.source}] пробуем ffmpeg subprocess")
@@ -248,7 +280,7 @@ class CameraCapture:
                         print(f"Камера {self.source} — переподключение...")
                         self._cap.release()
                         time.sleep(2)
-                        self._cap = cv2.VideoCapture(self.source)
+                        self._cap = self._open_opencv()
                         fail_count = 0
                     else:
                         time.sleep(0.5)
