@@ -94,20 +94,27 @@ class DetectionState:
         key = (cam_id, track_id)
         now = time.time()
         with self._reid_lock:
+            old_id = self._track_to_global.get(key)
+
             if face_embedding is not None and self._gallery is not None:
                 gallery_id = self._gallery.match_or_register(
                     face_embedding, cam_id, quality=quality)
-                if key in self._track_to_global:
-                    old_id = self._track_to_global[key]
-                    if old_id != gallery_id:
-                        print(f"[ReID] Track {key}: face mismatch! "
-                              f"global_id {old_id} -> {gallery_id}")
+                if old_id is not None and old_id != gallery_id:
+                    # Если у трека был старый fallback-ID, переносим его имя в галерею
+                    old_name = self._fallback_names.pop(old_id, None)
+                    if old_name is not None:
+                        self._gallery.rename(gallery_id, old_name)
+                        print(f"[ReID] Имя '{old_name}' перенесено с fallback {old_id} "
+                              f"на gallery {gallery_id} для трека {key}")
+                    else:
+                        print(f"[ReID] Track {key}: global_id {old_id} -> {gallery_id}")
                 self._track_to_global[key] = gallery_id
                 self._track_last_seen[key] = now
                 return gallery_id
-            if key in self._track_to_global:
+
+            if old_id is not None:
                 self._track_last_seen[key] = now
-                return self._track_to_global[key]
+                return old_id
             global_id = hash(key) & 0x7FFFFFFF
             if global_id not in self._fallback_names:
                 name = self._assign_fallback_name()
