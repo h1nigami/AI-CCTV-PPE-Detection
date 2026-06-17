@@ -100,12 +100,17 @@ class DetectionState:
                 gallery_id = self._gallery.match_or_register(
                     face_embedding, cam_id, quality=quality)
                 if old_id is not None and old_id != gallery_id:
-                    # Если у трека был старый fallback-ID, переносим его имя в галерею
                     old_name = self._fallback_names.pop(old_id, None)
                     if old_name is not None:
-                        self._gallery.rename(gallery_id, old_name)
-                        print(f"[ReID] Имя '{old_name}' перенесено с fallback {old_id} "
-                              f"на gallery {gallery_id} для трека {key}")
+                        info = self._gallery.get_info(gallery_id)
+                        is_new = info and info['embedding_count'] <= 1
+                        if is_new:
+                            self._gallery.rename(gallery_id, old_name)
+                            print(f"[ReID] Имя '{old_name}' перенесено с fallback {old_id} "
+                                  f"на gallery {gallery_id} для трека {key}")
+                        else:
+                            print(f"[ReID] Track {key}: fallback {old_id} -> gallery {gallery_id}, "
+                                  f"имя gallery '{info['name'] if info else '?'}' сохранено (existing)")
                     else:
                         print(f"[ReID] Track {key}: global_id {old_id} -> {gallery_id}")
                 self._track_to_global[key] = gallery_id

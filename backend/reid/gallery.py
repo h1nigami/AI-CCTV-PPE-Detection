@@ -65,13 +65,13 @@ class FaceGallery:
 
     def _adaptive_threshold(self, quality: float) -> float:
         if quality >= 0.8:
-            return 0.48
+            return 0.60
         elif quality >= 0.6:
-            return 0.55
+            return 0.65
         elif quality >= 0.4:
-            return 0.62
-        else:
             return 0.72
+        else:
+            return 0.80
 
     def _assign_name(self) -> str:
         used = {d.get('name', '') for d in self._gallery.values()}
@@ -110,7 +110,7 @@ class FaceGallery:
                 'name': name,
             }
             self._save()
-            q_label = {0.48: 'отл', 0.55: 'хор', 0.62: 'ср', 0.72: 'плох'}.get(threshold, '?')
+            q_label = {0.60: 'отл', 0.65: 'хор', 0.72: 'ср', 0.80: 'плох'}.get(threshold, '?')
             print(f"[ReID] Новый: {name} (ID={new_id}, камера {cam_id}, "
                   f"sim={best_sim:.3f}, кач={quality:.2f} [{q_label}])")
             return new_id
