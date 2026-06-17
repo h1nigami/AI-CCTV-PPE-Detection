@@ -189,7 +189,7 @@ def process_frame(frame, cam_id: str, face_worker=None):
             fully_equipped = has_helmet and has_mask and has_vest
             missing = [n for f, n in [(has_helmet, "каска"), (has_mask, "маска"), (has_vest, "жилет")] if not f] if DETECT_MODES.get("ppe", True) else []
             ppe = f"{'К' if has_helmet else '!К'} {'М' if has_mask else '!М'} {'Ж' if has_vest else '!Ж'}" if DETECT_MODES.get("ppe", True) else ""
-            person_name = state.get_person_name(global_id, cam_id, face_emb is not None and detect_faces_mode)
+            person_name = state.get_person_name(global_id, cam_id, face_emb is not None and detect_faces_mode) if detect_faces_mode else ""
             gesture_ok = (
                 detect_ok_gesture(frame, pbox, pose_model)
                 if not approved and state.can_gesture(global_id)
@@ -209,16 +209,17 @@ def process_frame(frame, cam_id: str, face_worker=None):
                 approved_count += 1
             elif not fully_equipped and DETECT_MODES.get("ppe", True):
                 violation_count += 1
+            name_tag = f"{person_name} " if person_name else ""
             if approved:
-                label = f"{person_name} ПРОПУСК | {ppe}" if ppe else f"{person_name} ПРОПУСК"
+                label = f"{name_tag}ПРОПУСК | {ppe}" if ppe else f"{name_tag}ПРОПУСК"
             elif in_danger:
-                label = f"{person_name} ОПАСНАЯ ЗОНА | {ppe}" if ppe else f"{person_name} ОПАСНАЯ ЗОНА"
+                label = f"{name_tag}ОПАСНАЯ ЗОНА | {ppe}" if ppe else f"{name_tag}ОПАСНАЯ ЗОНА"
             else:
-                label = f"{person_name} Вне зоны | {ppe}" if ppe else f"{person_name} Вне зоны"
+                label = f"{name_tag}Вне зоны | {ppe}" if ppe else f"{name_tag}Вне зоны"
             frame = draw_person(frame, pbox, label, in_danger, not fully_equipped and DETECT_MODES.get("ppe", True), approved)
             if fully_equipped and not approved and in_danger:
                 frame = draw_hint(frame, pbox)
-            part = f"{person_name}"
+            part = f"{person_name}" if person_name else "Неизвестный"
             if ppe:
                 part += f" [{ppe}]"
             part += ": "

@@ -40,8 +40,15 @@ export function Header() {
     return () => document.removeEventListener("mousedown", handler)
   }, [])
 
+  const isPeopleDisabled = !modes.people
+
   const toggleMode = useCallback(async (key: string) => {
+    if (key !== "people" && !modes.people) return
     const next = { ...modes, [key]: !modes[key] }
+    if (key === "people" && !next.people) {
+      next.ppe = false
+      next.faces = false
+    }
     setModes(next)
     try {
       await api.setDetectModes(next)
@@ -125,21 +132,28 @@ export function Header() {
 
           {modesOpen && (
             <div style={styles.modesDropdown}>
-              {Object.entries(MODE_LABELS).map(([key, label]) => (
-                <label key={key} style={styles.modeOption}>
-                  <input
-                    type="checkbox"
-                    checked={!!modes[key]}
-                    onChange={() => toggleMode(key)}
-                    style={styles.modeCheckbox}
-                  />
-                  <span>{label}</span>
-                  <span style={{
-                    ...styles.modeDot,
-                    background: modes[key] ? "#00e676" : "#333",
-                  }} />
-                </label>
-              ))}
+              {Object.entries(MODE_LABELS).map(([key, label]) => {
+                const disabled = key !== "people" && isPeopleDisabled
+                return (
+                  <label key={key} style={{
+                    ...styles.modeOption,
+                    opacity: disabled ? 0.4 : 1,
+                  }}>
+                    <input
+                      type="checkbox"
+                      checked={!!modes[key]}
+                      disabled={disabled}
+                      onChange={() => toggleMode(key)}
+                      style={styles.modeCheckbox}
+                    />
+                    <span>{label}</span>
+                    <span style={{
+                      ...styles.modeDot,
+                      background: modes[key] ? "#00e676" : "#333",
+                    }} />
+                  </label>
+                )
+              })}
             </div>
           )}
         </div>
