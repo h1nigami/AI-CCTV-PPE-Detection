@@ -56,30 +56,35 @@ export function DispatcherPanel() {
     if (!m.includes("Людей:")) return result
 
     const personParts = m.split(" | ").filter((p) => /^[^[]+?\[.*?\]:/.test(p))
-    let helmetOk = true
-    let maskOk = true
-    let vestOk = true
-    let inDanger = false
-    let hasPass = false
 
-    for (const part of personParts) {
-      const ppeMatch = part.match(/\[(.*?)\]/)
-      if (ppeMatch) {
-        const ppeStr = ppeMatch[1]
-        if (ppeStr.includes("!К")) helmetOk = false
-        if (ppeStr.includes("!М")) maskOk = false
-        if (ppeStr.includes("!Ж")) vestOk = false
+    if (personParts.length === 0) {
+      result.ppe = { helmet: null, mask: null, vest: null, zone: null, gesture: null }
+    } else {
+      let helmetOk = true
+      let maskOk = true
+      let vestOk = true
+      let inDanger = false
+      let hasPass = false
+
+      for (const part of personParts) {
+        const ppeMatch = part.match(/\[(.*?)\]/)
+        if (ppeMatch) {
+          const ppeStr = ppeMatch[1]
+          if (ppeStr.includes("!К")) helmetOk = false
+          if (ppeStr.includes("!М")) maskOk = false
+          if (ppeStr.includes("!Ж")) vestOk = false
+        }
+        if (part.includes("ОПАСНАЯ ЗОНА")) inDanger = true
+        if (part.includes("ПРОПУСК")) hasPass = true
       }
-      if (part.includes("ОПАСНАЯ ЗОНА")) inDanger = true
-      if (part.includes("ПРОПУСК")) hasPass = true
-    }
 
-    result.ppe = {
-      helmet: helmetOk,
-      mask: maskOk,
-      vest: vestOk,
-      zone: !inDanger,
-      gesture: hasPass,
+      result.ppe = {
+        helmet: helmetOk,
+        mask: maskOk,
+        vest: vestOk,
+        zone: !inDanger,
+        gesture: hasPass,
+      }
     }
 
     personParts.forEach((part, idx) => {
