@@ -84,17 +84,21 @@ export function LeftPanel({
 
     Object.entries(latestByCam).forEach(([camId, log]) => {
       const parts = (log.message || "").split(" | ")
-      const people = parts.filter((p) => /^[^[]+?\[.*?\]:/.test(p)).length
+      const peopleMatch = log.message.match(/Людей:\s*(\d+)/)
+      const people = peopleMatch ? parseInt(peopleMatch[1]) : 0
       result.counters.total += people
       const a = (log.message || "").match(/ПРОПУСК/g)
       if (a) result.counters.approved += a.length
 
-      const personParts = parts.filter((p) => /^[^[]+?\[.*?\]:/.test(p))
+      const personParts = parts.filter((p) => {
+        if (p.startsWith("Людей:") || p.startsWith("Нет СИЗ")) return false
+        return /^[^\[\:]+(?:\[.*?\])?\s*:\s/.test(p)
+      })
       personParts.forEach((part, idx) => {
         const ppeMatch = part.match(/\[(.*?)\]/)
         const ppeStr = ppeMatch ? ppeMatch[1] + " " : ""
         const nameMatch = part.match(/^([^[]+?)\s*\[/)
-        const name = nameMatch ? nameMatch[1].trim() : `Чел.${idx + 1}`
+        const name = nameMatch ? nameMatch[1].trim() : part.split(":")[0].trim()
 
         result.persons.push({
           name,

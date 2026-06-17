@@ -55,9 +55,13 @@ export function DispatcherPanel() {
     const m = latest.message
     if (!m.includes("Людей:")) return result
 
-    const personParts = m.split(" | ").filter((p) => /^[^[]+?\[.*?\]:/.test(p))
+    const personParts = m.split(" | ").filter((p) => {
+      if (p.startsWith("Людей:") || p.startsWith("Нет СИЗ")) return false
+      return /^[^\[\:]+(?:\[.*?\])?\s*:\s/.test(p)
+    })
 
-    if (personParts.length === 0) {
+    const hasPpeBrackets = personParts.some((p) => /\[.*?\]/.test(p))
+    if (!hasPpeBrackets) {
       result.ppe = { helmet: null, mask: null, vest: null, zone: null, gesture: null }
     } else {
       let helmetOk = true
@@ -91,7 +95,7 @@ export function DispatcherPanel() {
       const ppeMatch = part.match(/\[(.*?)\]/)
       const ppeStr = ppeMatch ? ppeMatch[1] + " " : ""
       const nameMatch = part.match(/^([^[]+?)\s*\[/)
-      const name = nameMatch ? nameMatch[1].trim() : `Чел.${idx + 1}`
+      const name = nameMatch ? nameMatch[1].trim() : part.split(":")[0].trim()
       result.persons.push({
         name,
         ppe: ppeStr,
