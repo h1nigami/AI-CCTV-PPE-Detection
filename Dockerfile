@@ -25,6 +25,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxext6 \
     libxrender1 \
     ffmpeg \
+    wget \
     g++ \
     unzip \
     && rm -rf /var/lib/apt/lists/*
@@ -53,12 +54,7 @@ COPY app.py config.py main.py state.py \
 # ── Шаблоны и YOLO-модели (.pt файлы) ─────────────────────
 COPY templates/ ./templates/
 COPY models/*.pt ./models/
-# ── Buffalo_l (InsightFace Re-ID) — скачивается отдельно ──
-RUN mkdir -p /app/models/buffalo_l && \
-    wget -qO /tmp/buffalo_l.zip \
-      "https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_l.zip" && \
-    unzip -q -o /tmp/buffalo_l.zip -d /app/models/buffalo_l/ && \
-    rm /tmp/buffalo_l.zip
+COPY models/buffalo_l/ ./models/buffalo_l/
 COPY data/ ./data/
 # ── Скрипты ──────────────────────────────────────────────
 COPY export_models.py entrypoint.sh ./
