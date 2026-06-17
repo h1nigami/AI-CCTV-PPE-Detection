@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from "react"
+import { useState, useEffect, useMemo, useRef } from "react"
 import { useCamerasContext } from "../contexts/CameraContext"
 import { api } from "../api/client"
 import type { LogEntry, PpeStatus, PersonSummary } from "../types"
@@ -12,7 +12,6 @@ export function DispatcherPanel() {
     [cameras, cameraName],
   )
 
-  const [detectEnabled, setDetectEnabled] = useState(camera?.detect_enabled ?? true)
   const [logs, setLogs] = useState<LogEntry[]>([])
   const [loading, setLoading] = useState(false)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -38,21 +37,6 @@ export function DispatcherPanel() {
       if (pollRef.current) clearInterval(pollRef.current)
     }
   }, [cameraName])
-
-  useEffect(() => {
-    setDetectEnabled(camera?.detect_enabled ?? true)
-  }, [camera])
-
-  const toggleAnalytics = useCallback(async () => {
-    if (!cameraName) return
-    const next = !detectEnabled
-    try {
-      await api.toggleAnalytics(cameraName, next)
-      setDetectEnabled(next)
-    } catch {
-      // ignore
-    }
-  }, [cameraName, detectEnabled])
 
   const { ppe, persons } = useMemo(() => {
     const result: {
@@ -138,24 +122,6 @@ export function DispatcherPanel() {
           <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
             <path d="M4 4l10 10M14 4l-10 10" stroke="#888" strokeWidth="1.5" strokeLinecap="round" />
           </svg>
-        </button>
-      </div>
-
-      <div style={styles.controls}>
-        <button
-          style={{
-            ...styles.analyticsBtn,
-            ...(detectEnabled ? styles.analyticsOn : styles.analyticsOff),
-          }}
-          onClick={toggleAnalytics}
-        >
-          <div
-            style={{
-              ...styles.toggleDot,
-              background: detectEnabled ? "#00e676" : "#f44336",
-            }}
-          />
-          АНАЛИТИКА: {detectEnabled ? "ВКЛ" : "ВЫКЛ"}
         </button>
       </div>
 
@@ -300,42 +266,6 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#888",
     flexShrink: 0,
     transition: "all 0.2s",
-  },
-  controls: {
-    padding: "10px 16px",
-    borderBottom: "1px solid #333",
-    flexShrink: 0,
-  },
-  analyticsBtn: {
-    display: "flex",
-    alignItems: "center",
-    gap: "8px",
-    fontWeight: 600,
-    fontSize: "0.75rem",
-    letterSpacing: "1px",
-    border: "1px solid #333",
-    borderRadius: "8px",
-    padding: "6px 14px",
-    cursor: "pointer",
-    textTransform: "uppercase",
-    width: "100%",
-    background: "transparent",
-    fontFamily: "'Inter', sans-serif",
-    transition: "all 0.2s",
-  },
-  analyticsOn: {
-    borderColor: "#00e67650",
-    color: "#00e676",
-  },
-  analyticsOff: {
-    borderColor: "#f4433650",
-    color: "#f44336",
-  },
-  toggleDot: {
-    width: "8px",
-    height: "8px",
-    borderRadius: "50%",
-    flexShrink: 0,
   },
   section: {
     borderBottom: "1px solid #333",

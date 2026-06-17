@@ -23,8 +23,6 @@ export function CameraManagerModal({
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editingName, setEditingName] = useState("")
   const [editingSource, setEditingSource] = useState("")
-  const [togglingId, setTogglingId] = useState<string | null>(null)
-
   if (!open) return null
 
   const handleAdd = async () => {
@@ -74,18 +72,6 @@ export function CameraManagerModal({
       onRefresh()
     } catch {
       // ignore
-    }
-  }
-
-  const handleToggleAnalytics = async (cam: CameraInfo) => {
-    setTogglingId(cam.name)
-    try {
-      await api.toggleAnalytics(cam.name, !cam.detect_enabled)
-      onRefresh()
-    } catch (err) {
-      setStatus("ERR " + (err as Error).message)
-    } finally {
-      setTogglingId(null)
     }
   }
 
@@ -156,18 +142,6 @@ export function CameraManagerModal({
                         ) : (
                           <span style={{ color: "#00e676" }}>{cam.name}</span>
                         )}
-                        <span
-                          style={{
-                            fontSize: "0.6rem",
-                            padding: "1px 6px",
-                            borderRadius: "4px",
-                            background: cam.detect_enabled ? "#0a2a1a" : "#2a1a1a",
-                            color: cam.detect_enabled ? "#00e676" : "#f44336",
-                            border: `1px solid ${cam.detect_enabled ? "#00e676" : "#f44336"}`,
-                          }}
-                        >
-                          {cam.detect_enabled ? "ANALYTICS ON" : "ANALYTICS OFF"}
-                        </span>
                       </div>
                       <div style={styles.meta}>
                         {typeof cam.source === "number"
@@ -176,17 +150,6 @@ export function CameraManagerModal({
                       </div>
                     </div>
                     <div style={styles.actions}>
-                      <button
-                        style={{
-                          ...styles.actionBtn,
-                          borderColor: cam.detect_enabled ? "#00e676" : "#f44336",
-                          color: cam.detect_enabled ? "#00e676" : "#f44336",
-                        }}
-                        onClick={() => handleToggleAnalytics(cam)}
-                        disabled={togglingId === cam.name}
-                      >
-                        {togglingId === cam.name ? "..." : cam.detect_enabled ? "OFF" : "ON"}
-                      </button>
                       {isEditing ? (
                         <button style={styles.actionBtn} onClick={() => handleRename(cam.name)}>
                           SAVE
