@@ -8,6 +8,7 @@ from backend.config import (
     APPROVAL_DURATION, PERSON_ID_GRID, MAX_LOG_SIZE,
     GESTURE_DISPLAY_DURATION, GESTURE_COOLDOWN,
     REID_SIM_THRESHOLD, REID_MAX_EMBEDDINGS, REID_GALLERY_PATH, REID_MAX_AGE_DAYS,
+    REID_MIN_STORE_QUALITY, REID_STORE_INTERVAL, REID_STICKY_MARGIN,
 )
 
 TRACK_EXPIRY = 60.0
@@ -27,6 +28,7 @@ class DetectionState:
         self._gallery = None
         self._track_to_global: Dict[Tuple[str, int], int] = {}
         self._track_last_seen: Dict[Tuple[str, int], float] = {}
+        self._last_emb_store: Dict[Tuple[str, int], float] = {}
         self._fallback_names: Dict[int, str] = {}
 
         # Статусы последнего залогированного события (cam_id+track_id → compact_status)
@@ -78,8 +80,34 @@ class DetectionState:
             old_id = self._track_to_global.get(key)
 
             if face_embedding is not None and self._gallery is not None:
+                # Троттлинг хранения: добавляем эмбеддинг в галерею не чаще
+                # REID_STORE_INTERVAL сек с одного трека и только при приличном
+                # качестве. Иначе один и тот же кадр (кэш детектора лиц)
+                # вытесняет эталонные эмбеддинги → известное лицо перестаёт
+                # матчиться → создаётся новый «Гость».
+                should_store = (
+                    quality >= REID_MIN_STORE_QUALITY
+                    and now - self._last_emb_store.get(key, 0.0) >= REID_STORE_INTERVAL
+                )
+
+                # «Липкая» личность: если у трека уже есть валидная личность и
+                # новое лицо её подтверждает (мягкий порог) — не пересматчиваем,
+                # чтобы один плохой кадр не сбросил имя на нового «Гостя».
+                if old_id is not None and self._gallery.has_id(old_id):
+                    sticky = max(0.35, self._gallery.threshold_for(quality) - REID_STICKY_MARGIN)
+                    if self._gallery.similarity(old_id, face_embedding) >= sticky:
+                        self._gallery.add_observation(
+                            old_id, cam_id, face_embedding, quality, store=should_store)
+                        if should_store:
+                            self._last_emb_store[key] = now
+                        self._track_to_global[key] = old_id
+                        self._track_last_seen[key] = now
+                        return old_id
+
                 gallery_id = self._gallery.match_or_register(
-                    face_embedding, cam_id, quality=quality)
+                    face_embedding, cam_id, quality=quality, store=should_store)
+                if should_store:
+                    self._last_emb_store[key] = now
                 if old_id is not None and old_id != gallery_id:
                     old_name = self._fallback_names.pop(old_id, None)
                     if old_name is not None:
@@ -101,16 +129,6 @@ class DetectionState:
                                   f"{gallery_id} для трека {key}")
                         else:
                             print(f"[ReID] Track {key}: global_id {old_id} -> {gallery_id}")
-                elif (self._gallery is not None and self._gallery.has_id(old_id)):
-                    info = self._gallery.get_info(gallery_id)
-                    if info and info['embedding_count'] <= 1:
-                        old_info = self._gallery.get_info(old_id)
-                        if old_info:
-                            old_gal_name = old_info['name']
-                            self._gallery.rename(gallery_id, old_gal_name)
-                            self._gallery.merge_entries(old_id, gallery_id)
-                            print(f"[ReID] Слит gallery {old_id} ({old_gal_name}) -> "
-                                  f"{gallery_id} для трека {key}")
                 self._track_to_global[key] = gallery_id
                 self._track_last_seen[key] = now
                 return gallery_id
@@ -128,6 +146,7 @@ class DetectionState:
             for k in stale:
                 del self._track_to_global[k]
                 del self._track_last_seen[k]
+                self._last_emb_store.pop(k, None)
             if stale:
                 print(f"[ReID] Очищено {len(stale)} устаревших треков")
 
@@ -135,6 +154,7 @@ class DetectionState:
         with self._reid_lock:
             self._track_to_global.clear()
             self._track_last_seen.clear()
+            self._last_emb_store.clear()
             self._fallback_names.clear()
             self._last_logged_status.clear()
 

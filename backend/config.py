@@ -109,6 +109,16 @@ REID_MAX_AGE_DAYS = 30
 REID_GALLERY_PATH = BASE_DIR / "data" / "face_gallery.pkl"
 REID_DET_SIZE = (640, 640)
 REID_FRAME_SKIP = 3
+# Анти-замусоривание галереи: с одного трека добавляем эмбеддинг не чаще
+# REID_STORE_INTERVAL сек и только при качестве >= REID_MIN_STORE_QUALITY,
+# иначе один и тот же кадр (кэш детектора лиц) вытесняет эталонные эмбеддинги.
+REID_MIN_STORE_QUALITY = 0.55
+REID_STORE_INTERVAL = 1.5
+# Насколько ниже порога регистрации «прилипает» текущая личность трека
+# (один плохой кадр не сбрасывает имя на нового «Гостя»). Порог липкости
+# = threshold_for(quality) - margin, но не ниже 0.35: разные люди (~0.2) не
+# прилипают, один человек в другом ракурсе (~0.4-0.7) — удерживается.
+REID_STICKY_MARGIN = 0.10
 
 # ── MinIO / Event Storage ─────────────────────────────────
 MINIO_ENDPOINT = "minio:9000"

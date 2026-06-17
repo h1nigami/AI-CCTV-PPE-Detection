@@ -64,8 +64,41 @@ class FaceGallery:
     def _assign_name(self) -> str:
         return f"Гость_{self._next_id}"
 
+    def threshold_for(self, quality: float) -> float:
+        """Публичный доступ к адаптивному порогу (для «липкой» верификации в state)."""
+        return self._adaptive_threshold(quality)
+
+    def _append_embedding(self, data: Dict, embedding: np.ndarray):
+        """Добавить эмбеддинг, защищая якорный (первый/эталонный) от вытеснения.
+        При переполнении выбрасываем самый старый НЕ-якорный (индекс 1), а не индекс 0."""
+        data['embeddings'].append(embedding)
+        if len(data['embeddings']) > self.max_embeddings:
+            data['embeddings'].pop(1)
+
+    def similarity(self, global_id: int, embedding: np.ndarray) -> float:
+        """Максимальная косинусная близость эмбеддинга к записи (−1, если записи нет)."""
+        with self._lock:
+            data = self._gallery.get(global_id)
+            if not data:
+                return -1.0
+            return max(self._cosine_sim(embedding, e) for e in data['embeddings'])
+
+    def add_observation(self, global_id: int, cam_id: str, embedding: np.ndarray,
+                        quality: float = 0.5, store: bool = True) -> bool:
+        """Обновить запись существующей личности (last_seen/камеры) и, если store,
+        добавить эмбеддинг с защитой якоря. Используется «липким» путём в state."""
+        with self._lock:
+            data = self._gallery.get(global_id)
+            if data is None:
+                return False
+            if store:
+                self._append_embedding(data, embedding)
+            data['last_seen'] = time.time()
+            data['cameras'].add(cam_id)
+            return True
+
     def match_or_register(self, embedding: np.ndarray, cam_id: str,
-                          quality: float = 0.5) -> int:
+                          quality: float = 0.5, store: bool = True) -> int:
         threshold = self._adaptive_threshold(quality)
         with self._lock:
             best_id = None
@@ -82,9 +115,8 @@ class FaceGallery:
                     best_id = gid
             if best_id is not None:
                 data = self._gallery[best_id]
-                data['embeddings'].append(embedding)
-                if len(data['embeddings']) > self.max_embeddings:
-                    data['embeddings'].pop(0)
+                if store:
+                    self._append_embedding(data, embedding)
                 data['last_seen'] = time.time()
                 data['cameras'].add(cam_id)
                 return best_id
