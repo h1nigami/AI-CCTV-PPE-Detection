@@ -16,9 +16,11 @@ interface CameraGridProps {
   onCamClick?: (camName: string) => void
   /** Запущена ли детекция глобально */
   isRunning: boolean
+  /** Ландшафтный режим на мобильных */
+  isLandscape?: boolean
 }
 
-export function CameraGrid({ fullscreenCam, onCamClick, isRunning }: CameraGridProps) {
+export function CameraGrid({ fullscreenCam, onCamClick, isRunning, isLandscape }: CameraGridProps) {
   const bp = useBreakpoint()
   const { filteredCameras, openDispatcher } = useCamerasContext()
 
@@ -81,6 +83,7 @@ export function CameraGrid({ fullscreenCam, onCamClick, isRunning }: CameraGridP
             isRunning={isRunning}
             onClick={() => handleClick(cam.name)}
             isFullscreen={fullscreenCam === cam.name}
+            isLandscape={isLandscape}
           />
         ))}
       </div>
