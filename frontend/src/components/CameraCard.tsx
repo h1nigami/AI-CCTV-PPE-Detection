@@ -38,28 +38,15 @@ export function CameraCard({
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const mountedRef = useRef(true)
 
-  // При старте даём браузеру время переподключиться
-  const [showRunning, setShowRunning] = useState(isRunning)
-  useEffect(() => {
-    if (isRunning) {
-      setShowRunning(true)
-    } else {
-      // При остановке — сразу сбрасываем флаг, чтобы показать заглушку
-      setShowRunning(false)
-      setStreamError(false)
-      setHasFrame(false)
-    }
-  }, [isRunning])
+  // Уникальный ключ при каждом монтировании —
+  // браузер делает новый запрос, а не цепляется за старый MJPEG-канал.
+  const mountRef = useRef(Date.now())
+  const mjpegUrl = api.getFrameUrlMJPEG(name) + `?m=${mountRef.current}`
 
-  // MJPEG URL
-  const mjpegUrl = api.getFrameUrlMJPEG(name)
-
-  // Сброс стрима при старте/смене камеры
+  // Сброс стрима при старте/остановке/смене камеры
   useEffect(() => {
-    if (isRunning) {
-      setStreamError(false)
-      setHasFrame(false)
-    }
+    setStreamError(false)
+    setHasFrame(false)
   }, [isRunning, name])
 
   // HTTP polling (fallback для MJPEG или при !isRunning)
@@ -150,14 +137,10 @@ export function CameraCard({
             style={styles.img}
             onLoad={() => {
               setHasFrame(true)
-              setStreamError(false)
             }}
             onError={() => {
               if (!streamError) {
-                setStreamError(true) // переключаемся на polling
-              }
-              if (!hasFrame) {
-                // Первый кадр ещё не пришёл — оставляем спиннер
+                setStreamError(true)
               }
             }}
           />
