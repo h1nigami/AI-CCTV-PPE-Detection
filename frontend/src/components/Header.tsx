@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react"
 import { useNavigate, useLocation } from "react-router-dom"
 import { useAuth } from "../contexts/AuthContext"
+import { useCamerasContext } from "../contexts/CameraContext"
 import { api } from "../api/client"
 import { useClock } from "../hooks/useClock"
 import { useBreakpoint } from "../hooks/useBreakpoint"
@@ -18,6 +19,7 @@ export function Header() {
   const location = useLocation()
   const bp = useBreakpoint()
   const isMobile = bp === 'mobile'
+  const { isRunning, setDetectionRunning } = useCamerasContext()
 
   const [modesOpen, setModesOpen] = useState(false)
   const [modes, setModes] = useState<Record<string, boolean>>({
@@ -77,6 +79,24 @@ export function Header() {
     navigate(path)
     setMobileMenuOpen(false)
   }
+
+  const handleStart = useCallback(async () => {
+    try {
+      await api.start()
+      setDetectionRunning(true)
+    } catch {
+      // ignore
+    }
+  }, [setDetectionRunning])
+
+  const handleStop = useCallback(async () => {
+    try {
+      await api.stop()
+      setDetectionRunning(false)
+    } catch {
+      // ignore
+    }
+  }, [setDetectionRunning])
 
   return (
     <header style={styles.header}>
@@ -205,6 +225,25 @@ export function Header() {
                   </label>
                 )
               })}
+            </div>
+
+            <div style={{ borderTop: '1px solid #333', marginTop: 8, paddingTop: 12 }}>
+              <button
+                onClick={isRunning ? handleStop : handleStart}
+                style={{
+                  width: '100%',
+                  padding: '10px 0',
+                  borderRadius: 8,
+                  border: 'none',
+                  background: isRunning ? '#f4433620' : '#00e67620',
+                  color: isRunning ? '#f44336' : '#00e676',
+                  fontSize: '0.85rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                {isRunning ? '⏹ Остановить детекцию' : '▶ Запустить детекцию'}
+              </button>
             </div>
 
             <div style={{ borderTop: '1px solid #333', marginTop: 12, paddingTop: 12 }}>
