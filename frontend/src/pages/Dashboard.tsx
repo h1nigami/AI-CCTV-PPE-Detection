@@ -142,7 +142,7 @@ export default function DashboardPage() {
         )}
 
         <div style={styles.center}>
-          <div style={isLandscape ? styles.videoAreaLandscape : styles.videoArea}>
+          <div style={styles.videoArea}>
             <CameraGrid
               isRunning={isRunning}
               fullscreenCam={fullscreenCam}
@@ -151,40 +151,36 @@ export default function DashboardPage() {
             />
           </div>
 
-          {!isLandscape && (
-            <div style={styles.hintBar} id="hintBar">
-              <span id="hintText" style={{ color: "var(--text-mid)", fontSize: "clamp(0.8rem, 2vw, 1.05rem)", fontWeight: 500 }}>
-                {isRunning ? "Система активна" : "Запустите детекцию"}
-              </span>
-            </div>
-          )}
+          <div style={styles.hintBar} id="hintBar">
+            <span id="hintText" style={{ color: "var(--text-mid)", fontSize: "clamp(0.8rem, 2vw, 1.05rem)", fontWeight: 500 }}>
+              {isRunning ? "Система активна" : "Запустите детекцию"}
+            </span>
+          </div>
 
-          {!isLandscape && (
-            <div style={isMobile ? styles.uploadBarMobile : styles.uploadBar}>
-              <form
-                style={styles.uploadForm}
-                onSubmit={(e) => {
-                  e.preventDefault()
-                  const input = (e.target as HTMLFormElement).querySelector("input[type=file]") as HTMLInputElement
-                  if (!input?.files?.[0]) return
-                  const fd = new FormData()
-                  fd.append("file", input.files[0])
-                  fetch("/upload", { method: "POST", body: fd })
-                    .then((r) => r.blob())
-                    .then((blob) => {
-                      const url = URL.createObjectURL(blob)
-                      window.open(url, "_blank")
-                    })
-                    .catch(() => {})
-                }}
-              >
-                <input type="file" name="file" accept="image/*,video/*" style={styles.fileInput} />
-                <button type="submit" className="btn-upload" style={styles.uploadBtn}>
-                  Обработать файл
-                </button>
-              </form>
-            </div>
-          )}
+          <div style={isMobile ? styles.uploadBarMobile : styles.uploadBar}>
+            <form
+              style={styles.uploadForm}
+              onSubmit={(e) => {
+                e.preventDefault()
+                const input = (e.target as HTMLFormElement).querySelector("input[type=file]") as HTMLInputElement
+                if (!input?.files?.[0]) return
+                const fd = new FormData()
+                fd.append("file", input.files[0])
+                fetch("/upload", { method: "POST", body: fd })
+                  .then((r) => r.blob())
+                  .then((blob) => {
+                    const url = URL.createObjectURL(blob)
+                    window.open(url, "_blank")
+                  })
+                  .catch(() => {})
+              }}
+            >
+              <input type="file" name="file" accept="image/*,video/*" style={styles.fileInput} />
+              <button type="submit" className="btn-upload" style={styles.uploadBtn}>
+                Обработать файл
+              </button>
+            </form>
+          </div>
         </div>
 
         {!isMobile && (
@@ -298,13 +294,6 @@ const styles: Record<string, React.CSSProperties> = {
     minHeight: 0,
     overflow: "hidden",
     position: "relative" as const,
-  },
-  videoAreaLandscape: {
-    position: "fixed" as const,
-    inset: 0,
-    zIndex: 50,
-    display: "flex",
-    background: "#000",
   },
   hintBar: {
     height: "60px",

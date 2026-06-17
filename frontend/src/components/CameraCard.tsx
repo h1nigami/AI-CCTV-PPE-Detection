@@ -104,30 +104,22 @@ export function CameraCard({
       style={{
         ...styles.card,
         ...(isFullscreen ? styles.cardFullscreen : {}),
-        ...(isLandscape ? styles.cardLandscape : {}),
         outlineColor: isFullscreen ? "#00e5ff" : statusColors[status],
       }}
       onClick={onClick}
       title={`${name} — ${status === "online" ? "в сети" : status === "offline" ? "нет сигнала" : "ошибка"}`}
     >
       {/* Верхняя панель: имя + статус */}
-      {!isLandscape && (
-        <div style={styles.topBar}>
-          <div style={styles.camName}>{name.toUpperCase()}</div>
-          <div
-            style={{
-              ...styles.statusDot,
-              background: !isRunning ? "#4a6a8a" : statusColors[status],
-              boxShadow: !isRunning ? "none" : `0 0 6px ${statusColors[status]}`,
-            }}
-          />
-        </div>
-      )}
-      {isLandscape && (
-        <div style={styles.topBarLandscape}>
-          <div style={styles.camNameLandscape}>{name.toUpperCase()}</div>
-        </div>
-      )}
+      <div style={styles.topBar}>
+        <div style={styles.camName}>{name.toUpperCase()}</div>
+        <div
+          style={{
+            ...styles.statusDot,
+            background: !isRunning ? "#4a6a8a" : statusColors[status],
+            boxShadow: !isRunning ? "none" : `0 0 6px ${statusColors[status]}`,
+          }}
+        />
+      </div>
 
       {/* Видео / заглушка */}
       {!isRunning ? (
@@ -165,7 +157,7 @@ export function CameraCard({
       )}
 
       {/* Нижняя панель */}
-      <div style={isLandscape ? styles.bottomBarLandscape : styles.bottomBar}>
+      <div style={styles.bottomBar}>
         {!detectEnabled && <div style={styles.detectOff}>DETECT OFF</div>}
         {eventCount > 0 && (
           <div style={{ ...styles.badge, ...(hasViolation ? styles.badgeViolation : styles.badgeInfo) }}>
@@ -271,41 +263,6 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: "0.55rem",
     color: "#888",
     letterSpacing: "1px",
-  },
-  cardLandscape: {
-    borderRadius: 0,
-    outline: 'none',
-    background: '#000',
-  },
-  topBarLandscape: {
-    position: "absolute" as const,
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 3,
-    padding: "3px 8px",
-    background: "linear-gradient(180deg, rgba(0,0,0,0.7) 0%, transparent 100%)",
-    pointerEvents: "none" as const,
-  },
-  camNameLandscape: {
-    fontFamily: "'Inter', sans-serif",
-    fontSize: "0.55rem",
-    color: "#ccc",
-    letterSpacing: "1px",
-    textShadow: "0 1px 4px rgba(0,0,0,0.8)",
-  },
-  bottomBarLandscape: {
-    position: "absolute" as const,
-    bottom: 0,
-    left: 0,
-    right: 0,
-    zIndex: 3,
-    display: "flex",
-    alignItems: "center",
-    gap: "4px",
-    padding: "2px 6px",
-    background: "linear-gradient(0deg, rgba(0,0,0,0.7) 0%, transparent 100%)",
-    pointerEvents: "none" as const,
   },
   bottomBar: {
     position: "absolute",
