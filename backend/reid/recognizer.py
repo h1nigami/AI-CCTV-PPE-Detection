@@ -76,9 +76,9 @@ class FaceRecognizer:
             det_score = getattr(face, "det_score", 0.5)
             fx1, fy1, fx2, fy2 = bbox
             face_size = min((fx2 - fx1) / w, (fy2 - fy1) / h)
-            size_score = min(1.0, face_size / 0.15)
-            quality = det_score * 0.6 + size_score * 0.4
-            quality = min(1.0, max(0.1, quality))
+            size_score = min(1.0, face_size / 0.10)
+            quality = det_score * 0.7 + size_score * 0.3
+            quality = min(1.0, max(0.35, quality))
             result.append((bbox, emb, quality))
         return result
 
@@ -133,21 +133,29 @@ def match_faces_to_persons(
     results = []
     for pbox in person_boxes:
         px1, py1, px2, py2 = map(int, pbox)
+        pcx = (px1 + px2) / 2.0
+        pcy = (py1 + py2) / 2.0
         best_emb = None
         best_quality = 0.0
         best_overlap = 0.0
+        best_center_dist = float('inf')
         for face_bbox, emb, quality in face_data:
             fx1, fy1, fx2, fy2 = map(int, face_bbox)
             ix1, iy1 = max(px1, fx1), max(py1, fy1)
             ix2, iy2 = min(px2, fx2), min(py2, fy2)
-            if ix2 > ix1 and iy2 > iy1:
-                inter = (ix2 - ix1) * (iy2 - iy1)
-                face_area = (fx2 - fx1) * (fy2 - fy1)
-                if face_area > 0:
+            face_area = (fx2 - fx1) * (fy2 - fy1)
+            if face_area > 0:
+                overlap = 0.0
+                if ix2 > ix1 and iy2 > iy1:
+                    inter = (ix2 - ix1) * (iy2 - iy1)
                     overlap = inter / face_area
-                    if overlap > best_overlap:
-                        best_overlap = overlap
-                        best_emb = emb
-                        best_quality = quality
+                fcx = (fx1 + fx2) / 2.0
+                fcy = (fy1 + fy2) / 2.0
+                center_dist = ((fcx - pcx) ** 2 + (fcy - pcy) ** 2) ** 0.5
+                if overlap > best_overlap or (overlap == best_overlap and center_dist < best_center_dist):
+                    best_overlap = overlap
+                    best_center_dist = center_dist
+                    best_emb = emb
+                    best_quality = quality
         results.append((best_emb, best_quality))
     return results

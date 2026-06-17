@@ -92,12 +92,32 @@ for cam_id, rec in list(_event_recordings.items()):
 
 **Причина 1**: Адаптивный порог слишком высокий для некачественного лица.
 
-**Фикс** (`backend/reid/gallery.py`):
+**Фикс** (`backend/reid/gallery.py`): Пороги снижены:
 ```python
-ADAPTIVE_THRESHOLDS = [(0.70, 0.50), (0.55, 0.55), (0.45, 0.62), (0.35, 0.70)]
+# Было: 0.50/0.55/0.62/0.70 за качество отл/хор/ср/плох
+# Стало: 0.45/0.50/0.55/0.60
 ```
 
-**Причина 2**: Трек переключился с fallback-имени на gallery entry — старый singleton entry не мёржится.
+**Причина 2**: Сравнение использовало среднее эмбеддинг (`mean(embeddings)`) — плохие кадры разбавляли хороший профильный.
+
+**Фикс** (`backend/reid/gallery.py` → `match_or_register`):
+```python
+sim = max(cosine_sim(emb, e) for e in data['embeddings'])  # per-embedding
+```
+
+**Причина 3**: `match_faces_to_persons` использовал только IoU (bbox overlap) — при отсутствии overlap лицо не привязывалось к человеку.
+
+**Фикс** (`backend/reid/recognizer.py` → `match_faces_to_persons`): Добавлена fallback по центроиду — если overlap нулевой, выбирается ближайший по центру лицо.
+
+**Причина 4**: `size_score` в качестве эмбеддинга был завышен — маленькое лицо получало низкий quality → высокий порог.
+
+**Фикс** (`backend/reid/recognizer.py` → `detect_faces`):
+```python
+# Было: size_score = min(1.0, face_size / 0.15), quality = det*0.6 + size*0.4, min=0.1
+# Стало: size_score = min(1.0, face_size / 0.10), quality = det*0.7 + size*0.3, min=0.35
+```
+
+**Причина 5**: Трек переключился с fallback-имени на gallery entry — старый singleton entry не мёржится.
 
 **Фикс** (`backend/core/state.py` → `get_global_id`):
 ```python
@@ -105,7 +125,7 @@ if old_gid and gallery.has_id(old_gid) and gallery.get_embedding_count(old_gid) 
     gallery.merge_entries(old_gid, gid)
 ```
 
-**Причина 3**: `track_buffer` слишком мал — трек-id меняется при повороте человека.
+**Причина 6**: `track_buffer` слишком мал — трек-id меняется при повороте человека.
 
 **Фикс** (`backend/detection/bytetrack_custom.yaml`): `track_buffer: 90`
 

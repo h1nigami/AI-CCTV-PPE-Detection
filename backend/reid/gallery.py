@@ -53,13 +53,13 @@ class FaceGallery:
 
     def _adaptive_threshold(self, quality: float) -> float:
         if quality >= 0.8:
-            return 0.50
+            return 0.45
         elif quality >= 0.6:
-            return 0.55
+            return 0.50
         elif quality >= 0.4:
-            return 0.62
+            return 0.55
         else:
-            return 0.70
+            return 0.60
 
     def _assign_name(self) -> str:
         return f"Гость_{self._next_id}"
@@ -71,8 +71,7 @@ class FaceGallery:
             best_id = None
             best_sim = -1.0
             for gid, data in self._gallery.items():
-                mean_emb = np.mean(data['embeddings'], axis=0)
-                sim = self._cosine_sim(embedding, mean_emb)
+                sim = max(self._cosine_sim(embedding, e) for e in data['embeddings'])
                 person_threshold = threshold
                 if len(data['embeddings']) >= 2:
                     person_threshold -= 0.08
@@ -99,7 +98,7 @@ class FaceGallery:
                 'name': name,
             }
             self._save()
-            q_label = {0.50: 'отл', 0.55: 'хор', 0.62: 'ср', 0.70: 'плох'}.get(threshold, '?')
+            q_label = {0.45: 'отл', 0.50: 'хор', 0.55: 'ср', 0.60: 'плох'}.get(threshold, '?')
             print(f"[ReID] Новый: {name} (ID={new_id}, камера {cam_id}, "
                   f"sim={best_sim:.3f}, кач={quality:.2f} [{q_label}])")
             return new_id

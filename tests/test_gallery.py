@@ -4,26 +4,26 @@ import numpy as np
 
 class TestAdaptiveThreshold:
     def test_excellent_quality(self, gallery):
-        assert gallery._adaptive_threshold(0.9) == 0.50
-        assert gallery._adaptive_threshold(0.8) == 0.50
+        assert gallery._adaptive_threshold(0.9) == 0.45
+        assert gallery._adaptive_threshold(0.8) == 0.45
 
     def test_good_quality(self, gallery):
-        assert gallery._adaptive_threshold(0.7) == 0.55
-        assert gallery._adaptive_threshold(0.6) == 0.55
+        assert gallery._adaptive_threshold(0.7) == 0.50
+        assert gallery._adaptive_threshold(0.6) == 0.50
 
     def test_medium_quality(self, gallery):
-        assert gallery._adaptive_threshold(0.5) == 0.62
-        assert gallery._adaptive_threshold(0.4) == 0.62
+        assert gallery._adaptive_threshold(0.5) == 0.55
+        assert gallery._adaptive_threshold(0.4) == 0.55
 
     def test_poor_quality(self, gallery):
-        assert gallery._adaptive_threshold(0.3) == 0.70
-        assert gallery._adaptive_threshold(0.0) == 0.70
+        assert gallery._adaptive_threshold(0.3) == 0.60
+        assert gallery._adaptive_threshold(0.0) == 0.60
 
     def test_boundary_values(self, gallery):
-        assert gallery._adaptive_threshold(0.799) == 0.55
-        assert gallery._adaptive_threshold(0.8) == 0.50
-        assert gallery._adaptive_threshold(0.599) == 0.62
-        assert gallery._adaptive_threshold(0.6) == 0.55
+        assert gallery._adaptive_threshold(0.799) == 0.50
+        assert gallery._adaptive_threshold(0.8) == 0.45
+        assert gallery._adaptive_threshold(0.599) == 0.55
+        assert gallery._adaptive_threshold(0.6) == 0.50
 
 
 class TestCosineSim:
