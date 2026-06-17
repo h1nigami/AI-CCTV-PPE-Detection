@@ -1,6 +1,5 @@
 import time
 import threading
-import random
 from pathlib import Path
 from typing import List, Dict, Tuple, Optional
 import numpy as np
@@ -10,19 +9,6 @@ from backend.config import (
     GESTURE_DISPLAY_DURATION, GESTURE_COOLDOWN,
     REID_SIM_THRESHOLD, REID_MAX_EMBEDDINGS, REID_GALLERY_PATH, REID_MAX_AGE_DAYS,
 )
-
-FALLBACK_NAMES = [
-    "Александр", "Михаил", "Иван", "Сергей", "Андрей",
-    "Дмитрий", "Алексей", "Владимир", "Евгений", "Николай",
-    "Никита", "Роман", "Кирилл", "Павел", "Даниил",
-    "Максим", "Егор", "Илья", "Владислав", "Артём",
-    "Олег", "Антон", "Глеб", "Тимофей", "Вадим",
-    "Елена", "Ольга", "Наталья", "Анна", "Татьяна",
-    "Светлана", "Ирина", "Мария", "Виктория", "Дарья",
-    "Юлия", "Анастасия", "Екатерина", "Надежда", "Людмила",
-    "Алиса", "Василиса", "Ксения", "Полина", "Вероника",
-    "Варвара", "Арина", "Злата", "София", "Маргарита",
-]
 
 TRACK_EXPIRY = 60.0
 
@@ -42,7 +28,7 @@ class DetectionState:
         self._track_to_global: Dict[Tuple[str, int], int] = {}
         self._track_last_seen: Dict[Tuple[str, int], float] = {}
         self._fallback_names: Dict[int, str] = {}
-        self._used_fallback: set = set()
+
         # Статусы последнего залогированного события (cam_id+track_id → compact_status)
         self._last_logged_status: Dict[Tuple[str, int], str] = {}
 
@@ -81,12 +67,7 @@ class DetectionState:
         return (cam_id, cx // PERSON_ID_GRID, cy // PERSON_ID_GRID)
 
     def _assign_fallback_name(self) -> str:
-        available = [n for n in FALLBACK_NAMES if n not in self._used_fallback]
-        if not available:
-            return f"Гость_{len(self._fallback_names) + 1}"
-        name = random.choice(available)
-        self._used_fallback.add(name)
-        return name
+        return f"Гость_{len(self._fallback_names) + 1}"
 
     def get_global_id(self, track_id: int, cam_id: str,
                       face_embedding: Optional[np.ndarray] = None,
@@ -145,7 +126,6 @@ class DetectionState:
             self._track_to_global.clear()
             self._track_last_seen.clear()
             self._fallback_names.clear()
-            self._used_fallback.clear()
             self._last_logged_status.clear()
 
     def get_person_name(self, global_id: int, cam_id: str, has_face: bool = False) -> str:

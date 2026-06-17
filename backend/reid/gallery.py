@@ -1,5 +1,4 @@
 import pickle
-import random
 import threading
 import time
 from pathlib import Path
@@ -12,18 +11,7 @@ try:
 except ImportError:
     INSIGHTFACE_AVAILABLE = False
 
-RUSSIAN_NAMES = [
-    "Александр", "Михаил", "Иван", "Сергей", "Андрей",
-    "Дмитрий", "Алексей", "Владимир", "Евгений", "Николай",
-    "Никита", "Роман", "Кирилл", "Павел", "Даниил",
-    "Максим", "Егор", "Илья", "Владислав", "Артём",
-    "Олег", "Антон", "Глеб", "Тимофей", "Вадим",
-    "Елена", "Ольга", "Наталья", "Анна", "Татьяна",
-    "Светлана", "Ирина", "Мария", "Виктория", "Дарья",
-    "Юлия", "Анастасия", "Екатерина", "Надежда", "Людмила",
-    "Алиса", "Василиса", "Ксения", "Полина", "Вероника",
-    "Варвара", "Арина", "Злата", "София", "Маргарита",
-]
+
 
 
 class FaceGallery:
@@ -74,11 +62,7 @@ class FaceGallery:
             return 0.80
 
     def _assign_name(self) -> str:
-        used = {d.get('name', '') for d in self._gallery.values()}
-        available = [n for n in RUSSIAN_NAMES if n not in used]
-        if not available:
-            return f"Гость_{self._next_id}"
-        return random.choice(available)
+        return f"Гость_{self._next_id}"
 
     def match_or_register(self, embedding: np.ndarray, cam_id: str,
                           quality: float = 0.5) -> int:
