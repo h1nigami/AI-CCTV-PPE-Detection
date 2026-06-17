@@ -342,12 +342,10 @@ def start_live():
         _init_camera_resources(cam_id, CAMERAS[cam_id])
         camera_captures[cam_id].start()
         if face_recognizer is not None and cam_id not in face_workers:
-            from backend.config import DETECT_MODES
-            if DETECT_MODES.get("faces", True):
-                from backend.reid.recognizer import FaceRecognitionWorker
-                fw = FaceRecognitionWorker(frame_buffers[cam_id], face_recognizer, REID_FRAME_SKIP)
-                fw.start()
-                face_workers[cam_id] = fw
+            from backend.reid.recognizer import FaceRecognitionWorker
+            fw = FaceRecognitionWorker(frame_buffers[cam_id], face_recognizer, REID_FRAME_SKIP)
+            fw.start()
+            face_workers[cam_id] = fw
     t = threading.Thread(target=detection_loop, daemon=True)
     detection_threads["main"] = t
     t.start()
