@@ -2,26 +2,27 @@ import time
 import numpy as np
 
 
-class TestFallbackCreation:
-    def test_new_track_no_face_creates_fallback(self, state):
+class TestNoFallbackWithoutFace:
+    def test_no_face_returns_zero(self, state):
+        gid = state.get_global_id(track_id=1, cam_id="cam01")
+        assert gid == 0
+
+    def test_no_face_name_is_empty(self, state):
         gid = state.get_global_id(track_id=1, cam_id="cam01")
         name = state.get_person_name(gid, "cam01")
-        assert name.startswith("Гость_")
+        assert name == ""
 
-    def test_same_track_returns_same_fallback(self, state):
-        gid1 = state.get_global_id(track_id=1, cam_id="cam01")
-        gid2 = state.get_global_id(track_id=1, cam_id="cam01")
-        assert gid1 == gid2
+    def test_track_not_stored_without_face(self, state):
+        state.get_global_id(track_id=1, cam_id="cam01")
+        assert ("cam01", 1) not in state._track_to_global
 
-    def test_different_tracks_different_fallbacks(self, state):
-        gid1 = state.get_global_id(track_id=1, cam_id="cam01")
-        gid2 = state.get_global_id(track_id=2, cam_id="cam01")
-        assert gid1 != gid2
+    def test_multiple_no_face_calls_same_result(self, state):
+        assert state.get_global_id(track_id=1, cam_id="cam01") == 0
+        assert state.get_global_id(track_id=1, cam_id="cam01") == 0
 
-    def test_same_track_different_cameras(self, state):
-        gid1 = state.get_global_id(track_id=1, cam_id="cam01")
-        gid2 = state.get_global_id(track_id=1, cam_id="cam02")
-        assert gid1 != gid2
+    def test_different_tracks_both_zero_without_face(self, state):
+        assert state.get_global_id(track_id=1, cam_id="cam01") == 0
+        assert state.get_global_id(track_id=2, cam_id="cam01") == 0
 
 
 class TestFaceMatching:
@@ -46,9 +47,10 @@ class TestFaceMatching:
         assert gid1 == gid2
 
     def test_track_no_face_then_face(self, state, normalized_embedding):
-        fallback_id = state.get_global_id(track_id=1, cam_id="cam01")
-        fallback_name = state.get_person_name(fallback_id, "cam01")
-        assert fallback_name.startswith("Гость_")
+        noface_id = state.get_global_id(track_id=1, cam_id="cam01")
+        assert noface_id == 0
+        name = state.get_person_name(noface_id, "cam01")
+        assert name == ""
 
         gallery_id = state.get_global_id(
             track_id=1, cam_id="cam01",
@@ -111,44 +113,54 @@ class TestGalleryMergeOnTrackSwitch:
         assert matched_id == known_id
         assert state.gallery.has_id(guest_id)
 
-    def test_fallback_to_gallery_name_transfer(self, state, normalized_embedding):
-        fallback_id = state.get_global_id(track_id=1, cam_id="cam01")
-        fallback_name = state.get_person_name(fallback_id, "cam01")
+    def test_no_fallback_no_merge_needed(self, state, normalized_embedding):
+        """Without fallback, face creates fresh gallery entry directly"""
+        state.get_global_id(track_id=1, cam_id="cam01")
 
         gallery_id = state.get_global_id(
             track_id=1, cam_id="cam01",
             face_embedding=normalized_embedding, quality=0.9,
         )
+        assert state.gallery.has_id(gallery_id)
         info = state.gallery.get_info(gallery_id)
-        assert info['name'] == fallback_name
+        assert info['name'].startswith("Гость_")
+        assert info['embedding_count'] == 1
 
 
 class TestCleanup:
-    def test_cleanup_stale_tracks(self, state):
-        state.get_global_id(track_id=1, cam_id="cam01")
+    def test_cleanup_stale_tracks_with_face(self, state, normalized_embedding):
+        gid = state.get_global_id(
+            track_id=1, cam_id="cam01",
+            face_embedding=normalized_embedding, quality=0.9,
+        )
         state.get_global_id(track_id=2, cam_id="cam01")
 
         assert ("cam01", 1) in state._track_to_global
-        assert ("cam01", 2) in state._track_to_global
+        assert ("cam01", 2) not in state._track_to_global
 
         state._track_last_seen[("cam01", 1)] = 0
         state.cleanup_stale_tracks()
 
         assert ("cam01", 1) not in state._track_to_global
-        assert ("cam01", 2) in state._track_to_global
 
-    def test_cleanup_preserves_recent_tracks(self, state):
-        gid = state.get_global_id(track_id=1, cam_id="cam01")
+    def test_cleanup_preserves_recent_tracks(self, state, normalized_embedding):
+        gid = state.get_global_id(
+            track_id=1, cam_id="cam01",
+            face_embedding=normalized_embedding, quality=0.9,
+        )
         state.cleanup_stale_tracks()
-        result = state.get_global_id(track_id=1, cam_id="cam01")
+        result = state.get_global_id(
+            track_id=1, cam_id="cam01",
+            face_embedding=normalized_embedding, quality=0.9,
+        )
         assert result == gid
 
 
 class TestPersonName:
-    def test_fallback_name(self, state):
+    def test_no_face_name_empty(self, state):
         gid = state.get_global_id(track_id=1, cam_id="cam01")
         name = state.get_person_name(gid, "cam01")
-        assert name.startswith("Гость_")
+        assert name == ""
 
     def test_gallery_name(self, state, normalized_embedding):
         gid = state.get_global_id(
@@ -160,7 +172,7 @@ class TestPersonName:
         assert name == "Иван"
 
     def test_fallback_name_fallback_dict(self, state):
-        gid = state.get_global_id(track_id=1, cam_id="cam01")
+        gid = 999
         state._fallback_names[gid] = "Тестовый"
         name = state.get_person_name(gid, "cam01")
         assert name == "Тестовый"
@@ -201,17 +213,34 @@ class TestLog:
 
 class TestClearTracks:
     def test_clear_tracks_removes_all(self, state):
-        state.get_global_id(track_id=1, cam_id="cam01")
-        state.get_global_id(track_id=2, cam_id="cam01")
-        state.clear_tracks()
-        gid1 = state.get_global_id(track_id=1, cam_id="cam01")
-        gid2 = state.get_global_id(track_id=2, cam_id="cam01")
-        assert gid1 is not None
-        assert gid2 is not None
+        emb1 = np.random.randn(512).astype(np.float32)
+        emb1 = emb1 / np.linalg.norm(emb1)
+        emb2 = np.random.randn(512).astype(np.float32)
+        emb2 = emb2 / np.linalg.norm(emb2)
+        gid1 = state.get_global_id(
+            track_id=1, cam_id="cam01",
+            face_embedding=emb1, quality=0.9,
+        )
+        gid2 = state.get_global_id(
+            track_id=2, cam_id="cam01",
+            face_embedding=emb2, quality=0.9,
+        )
         assert gid1 != gid2
+        state.clear_tracks()
+        gid1b = state.get_global_id(
+            track_id=1, cam_id="cam01",
+            face_embedding=emb1, quality=0.9,
+        )
+        gid2b = state.get_global_id(
+            track_id=2, cam_id="cam01",
+            face_embedding=emb2, quality=0.9,
+        )
+        assert gid1b is not None
+        assert gid2b is not None
+        assert gid1b != gid2b
 
     def test_clear_tracks_removes_fallback_names(self, state):
-        gid = state.get_global_id(track_id=1, cam_id="cam01")
-        assert gid in state._fallback_names
+        state._fallback_names[42] = "Тестовый"
+        assert 42 in state._fallback_names
         state.clear_tracks()
-        assert gid not in state._fallback_names
+        assert 42 not in state._fallback_names

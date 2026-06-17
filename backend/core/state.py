@@ -118,14 +118,7 @@ class DetectionState:
             if old_id is not None:
                 self._track_last_seen[key] = now
                 return old_id
-            global_id = hash(key) & 0x7FFFFFFF
-            if global_id not in self._fallback_names:
-                name = self._assign_fallback_name()
-                self._fallback_names[global_id] = name
-                print(f"[ReID] Новый: {name} (ID={global_id}, камера {cam_id}, без лица)")
-            self._track_to_global[key] = global_id
-            self._track_last_seen[key] = now
-            return global_id
+            return 0
 
     def cleanup_stale_tracks(self):
         now = time.time()
@@ -146,6 +139,8 @@ class DetectionState:
             self._last_logged_status.clear()
 
     def get_person_name(self, global_id: int, cam_id: str, has_face: bool = False) -> str:
+        if global_id <= 0:
+            return ""
         name = self._fallback_names.get(global_id)
         if name:
             return name
