@@ -1,5 +1,5 @@
 # Запуск фронта на ОТДЕЛЬНОМ сервере (nginx раздаёт статику + reverse-proxy на бэк).
-# Адрес бэка меняется через BACKEND_URL (без пересборки кода — только пересоздать контейнер).
+# Адрес бэка (BACKEND_URL) берётся из deploy.env — единого конфига деплоя.
 
 version: '3'
 
@@ -11,6 +11,6 @@ services:
     container_name: kontroler-frontend
     ports:
       - "80:80"
-    environment:
-      - BACKEND_URL=http://192.168.0.97:8000
+    env_file:
+      - deploy.env
     restart: unless-stopped

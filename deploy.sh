@@ -11,19 +11,26 @@
 #   ./deploy.sh frontend         фронт → jetson, пересборка nginx-образа
 #   ./deploy.sh all              и бэк, и фронт
 #
+# Адреса серверов — в deploy.env (правится в ОДНОМ месте при смене серверов).
 # Требует: ssh-ключ на обоих серверах (уже настроен), bash+tar (Git Bash на Windows).
 # ─────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
 # ── Конфигурация серверов ────────────────────────────────────────────────────
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$REPO_DIR"
+
+# Единый источник адресов — deploy.env (правится при смене серверов).
+if [ -f "$REPO_DIR/deploy.env" ]; then
+  set -a; . "$REPO_DIR/deploy.env"; set +a
+fi
+# Фоллбэк-дефолты, если deploy.env отсутствует.
 BACKEND_HOST="${BACKEND_HOST:-best@192.168.0.97}"
 BACKEND_DIR="${BACKEND_DIR:-AI-CCTV-PPE-Detection}"          # относительно $HOME на сервере
 FRONTEND_HOST="${FRONTEND_HOST:-nvidia@192.168.0.85}"
 FRONTEND_DIR="${FRONTEND_DIR:-kontroller-frontend}"
 
 SSH_OPTS="-o BatchMode=yes -o ConnectTimeout=10"
-REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$REPO_DIR"
 
 log() { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
 err() { printf '\033[1;31m!! %s\033[0m\n' "$*" >&2; }
@@ -60,8 +67,9 @@ deploy_backend() {
 deploy_frontend() {
   log "Фронтенд → $FRONTEND_HOST:~/$FRONTEND_DIR"
   ssh $SSH_OPTS "$FRONTEND_HOST" "mkdir -p ~/$FRONTEND_DIR"
+  # deploy.env нужен на сервере: docker-compose.frontend.yml читает его как env_file
   tar --exclude='node_modules' --exclude='dist' -cf - \
-    frontend Dockerfile.frontend docker-compose.frontend.yml \
+    frontend Dockerfile.frontend docker-compose.frontend.yml deploy.env \
     | ssh $SSH_OPTS "$FRONTEND_HOST" "tar -xf - -C ~/$FRONTEND_DIR"
   log "Код перенесён. Пересборка nginx-образа…"
   # На Jetson docker-compose v1 (через дефис)
