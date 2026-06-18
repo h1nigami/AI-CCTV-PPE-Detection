@@ -2,12 +2,44 @@ import os
 import uuid
 import cv2
 from flask import Flask, send_file, render_template, Response, request, jsonify, send_from_directory
-from backend.detection.engine import get_danger_zone
+from backend.detection.engine import get_danger_zone, is_in_danger_zone
 from backend.visualization.renderer import draw_danger_zone, put_text
 
 
 def _get_boxes_by_class(boxes, classes, names, class_name: str):
     return [boxes[i] for i, c in enumerate(classes) if names[int(c)] == class_name]
+
+
+def _annotate_with_zone(result, names):
+    """Поверх стандартной разметки YOLO строит опасную зону по конусам и
+    помечает людей: красным «В ЗОНЕ», зелёным «Вне зоны». Возвращает кадр."""
+    annotated = result.plot().copy()
+    boxes = result.boxes.xyxy.cpu().numpy()
+    classes = result.boxes.cls.cpu().numpy().astype(int)
+    cone_boxes = _get_boxes_by_class(boxes, classes, names, "Конус безопасности")
+    person_boxes = _get_boxes_by_class(boxes, classes, names, "Человек")
+    danger_zone = get_danger_zone(cone_boxes)
+    if danger_zone is None:
+        return annotated
+    annotated = draw_danger_zone(annotated, danger_zone)
+    for box in cone_boxes:
+        x1, y1, x2, y2 = map(int, box)
+        cv2.rectangle(annotated, (x1, y1), (x2, y2), (0, 128, 255), 2)
+        annotated = put_text(annotated, "Конус", (x1, max(0, y1 - 20)), color=(0, 128, 255))
+    in_zone = 0
+    for box in person_boxes:
+        x1, y1, x2, y2 = map(int, box)
+        inside = is_in_danger_zone(box, danger_zone)
+        in_zone += int(inside)
+        color = (0, 0, 255) if inside else (0, 200, 0)
+        label = "В ЗОНЕ" if inside else "Вне зоны"
+        cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 3)
+        annotated = put_text(annotated, label, (x1, max(0, y1 - 20)), color=color)
+    annotated = put_text(
+        annotated,
+        f"Опасная зона: {len(cone_boxes)} кон. | в зоне {in_zone}/{len(person_boxes)} чел.",
+        (10, 30), color=(0, 0, 255))
+    return annotated
 
 
 def configure_detection_routes(app, state, annotated_buffers, generate_live_feed,
@@ -148,20 +180,7 @@ def configure_detection_routes(app, state, annotated_buffers, generate_live_feed
                 os.remove(path)
                 return "Invalid image file", 400
             result = model(img)[0]
-            names = model.names
-            boxes = result.boxes.xyxy.cpu().numpy()
-            classes = result.boxes.cls.cpu().numpy().astype(int)
-            cone_boxes = _get_boxes_by_class(boxes, classes, names, "Конус безопасности")
-            danger_zone = get_danger_zone(cone_boxes)
-            annotated = result.plot().copy()
-            if danger_zone is not None:
-                annotated = draw_danger_zone(annotated, danger_zone)
-                for box in cone_boxes:
-                    x1, y1, x2, y2 = map(int, box)
-                    cv2.rectangle(annotated, (x1, y1), (x2, y2), (0, 128, 255), 2)
-                    annotated = put_text(annotated, "Конус", (x1, max(0, y1 - 20)), color=(0, 128, 255))
-                annotated = put_text(annotated, f"Опасная зона ({len(cone_boxes)} кон.)",
-                                     (10, 30), color=(0, 0, 255))
+            annotated = _annotate_with_zone(result, model.names)
             output = os.path.join(UPLOAD_FOLDER, f"result_{filename}")
             cv2.imwrite(output, annotated)
             return send_file(output, mimetype="image/jpeg")
@@ -176,18 +195,7 @@ def configure_detection_routes(app, state, annotated_buffers, generate_live_feed
                 if not ret:
                     break
                 result = model(frame)[0]
-                names = model.names
-                boxes = result.boxes.xyxy.cpu().numpy()
-                classes = result.boxes.cls.cpu().numpy().astype(int)
-                cone_boxes = _get_boxes_by_class(boxes, classes, names, "Конус безопасности")
-                danger_zone = get_danger_zone(cone_boxes)
-                annotated = result.plot().copy()
-                if danger_zone is not None:
-                    annotated = draw_danger_zone(annotated, danger_zone)
-                    for box in cone_boxes:
-                        x1, y1, x2, y2 = map(int, box)
-                        cv2.rectangle(annotated, (x1, y1), (x2, y2), (0, 128, 255), 2)
-                        annotated = put_text(annotated, "Конус", (x1, max(0, y1 - 20)), color=(0, 128, 255))
+                annotated = _annotate_with_zone(result, model.names)
                 out.write(annotated)
             cap.release()
             out.release()
