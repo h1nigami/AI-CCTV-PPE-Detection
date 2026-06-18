@@ -137,3 +137,156 @@ class TestTrackerConfig:
         from backend.detection.engine import TRACKER_CFG
         assert TRACKER_CFG is not None
         assert TRACKER_CFG.endswith('bytetrack_custom.yaml')
+
+
+# ── Pure helper function tests ────────────────────────────────────────────────
+
+class TestGetBoxesByClass:
+    def _make_names(self, *names):
+        return {i: n for i, n in enumerate(names)}
+
+    def test_empty_inputs_returns_empty(self):
+        from backend.detection.engine import get_boxes_by_class
+        assert get_boxes_by_class([], [], {}, "Каска") == []
+
+    def test_single_matching_class(self):
+        from backend.detection.engine import get_boxes_by_class
+        import numpy as np
+        boxes = [np.array([0, 0, 10, 10])]
+        names = self._make_names("Каска")
+        result = get_boxes_by_class(boxes, [0], names, "Каска")
+        assert len(result) == 1
+
+    def test_no_matching_class(self):
+        from backend.detection.engine import get_boxes_by_class
+        import numpy as np
+        boxes = [np.array([0, 0, 10, 10])]
+        names = self._make_names("Каска")
+        result = get_boxes_by_class(boxes, [0], names, "Маска")
+        assert result == []
+
+    def test_multiple_matching_boxes(self):
+        from backend.detection.engine import get_boxes_by_class
+        import numpy as np
+        boxes = [np.array([0, 0, 5, 5]), np.array([10, 10, 20, 20])]
+        names = self._make_names("Каска", "Каска")
+        result = get_boxes_by_class(boxes, [0, 0], names, "Каска")
+        assert len(result) == 2
+
+    def test_filters_other_classes(self):
+        from backend.detection.engine import get_boxes_by_class
+        import numpy as np
+        boxes = [np.array([0, 0, 5, 5]), np.array([10, 10, 20, 20]),
+                 np.array([30, 30, 40, 40])]
+        names = self._make_names("Каска", "Маска", "Каска")
+        result = get_boxes_by_class(boxes, [0, 1, 0], names, "Каска")
+        assert len(result) == 2
+
+
+class TestHasItemOnPerson:
+    def test_item_centered_on_upper_body(self):
+        from backend.detection.engine import has_item_on_person
+        person = [0, 0, 100, 200]   # top-left (0,0), bottom-right (100,200)
+        helmet = [40, 10, 60, 50]   # center at (50, 30) — within upper 40%
+        assert has_item_on_person(person, helmet) is True
+
+    def test_item_below_upper_threshold(self):
+        from backend.detection.engine import has_item_on_person
+        person = [0, 0, 100, 200]
+        item = [40, 150, 60, 190]   # center at (50, 170) — below 40% mark (y=80)
+        assert has_item_on_person(person, item) is False
+
+    def test_item_outside_horizontal_bounds(self):
+        from backend.detection.engine import has_item_on_person
+        person = [0, 0, 100, 200]
+        item = [110, 10, 130, 50]   # center at (120, 30) — outside x range
+        assert has_item_on_person(person, item) is False
+
+    def test_item_at_exact_upper_boundary(self):
+        from backend.detection.engine import has_item_on_person
+        person = [0, 0, 100, 100]
+        # upper_y = 0 + (100-0)*0.4 = 40; item center_y exactly at 40
+        item = [40, 30, 60, 50]    # center_y = 40 — should be True (<=)
+        assert has_item_on_person(person, item) is True
+
+    def test_custom_top_ratio_full_body(self):
+        from backend.detection.engine import has_item_on_person
+        person = [0, 0, 100, 200]
+        item = [40, 150, 60, 190]   # center at (50, 170)
+        assert has_item_on_person(person, item, top_ratio=1.0) is True
+
+    def test_custom_top_ratio_zero_nothing_matches(self):
+        from backend.detection.engine import has_item_on_person
+        person = [0, 0, 100, 200]
+        item = [40, 0, 60, 2]      # center at (50, 1) — even very top
+        assert has_item_on_person(person, item, top_ratio=0.0) is False
+
+
+class TestGetDangerZone:
+    def test_empty_cones_returns_none(self):
+        from backend.detection.engine import get_danger_zone
+        assert get_danger_zone([]) is None
+
+    def test_single_cone_below_min_returns_none(self):
+        from backend.detection.engine import get_danger_zone
+        from backend.config import MIN_CONES
+        if MIN_CONES > 1:
+            assert get_danger_zone([[0, 0, 10, 10]]) is None
+
+    def test_two_cones_returns_four_int_tuple(self):
+        from backend.detection.engine import get_danger_zone
+        cones = [[0, 0, 50, 50], [100, 100, 150, 150]]
+        zone = get_danger_zone(cones)
+        assert zone is not None
+        assert len(zone) == 4
+        assert all(isinstance(v, int) for v in zone)
+
+    def test_expansion_applied(self):
+        from backend.detection.engine import get_danger_zone
+        from backend.config import ZONE_EXPAND_PX
+        cones = [[10, 10, 50, 50], [60, 60, 100, 100]]
+        zone = get_danger_zone(cones)
+        assert zone[0] == 10 - ZONE_EXPAND_PX    # min x1 - expand
+        assert zone[1] == 10 - ZONE_EXPAND_PX    # min y1 - expand
+        assert zone[2] == 100 + ZONE_EXPAND_PX   # max x2 + expand
+        assert zone[3] == 100 + ZONE_EXPAND_PX   # max y2 + expand
+
+    def test_zone_uses_min_max_of_all_cones(self):
+        from backend.detection.engine import get_danger_zone
+        from backend.config import ZONE_EXPAND_PX
+        cones = [[5, 10, 20, 30], [50, 15, 80, 90]]
+        zone = get_danger_zone(cones)
+        assert zone[0] == 5 - ZONE_EXPAND_PX
+        assert zone[1] == 10 - ZONE_EXPAND_PX
+        assert zone[2] == 80 + ZONE_EXPAND_PX
+        assert zone[3] == 90 + ZONE_EXPAND_PX
+
+
+class TestIsInDangerZone:
+    def test_none_danger_zone_always_false(self):
+        from backend.detection.engine import is_in_danger_zone
+        assert is_in_danger_zone([0, 0, 100, 200], None) is False
+
+    def test_foot_inside_zone(self):
+        from backend.detection.engine import is_in_danger_zone
+        person = [40, 0, 60, 100]   # foot_x=50, foot_y=100
+        zone = (0, 80, 100, 150)    # zone covers x[0..100], y[80..150]
+        assert is_in_danger_zone(person, zone) is True
+
+    def test_foot_outside_zone_horizontally(self):
+        from backend.detection.engine import is_in_danger_zone
+        person = [200, 0, 220, 100]  # foot_x=210
+        zone = (0, 80, 100, 150)
+        assert is_in_danger_zone(person, zone) is False
+
+    def test_foot_outside_zone_vertically_above(self):
+        from backend.detection.engine import is_in_danger_zone
+        person = [40, 0, 60, 50]    # foot_y=50
+        zone = (0, 80, 100, 150)    # zone y starts at 80
+        assert is_in_danger_zone(person, zone) is False
+
+    def test_foot_at_zone_boundary(self):
+        from backend.detection.engine import is_in_danger_zone
+        person = [0, 0, 100, 80]    # foot_x=50, foot_y=80
+        zone = (0, 80, 100, 150)    # exactly on zy1 boundary
+        assert is_in_danger_zone(person, zone) is True

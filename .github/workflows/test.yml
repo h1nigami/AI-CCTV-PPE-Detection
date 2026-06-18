@@ -1,0 +1,50 @@
+name: Tests
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install test dependencies
+        run: |
+          pip install \
+            pytest pytest-cov \
+            PyJWT werkzeug \
+            sqlalchemy \
+            flask \
+            boto3 \
+            numpy \
+            pillow \
+            opencv-python-headless
+
+      - name: Run tests with coverage
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          pytest tests/ \
+            --cov=backend \
+            --cov-config=.coveragerc \
+            --cov-report=term-missing \
+            --cov-report=xml \
+            -v \
+            --tb=short
+
+      - name: Upload coverage report
+        uses: codecov/codecov-action@v4
+        with:
+          file: coverage.xml
+          fail_ci_if_error: false

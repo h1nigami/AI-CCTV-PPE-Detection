@@ -8,3 +8,8 @@ data/
 flask_out.txt
 flask_err.txt
 models/buffalo_l/
+
+# Coverage reports
+.coverage
+htmlcov/
+coverage.xml
