@@ -70,6 +70,13 @@ app.register_blueprint(events_bp)
 app.register_blueprint(monitoring_bp)
 app.register_blueprint(recordings_bp)
 
+# Автообнаружение камер при старте (опционально, в фоне — не блокирует запуск).
+from backend.config import CAMERA_AUTODISCOVER
+if CAMERA_AUTODISCOVER:
+    import threading
+    from backend.main import autodiscover_and_add
+    threading.Thread(target=autodiscover_and_add, daemon=True).start()
+
 if __name__ == "__main__":
     from waitress import serve
     import sys

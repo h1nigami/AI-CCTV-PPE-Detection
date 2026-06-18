@@ -25,7 +25,8 @@
 - **Healthcheck** — `GET /health` (используется в docker-compose healthcheck)
 
 ### Управление
-- **CRUD камер** — добавление/удаление/переименование через веб-интерфейс
+- **CRUD камер** — добавление/удаление/переименование через веб-интерфейс (синхронизируется в БД)
+- **Автообнаружение камер** — кнопка «Найти камеры»: поиск непаролёных RTSP в локальной сети (ONVIF WS-Discovery + скан подсети); опц. авто-добавление при старте (`CAMERA_AUTODISCOVER`)
 - **Группы камер** — объединение камер в группы для фильтрации
 - **Управление галереей лиц** — переименование, удаление, просмотр через UI
 - **Авторизация** — JWT (admin/operator/viewer/api роли), refresh-токены
@@ -327,6 +328,7 @@ frontend/
 | `POST` | `/api/cameras` | Добавить камеру |
 | `PUT` | `/api/cameras/<id>` | Обновить камеру |
 | `DELETE` | `/api/cameras/<id>` | Удалить камеру |
+| `POST` | `/api/cameras/discover` | Найти RTSP в сети (`{add:true}` — добавить) |
 | `GET/PUT/POST` | `/api/cameras/<id>/zones` | Зоны камеры (получить/заменить/добавить) |
 | `PUT/DELETE` | `/api/cameras/<id>/zones/<zid>` | Изменить/удалить зону |
 
@@ -403,6 +405,22 @@ docker compose --profile cpu restart app-cpu
   ```
   Пропустить разово: `SKIP_DEPLOY=1 git push`.
 - Фронт-сервер: `Dockerfile.frontend` + `docker-compose.frontend.yml` (nginx, `BACKEND_URL` из `deploy.env`). Подробности — `DEPLOY_FRONTEND_CHECKLIST.md`.
+
+### 📹 USB-вебка у фронт-сервера (RTSP-рестрим)
+
+Если фронт и бэк на разных серверах, а USB-вебку хочется держать у фронта —
+поднимаем на фронт-сервере MediaMTX, он публикует вебку как RTSP, а бэк
+забирает поток по сети (захват и детекция всегда на бэке):
+
+```bash
+# на фронт-сервере (вебка в /dev/video0)
+docker compose -f docker-compose.frontend.yml --profile webcam up -d mediamtx
+```
+
+Затем в интерфейсе добавляем камеру с источником `rtsp://<FRONTEND_HOST>:8554/webcam`.
+Настройки низкой задержки (`ultrafast` + `zerolatency`, малый GOP, TCP) — в `mediamtx.yml`
+(на LAN ~100–300 мс). Прямого «воткнуть в фронт без задержки» нет: детекция идёт на
+бэке, поэтому минимальная задержка — это USB прямо в бэк-сервер.
 
 ---
 

@@ -96,6 +96,14 @@ def configure_camera_routes(app, state, camera_captures):
         return jsonify({"status": "updated", "name": cam_id, "detect_enabled": cfg.get("detect_enabled")})
 
     # ── Зоны (полигоны редактора) ───────────────────────────────
+    @app.route("/api/cameras/discover", methods=["POST"])
+    def api_discover_cameras():
+        """Найти открытые RTSP-потоки в локальной сети. {add:true} — добавить."""
+        from backend.main import discover_cameras
+        data = request.get_json(silent=True) or {}
+        result = discover_cameras(add=bool(data.get("add")))
+        return jsonify(result)
+
     @app.route("/api/cameras/<cam_id>/zones", methods=["GET"])
     def api_get_zones(cam_id):
         from backend.config import CAMERAS

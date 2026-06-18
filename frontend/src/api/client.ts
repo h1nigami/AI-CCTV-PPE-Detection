@@ -130,6 +130,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ name: newName }),
     }),
+  discoverCameras: (add = false) =>
+    request<{
+      found: { ip: string; rtsp_url: string; name: string; status: string; added_as?: string }[]
+      added: string[]
+    }>("/api/cameras/discover", { method: "POST", body: JSON.stringify({ add }) }),
   toggleAnalytics: (id: string, detect_enabled: boolean) =>
     request<ApiStatus>(`/api/cameras/${id}/analytics`, {
       method: "PUT",

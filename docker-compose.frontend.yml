@@ -14,3 +14,21 @@ services:
     env_file:
       - deploy.env
     restart: unless-stopped
+
+  # ─────────────────────────────────────────────────────────────
+  #  MediaMTX — RTSP-рестрим локальной вебки (фронт и бэк на разных
+  #  серверах: вебка стоит у фронта, бэк забирает поток по сети).
+  #  Бэкенд добавляет камеру с источником rtsp://<FRONTEND_HOST>:8554/webcam.
+  #  network_mode: host — для доступа к /dev/video0 и низкой задержки.
+  #  Профиль webcam: поднимается только при `--profile webcam`.
+  # ─────────────────────────────────────────────────────────────
+  mediamtx:
+    image: bluenviron/mediamtx:latest-ffmpeg
+    container_name: kontroler-mediamtx
+    profiles: ["webcam"]
+    network_mode: host
+    devices:
+      - /dev/video0:/dev/video0
+    volumes:
+      - ./mediamtx.yml:/mediamtx.yml:ro
+    restart: unless-stopped

@@ -1,0 +1,23 @@
+# Конфиг MediaMTX (RTSP-рестрим вебки рядом с фронт-сервером).
+# Бэкенд (на другом сервере) подключается к rtsp://<FRONTEND_HOST>:8554/webcam.
+# Настроено на минимальную задержку (ultrafast + zerolatency + малый GOP).
+
+rtspAddress: :8554
+# Меньше буферизация на стороне сервера → ниже задержка.
+rtspTransports: [tcp]
+readTimeout: 10s
+writeQueueSize: 512
+
+paths:
+  # Поток с локальной USB-вебки (/dev/video0). MediaMTX сам поднимает ffmpeg,
+  # который захватывает камеру и публикует её сюда (runOnInit).
+  webcam:
+    runOnInit: >
+      ffmpeg -f v4l2 -framerate 25 -video_size 1280x720 -i /dev/video0
+      -c:v libx264 -preset ultrafast -tune zerolatency -g 25 -pix_fmt yuv420p
+      -f rtsp -rtsp_transport tcp rtsp://localhost:$RTSP_PORT/webcam
+    runOnInitRestart: yes
+
+  # Прочие пути (any) разрешают публиковать/читать произвольные потоки —
+  # например, если захочешь публиковать вебку вручную своей ffmpeg-командой.
+  all_others:
