@@ -59,7 +59,11 @@ def set_camera_config(cam_id: str, **kwargs):
 
 CONF_THRESH = 0.75
 MAX_LOG_SIZE = 100
-MIN_CONES = 2
+# Минимум 3 конуса: из 2 точек многоугольник вырождается в отрезок (нет площади),
+# зона рисовалась бы линией, в которую невозможно «войти» (is_in_danger_zone
+# всегда False). С 3+ конусами зона имеет площадь и человек по точке ног в ней
+# корректно детектится.
+MIN_CONES = 3
 ZONE_EXPAND_PX = 20
 TOP_RATIO = 0.4
 HAND_CROP_RATIO = 0.25
