@@ -40,3 +40,47 @@ def state(gallery_path):
     s = DetectionState()
     s.init_gallery(gallery_path)
     yield s
+
+
+@pytest.fixture
+def in_memory_engine():
+    """SQLAlchemy in-memory SQLite engine with all tables created."""
+    from sqlalchemy import create_engine
+    from backend.db.models import Base
+    engine = create_engine(
+        "sqlite:///:memory:", connect_args={"check_same_thread": False}
+    )
+    Base.metadata.create_all(engine)
+    yield engine
+    Base.metadata.drop_all(engine)
+
+
+@pytest.fixture
+def auth_db(monkeypatch, in_memory_engine):
+    """Patches auth service to use in-memory DB and a fixed JWT secret."""
+    from sqlalchemy.orm import sessionmaker
+    import backend.auth.service as svc
+    Session = sessionmaker(bind=in_memory_engine)
+    monkeypatch.setattr(svc, "get_session", lambda: Session())
+    monkeypatch.setattr(svc, "JWT_SECRET", "test-secret-for-tests")
+    yield in_memory_engine
+
+
+@pytest.fixture
+def auth_client(auth_db):
+    """Minimal Flask test client with only auth_bp registered."""
+    from flask import Flask
+    from backend.auth.routes import auth_bp
+    app = Flask(__name__)
+    app.register_blueprint(auth_bp)
+    app.config["TESTING"] = True
+    return app.test_client()
+
+
+@pytest.fixture
+def minimal_flask_app():
+    """Bare Flask app (no blueprints) for middleware tests."""
+    from flask import Flask
+    app = Flask(__name__)
+    app.config["TESTING"] = True
+    return app

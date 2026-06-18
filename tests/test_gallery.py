@@ -380,3 +380,32 @@ class TestSaveLoad:
             assert gal2.has_id(gid)
             assert gal2.get_name(gid) == f"Person_{i}"
         gal2.clear()
+
+
+class TestCleanupOld:
+    def test_cleanup_removes_stale_entry(self, gallery, normalized_embedding):
+        gid = gallery.match_or_register(normalized_embedding, "cam01", quality=0.9)
+        # Set last_seen to 31 days ago
+        with gallery._lock:
+            gallery._gallery[gid]["last_seen"] = time.time() - 31 * 86400
+        gallery.cleanup_old(max_age_days=30)
+        assert not gallery.has_id(gid)
+
+    def test_cleanup_preserves_recent_entry(self, gallery, normalized_embedding):
+        gid = gallery.match_or_register(normalized_embedding, "cam01", quality=0.9)
+        gallery.cleanup_old(max_age_days=30)
+        assert gallery.has_id(gid)
+
+    def test_cleanup_saves_file_when_entries_removed(self, gallery, gallery_path,
+                                                      normalized_embedding):
+        gid = gallery.match_or_register(normalized_embedding, "cam01", quality=0.9)
+        with gallery._lock:
+            gallery._gallery[gid]["last_seen"] = time.time() - 31 * 86400
+        before_mtime = gallery_path.stat().st_mtime if gallery_path.exists() else 0
+        gallery.cleanup_old(max_age_days=30)
+        if gallery_path.exists():
+            assert gallery_path.stat().st_mtime >= before_mtime
+
+    def test_cleanup_no_op_on_empty_gallery(self, gallery):
+        gallery.cleanup_old(max_age_days=30)
+        assert gallery.count == 0

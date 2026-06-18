@@ -244,3 +244,150 @@ class TestClearTracks:
         assert 42 in state._fallback_names
         state.clear_tracks()
         assert 42 not in state._fallback_names
+
+
+# ── Approval methods ──────────────────────────────────────────────────────────
+
+class TestApproval:
+    def test_not_approved_by_default(self, state):
+        assert state.is_approved([10, 20, 50, 80], "cam01") is False
+
+    def test_approve_then_is_approved(self, state):
+        state.approve([10, 20, 50, 80], "cam01")
+        assert state.is_approved([10, 20, 50, 80], "cam01") is True
+
+    def test_approval_expires(self, state):
+        state.approve([10, 20, 50, 80], "cam01")
+        # Fast-forward past expiry by manipulating _approved directly
+        for key in list(state._approved.keys()):
+            state._approved[key] = time.time() - 1
+        assert state.is_approved([10, 20, 50, 80], "cam01") is False
+
+    def test_expired_entry_cleaned_from_dict(self, state):
+        state.approve([10, 20, 50, 80], "cam01")
+        for key in list(state._approved.keys()):
+            state._approved[key] = time.time() - 1
+        state.is_approved([10, 20, 50, 80], "cam01")
+        assert len(state._approved) == 0
+
+    def test_approve_by_global_id_skips_box_hash(self, state):
+        state.approve([0, 0, 10, 10], "cam01", global_id=999)
+        assert state.is_approved([0, 0, 10, 10], "cam01", global_id=999) is True
+        # Different box with same global_id → still approved
+        assert state.is_approved([500, 500, 600, 600], "cam01", global_id=999) is True
+
+    def test_clear_approved_removes_all(self, state):
+        state.approve([10, 20, 50, 80], "cam01", global_id=1)
+        state.approve([100, 200, 150, 250], "cam01", global_id=2)
+        state.clear_approved()
+        assert state.is_approved([10, 20, 50, 80], "cam01", global_id=1) is False
+        assert state.is_approved([100, 200, 150, 250], "cam01", global_id=2) is False
+
+
+# ── Gesture methods ───────────────────────────────────────────────────────────
+
+class TestGestureMethods:
+    def test_gesture_not_active_by_default(self, state):
+        assert state.is_gesture_active() is False
+
+    def test_set_gesture_detected_makes_active(self, state):
+        state.set_gesture_detected()
+        assert state.is_gesture_active() is True
+
+    def test_gesture_expires(self, state):
+        state.set_gesture_detected()
+        state._gesture_until = time.time() - 1  # push expiry to the past
+        assert state.is_gesture_active() is False
+
+    def test_can_gesture_initially_true(self, state):
+        assert state.can_gesture(global_id=42) is True
+
+    def test_cannot_gesture_after_set_gesture_time(self, state):
+        state.set_gesture_time(global_id=42)
+        assert state.can_gesture(global_id=42) is False
+
+    def test_can_gesture_again_after_cooldown(self, state):
+        from backend.config import GESTURE_COOLDOWN
+        state.set_gesture_time(global_id=42)
+        state._last_gesture_time[42] = time.time() - GESTURE_COOLDOWN - 0.1
+        assert state.can_gesture(global_id=42) is True
+
+    def test_set_gesture_time_persists(self, state):
+        state.set_gesture_time(global_id=7)
+        assert 7 in state._last_gesture_time
+        assert state._last_gesture_time[7] <= time.time()
+
+
+# ── Status change tracking ────────────────────────────────────────────────────
+
+class TestStatusChange:
+    def test_first_status_always_changed(self, state):
+        assert state.is_status_changed("cam01", 1, "helmet=1,mask=0") is True
+
+    def test_same_status_not_changed(self, state):
+        state.is_status_changed("cam01", 1, "helmet=1")
+        assert state.is_status_changed("cam01", 1, "helmet=1") is False
+
+    def test_different_status_is_changed(self, state):
+        state.is_status_changed("cam01", 1, "helmet=1")
+        assert state.is_status_changed("cam01", 1, "helmet=0") is True
+
+    def test_stored_value_updates_on_change(self, state):
+        state.is_status_changed("cam01", 1, "status_a")
+        state.is_status_changed("cam01", 1, "status_b")
+        assert state._last_logged_status[("cam01", 1)] == "status_b"
+
+    def test_clear_tracked_statuses_resets(self, state):
+        state.is_status_changed("cam01", 1, "status_a")
+        state.is_status_changed("cam01", 2, "status_b")
+        state.clear_tracked_statuses()
+        assert state.is_status_changed("cam01", 1, "status_a") is True
+        assert state.is_status_changed("cam01", 2, "status_b") is True
+
+
+# ── Concurrency ───────────────────────────────────────────────────────────────
+
+class TestConcurrency:
+    def test_approve_thread_safe(self, state):
+        import threading
+        errors = []
+
+        def approve_in_thread(gid):
+            try:
+                state.approve([0, 0, 10, 10], "cam01", global_id=gid)
+            except Exception as e:
+                errors.append(e)
+
+        threads = [threading.Thread(target=approve_in_thread, args=(i,))
+                   for i in range(10)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert errors == []
+        assert len(state._approved) == 10
+
+    def test_add_log_thread_safe(self, state):
+        import threading
+        from backend.core.models import LogEntry
+        errors = []
+
+        def add_entry(i):
+            try:
+                state.add_log(LogEntry(
+                    id=str(i), timestamp="2024-01-01",
+                    message=f"entry {i}", category="info",
+                    cam_id="cam01", global_id=i,
+                ))
+            except Exception as e:
+                errors.append(e)
+
+        threads = [threading.Thread(target=add_entry, args=(i,)) for i in range(20)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert errors == []
+        assert len(state.get_log()) == 20
