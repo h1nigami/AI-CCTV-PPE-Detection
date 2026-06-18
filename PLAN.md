@@ -598,17 +598,18 @@ frigate_disk_usage_percent{mount="/media"} 45
   - 🔶 Частично: детекция распараллелена **по потоку на камеру** (`_camera_detection_worker`, свой экземпляр YOLO на камеру) вместо последовательного round-robin — даёт параллелизм на CPU-ядрах без накладных multiprocessing/shared_memory и без дублирования галереи Re-ID. Полное разделение на процессы — позже (упор. при росте числа камер на CPU).
 - [x] Motion detection (MOG2) перед YOLO (`backend/detection/motion.py`, гейт в потоке детекции, конфиг `MOTION_*`)
 - [ ] Shared memory для кадров (zero-copy)
-- [ ] Базовая запись (24/7 segmented MP4)
+- [x] Базовая запись (24/7 segmented MP4) — `backend/recorder.py`: ffmpeg `-c copy` сегментами, индекс в БД, конфиг `RECORD_*`
 
 ### Фаза 2: NVR Core
 **Срок: 2-3 недели** — 🔴 Приоритет 1
 
-- [ ] Event-based запись (по триггеру)
-- [ ] Retention policy cleaner
-- [ ] Snapshot capture
+- [x] Event-based запись (по триггеру) — было ранее (`_finalize_recording` + клипы нарушений в MinIO)
+- [x] Retention policy cleaner — `RetentionCleaner`/`plan_deletions` (срок + motion-режим + лимит диска)
+- [x] Snapshot capture — было ранее (снапшот из середины event-клипа)
 - [ ] RTSP restream
 - [ ] WebRTC live view (aiortc)
-- [ ] API для медиафайлов
+- [x] API для медиафайлов — `backend/api/recordings.py` (`/api/recordings`, `/at`, `/<id>/play` с Range)
+  - 🔶 NVR-архив (непрерывная запись) сделан: сегменты, индекс `Recording`, retention, API. Не хватает: timeline-UI (Фаза 3), RTSP restream, WebRTC.
 
 ### Фаза 3: События и Review
 **Срок: 2 недели** — 🟡 Приоритет 2
@@ -673,7 +674,7 @@ frigate_disk_usage_percent{mount="/media"} 45
 | Архитектура | Один процесс + threading (детекция — поток на камеру 🔶) | Multiprocess + MQTT |
 | Детекция | YOLO (каждый кадр) | Motion-triggered YOLO ✅ (MOG2-гейт, опц.) |
 | Конфиг | Python `.py` + JSON | YAML + hot-reload |
-| Запись видео | ❌ Нет | 24/7 + event + retention |
+| Запись видео | event-клипы + 24/7 NVR ✅ (сегменты+retention) | 24/7 + event + retention |
 | Live view | Polling JPEG (100ms) | WebRTC (<500ms) |
 | Зоны | Только конусы | Полигоны + редактор + маски |
 | События | LogEntry в памяти | SQLite/DB + поиск + timeline |
@@ -942,12 +943,12 @@ branding:
 - [ ] Экспорт событий (CSV/JSON)
 
 ### Фаза 2: NVR + Запись (3-4 недели)
-- [ ] 24/7 сегментированная запись (MP4 сегменты по 1 мин)
-- [ ] Event-triggered запись (пребуфер 10 сек)
-- [ ] Snapshot capture при событиях
-- [ ] API для просмотра записей
+- [x] 24/7 сегментированная запись (MP4 сегменты по 1 мин) — `backend/recorder.py`
+- [x] Event-triggered запись (пребуфер 10 сек) — `_finalize_recording` (ранее)
+- [x] Snapshot capture при событиях — снапшот из середины клипа (ранее)
+- [x] API для просмотра записей — `backend/api/recordings.py`
 - [ ] Timeline в UI (просмотр архива)
-- [ ] Retention policy (очистка старых записей)
+- [x] Retention policy (очистка старых записей) — `RetentionCleaner` (срок/motion/диск)
 
 ### Фаза 3: Брендинг и упаковка (2 недели)
 - [ ] White-label: логотип, цвета, домен

@@ -33,6 +33,7 @@
 - **Лента событий** — отдельная страница с фильтрами (камера, тип), превью, плеером
 - **Видеоклипы** — запись MP4 (H.264) при нарушениях с пост-кадрами
 - **Снэпшоты** — кадр из середины клипа
+- **NVR (непрерывная запись)** — круглосуточный архив: ffmpeg режет RTSP на сегменты (`-c copy`, ~0% CPU), индекс в БД, retention по сроку/движению/диску. Режим `motion` экономит 80-90% диска. Опционально (`RECORD_ENABLED`)
 - **MinIO** — S3-совместимое хранилище для клипов и снимков
 - **Локальный fallback** — `violation_logs/` при недоступности MinIO
 - **Логирование** — история событий с временными метками, категориями, именем человека
@@ -157,6 +158,14 @@ MOTION_DETECTION_ENABLED = False   # MOG2-гейт перед YOLO (эконом
 MOTION_MIN_AREA = 1500             # мин. площадь контура движения (px²)
 MQTT_ENABLED = False               # публикация событий в MQTT-брокер
 MQTT_HA_DISCOVERY = False          # Home Assistant MQTT discovery
+
+# NVR — непрерывная запись архива (по умолчанию выключена)
+RECORD_ENABLED = False             # включить запись
+RECORD_MODE = "motion"             # "motion" (только с движением) | "continuous" (24/7)
+RECORD_DIR = "media"               # каталог архива (локальный диск)
+RECORD_SEGMENT_SEC = 60            # длина сегмента, сек
+RECORD_RETAIN_DAYS = 7             # хранить N дней
+RECORD_MAX_DISK_PERCENT = 80       # чистить старейшее при занятости диска выше %
 ```
 
 Окружение (`.env`):
@@ -171,6 +180,11 @@ MQTT_HOST=mqtt
 MQTT_PORT=1883
 MQTT_TOPIC_PREFIX=frigate
 MQTT_HA_DISCOVERY=true
+# NVR (опционально)
+RECORD_ENABLED=true
+RECORD_MODE=motion
+RECORD_DIR=/media
+RECORD_RETAIN_DAYS=7
 ```
 
 ---
@@ -181,7 +195,8 @@ MQTT_HA_DISCOVERY=true
 backend/
 ├── app.py                 # Flask entrypoint
 ├── config.py              # Константы
-├── main.py                # Оркестратор (start/stop, detection_loop, recording)
+├── main.py                # Оркестратор (start/stop, потоки детекции, event-клипы)
+├── recorder.py            # NVR: сегментная запись, индекс, retention
 ├── core/
 │   ├── state.py           # DetectionState (треки, пропуска, логи, жесты)
 │   ├── metrics.py         # MetricsRegistry (FPS, латентность, события)
@@ -206,7 +221,7 @@ backend/
 │   └── minio_client.py    # EventStorage (MinIO + local fallback)
 ├── db/
 │   ├── engine.py          # SQLAlchemy engine
-│   └── models.py          # Event, User, Camera, ApiKey
+│   └── models.py          # Event, User, Camera, ApiKey, Recording
 ├── auth/
 │   ├── routes.py          # login/refresh/me
 │   └── service.py         # JWT, init_admin
@@ -215,7 +230,8 @@ backend/
     ├── cameras.py         # CRUD камер + группы
     ├── reid.py            # Управление галереей лиц
     ├── events.py          # События: GET, clip, snapshot
-    └── monitoring.py      # /health, /metrics, /api/stats
+    ├── monitoring.py      # /health, /metrics, /api/stats
+    └── recordings.py      # NVR-архив: список/отдача сегментов
 
 frontend/
 ├── src/
@@ -313,6 +329,14 @@ frontend/
 | `GET` | `/health` | Healthcheck (status, uptime) |
 | `GET` | `/metrics` | Метрики в формате Prometheus |
 | `GET` | `/api/stats` | Метрики в JSON (FPS, латентность, события, система) |
+
+### NVR / Архив
+| Метод | Эндпоинт | Описание |
+|-------|----------|----------|
+| `GET` | `/api/recordings` | Список сегментов (cam_id, from, to, пагинация) |
+| `GET` | `/api/recordings/at?cam_id=&ts=` | Сегмент, покрывающий момент времени |
+| `GET` | `/api/recordings/<id>` | Детали сегмента |
+| `GET` | `/api/recordings/<id>/play` | Отдача mp4-сегмента (Range/перемотка) |
 
 ---
 

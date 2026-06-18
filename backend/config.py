@@ -175,6 +175,25 @@ EVENT_POST_FRAMES = 30
 EVENT_MAX_FRAMES = 300
 VIOLATION_LOGS_DIR = BASE_DIR / "violation_logs"
 
+# ── NVR: непрерывная (сегментная) запись архива ───────────
+# Полноценный видеорегистратор: ffmpeg режет RTSP-поток на сегменты (`-c copy`,
+# почти без CPU) на локальный диск; индекс сегментов — в БД (таблица Recording);
+# фоновый чистильщик удаляет старое по сроку и при переполнении диска.
+# По умолчанию ВЫКЛЮЧЕНО. См. backend/recorder.py.
+RECORD_ENABLED = _env_bool("RECORD_ENABLED", False)
+# Режим: "continuous" — писать всё 24/7; "motion" — хранить только сегменты с
+# движением/событием (остальные чистильщик удаляет; экономия 80-90% диска).
+RECORD_MODE = os.environ.get("RECORD_MODE", "motion")
+RECORD_DIR = Path(os.environ.get("RECORD_DIR", str(BASE_DIR / "media")))
+RECORD_SEGMENT_SEC = int(os.environ.get("RECORD_SEGMENT_SEC", "60"))  # длина сегмента
+RECORD_RETAIN_DAYS = float(os.environ.get("RECORD_RETAIN_DAYS", "7"))  # хранить N дней
+# Чистить старейшие сегменты, пока занятость диска под RECORD_DIR выше порога (%).
+RECORD_MAX_DISK_PERCENT = float(os.environ.get("RECORD_MAX_DISK_PERCENT", "80"))
+RECORD_CLEAN_INTERVAL_SEC = int(os.environ.get("RECORD_CLEAN_INTERVAL_SEC", "300"))
+# В режиме "motion": сколько секунд держать сегмент без движения, прежде чем
+# чистильщик его удалит (грейс на случай, если движение чуть за границей сегмента).
+RECORD_MOTION_GRACE_SEC = int(os.environ.get("RECORD_MOTION_GRACE_SEC", "120"))
+
 # ── Голосовые предупреждения ──────────────────────────────
 # Минимальный интервал между предупреждениями на одну камеру (секунды).
 VOICE_ALERT_COOLDOWN = 15.0

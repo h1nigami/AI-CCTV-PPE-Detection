@@ -22,10 +22,12 @@ from backend.config import (
     VIOLATION_LOGS_DIR, get_camera_config, VOICE_ALERT_COOLDOWN,
     MOTION_DETECTION_ENABLED, MOTION_THRESHOLD, MOTION_MIN_AREA,
     MOTION_COOLDOWN_FRAMES, MQTT_HEARTBEAT_INTERVAL,
+    RECORD_ENABLED, RECORD_MODE,
 )
 from backend.core.metrics import get_metrics
 from backend.detection.motion import MotionDetector
 from backend.mqtt.publisher import get_publisher
+from backend.recorder import get_recording_manager
 from backend.capture.buffer import FrameBuffer
 from backend.capture.camera import CameraCapture
 from backend.detection.engine import run_detection, get_danger_zone, has_item_on_person, is_in_danger_zone
@@ -177,6 +179,8 @@ def add_camera(cam_id: str, source: str | int):
             t = threading.Thread(target=_camera_detection_worker, args=(cam_id,), daemon=True)
             detection_threads[cam_id] = t
             t.start()
+        if RECORD_ENABLED:
+            get_recording_manager().add_camera(cam_id, source)
     print(f"[Камера] Добавлена: {cam_id} -> {source}")
 
 
@@ -198,6 +202,8 @@ def remove_camera(cam_id: str):
     with _cam_models_lock:
         _cam_models.pop(cam_id, None)
     _motion_detectors.pop(cam_id, None)
+    if RECORD_ENABLED:
+        get_recording_manager().remove_camera(cam_id)
     save_cameras()
     print(f"[Камера] Удалена: {cam_id}")
 
@@ -224,6 +230,10 @@ def rename_camera(old_id: str, new_id: str) -> bool:
         t = threading.Thread(target=_camera_detection_worker, args=(new_id,), daemon=True)
         detection_threads[new_id] = t
         t.start()
+        if RECORD_ENABLED:
+            mgr = get_recording_manager()
+            mgr.remove_camera(old_id)
+            mgr.add_camera(new_id, source)
     from backend.config import save_cameras
     save_cameras()
     print(f"[Камера] Переименована: {old_id} -> {new_id}")
@@ -475,6 +485,8 @@ def start_live():
     hb = threading.Thread(target=_heartbeat_loop, daemon=True)
     detection_threads["_heartbeat"] = hb
     hb.start()
+    if RECORD_ENABLED:
+        get_recording_manager().start_all(dict(CAMERAS))
     print(f"Детекция запущена на {len(CAMERAS)} камерах ({len(CAMERAS)} потоков)")
 
 
@@ -489,6 +501,8 @@ def stop_live():
         t.join(timeout=2)
     detection_threads.clear()
     stop_face_workers()
+    if RECORD_ENABLED:
+        get_recording_manager().stop_all()
     for cam_id, rec in list(_event_recordings.items()):
         if rec.get('active'):
             rec['active'] = False
@@ -545,15 +559,19 @@ def _camera_detection_worker(cam_id: str):
             out_buf.write(frame)
             continue
 
-        # «Motion First»: пропускаем тяжёлую YOLO-детекцию на статичной сцене.
-        # Не пропускаем, если идёт запись события (нужны кадры пост-буфера).
-        if MOTION_DETECTION_ENABLED:
+        # Движение считаем, если оно нужно либо для «Motion First» (пропуск YOLO),
+        # либо для NVR-режима "motion" (пометка сегментов has_motion).
+        nvr_motion = RECORD_ENABLED and RECORD_MODE == "motion"
+        if MOTION_DETECTION_ENABLED or nvr_motion:
             rec = _event_recordings.get(cam_id)
             recording = rec is not None and rec.get('active')
             motion = _get_motion_detector(cam_id).detect(frame)
+            if motion and nvr_motion:
+                get_recording_manager().note_motion(cam_id)
             if publisher is not None:
                 publisher.publish_motion(cam_id, bool(motion), motion.area_ratio)
-            if not motion and not recording:
+            # Пропуск YOLO на статике — только если включён «Motion First».
+            if MOTION_DETECTION_ENABLED and not motion and not recording:
                 out_buf.write(frame)
                 metrics.record_skipped(cam_id)
                 continue

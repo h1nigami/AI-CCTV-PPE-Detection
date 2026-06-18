@@ -112,3 +112,26 @@ class Event(Base):
 
 Index("ix_events_camera_time", Event.camera_id, Event.timestamp)
 Index("ix_events_label_time", Event.label, Event.timestamp)
+
+
+class Recording(Base):
+    """Сегмент непрерывной записи (NVR). Один ряд = один файл-сегмент архива.
+
+    Файлы пишет ffmpeg-сегментатор (`backend/recorder.py`), а этот индекс
+    позволяет timeline-API находить, какой сегмент покрывает запрошенный момент
+    времени, и retention-чистильщику удалять устаревшие сегменты.
+    """
+    __tablename__ = "recordings"
+
+    id = Column(String(36), primary_key=True)
+    camera_id = Column(String(64), nullable=False, index=True)
+    path = Column(String(512), nullable=False)         # абсолютный путь к .mp4
+    start_time = Column(Float, nullable=False, index=True)  # unix-время начала
+    end_time = Column(Float, nullable=False)               # unix-время конца
+    duration = Column(Float, nullable=False, default=0.0)  # секунды
+    size_bytes = Column(Integer, nullable=False, default=0)
+    has_motion = Column(Boolean, default=False, index=True)  # было ли движение
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+Index("ix_recordings_camera_time", Recording.camera_id, Recording.start_time)

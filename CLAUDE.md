@@ -128,9 +128,18 @@ alembic upgrade head
 - `backend/storage/minio_client.py::EventStorage` — S3-клиент (boto3) к MinIO (bucket `events`, ключи `clips/<cam>/<id>.mp4`, `snapshots/...`). **Локальный fallback** в `violation_logs/<cam>/`: при недоступности MinIO ИЛИ при сбое загрузки в середине сессии клип не теряется, пишется на диск; чтение пробует MinIO, затем локально. Синглтон через `get_storage()`.
 - Метаданные событий → SQLite (`backend/api/events.py::create_event_record`).
 
+#### 2.7.1. NVR — непрерывная запись архива (`backend/recorder.py`)
+Отдельно от event-клипов (только нарушения) — **непрерывный архив** для отмотки на любой момент. По умолчанию ВЫКЛЮЧЕНО (`RECORD_ENABLED`).
+- **`SegmentRecorder`** (на камеру): ffmpeg режет RTSP на сегменты `RECORD_SEGMENT_SEC`(60с) через `-c copy` (перепаковка без перекодирования → ~0% CPU). Открывает RTSP **второй раз** (помимо `CameraCapture`) — нужно, т.к. capture декодирует в raw. Файлы: `<RECORD_DIR>/<cam>/recordings/ГГГГ/ММ/ДД/ЧЧ.ММ.СС.mp4` (локальный диск, не MinIO — терабайты архива дешевле локально). Только для строковых (RTSP/файл) источников, не для `int`-камер.
+- **Индекс** в таблице `Recording` (`index_segment_file`): `index_new_segments` сканирует завершённые `.mp4` (mtime старше 5с = ffmpeg дописал) и пишет ряд (start из имени, end=mtime, size, has_motion). Идемпотентно по `path`.
+- **`RetentionCleaner`/`plan_deletions`** (чистая логика, тестируема): удаляет (1) старше `RECORD_RETAIN_DAYS`(7); (2) в `RECORD_MODE="motion"` — сегменты без движения старше `RECORD_MOTION_GRACE_SEC`(120с), **но только для камер, у которых есть хоть один motion-сегмент** (защита от потери данных, если motion-пайплайн выключен); (3) при занятости диска выше `RECORD_MAX_DISK_PERCENT`(80%) — старейшие.
+- **`RecordingManager`** (синглтон `get_recording_manager()`): поднимает/останавливает рекордеры вместе с `start_live`/`stop_live`, фоновым циклом индексирует и чистит, принимает `note_motion(cam_id)` из потока детекции (флаг `has_motion` сегмента). В режиме "motion" поток детекции считает MOG2 даже если «Motion First» (`MOTION_DETECTION_ENABLED`) выключен.
+- API — см. 2.9 (`api/recordings.py`).
+- Таблица `Recording` создаётся `init_db()` (`create_all` — новая таблица создаётся без миграции; для прод-БД при желании сделать `alembic revision --autogenerate`).
+
 ### 2.8. БД (`backend/db/`)
 - SQLAlchemy + SQLite `data/ppe.db`, `check_same_thread=False`, `scoped_session`. `get_session()` на каждый запрос, закрывать вручную.
-- Модели (`db/models.py`): `User` (роли admin/operator/viewer/api), `ApiKey`, `Camera`, `Event`. Enum'ы `EventLabel`, `SubLabel`, `UserRole`.
+- Модели (`db/models.py`): `User` (роли admin/operator/viewer/api), `ApiKey`, `Camera`, `Event`, `Recording` (сегменты NVR-архива). Enum'ы `EventLabel`, `SubLabel`, `UserRole`.
 - ⚠️ **Камеры реально хранятся в JSON, не в БД.** Таблица `Camera` существует и `Event.camera_id` — FK на `cameras.id`, но рантайм-источник камер — `data/cameras.json` (+ `data/cameras_config.json`). SQLite FK по умолчанию не enforced, рассинхрон возможен. Не считать таблицу `Camera` источником истины.
 
 ### 2.9. API (Flask blueprints, регистрируются в `backend/app.py`)
@@ -139,6 +148,7 @@ alembic upgrade head
 - **`api/reid.py`**: `GET /api/reid/persons`, `POST .../rename`, `DELETE .../<id>`, `POST /api/reid/clear`, `GET /api/reid/stats` — управление галереей лиц.
 - **`api/events.py`** (Blueprint `events_bp`): `GET /api/events` (фильтры camera/label, пагинация), `GET /api/events/<id>`, `.../clip`, `.../snapshot`.
 - **`api/monitoring.py`** (Blueprint `monitoring_bp`): `GET /health` (healthcheck), `GET /metrics` (Prometheus text), `GET /api/stats` (JSON-метрики). Читают реестр `backend/core/metrics.py`.
+- **`api/recordings.py`** (Blueprint `recordings_bp`): `GET /api/recordings` (фильтры cam_id/from/to, пагинация), `GET /api/recordings/at?cam_id=&ts=` (сегмент по моменту времени), `GET /api/recordings/<id>`, `GET /api/recordings/<id>/play` (отдача mp4 с Range/перемоткой). Источник — таблица `Recording` (NVR, см. 2.7.1).
 - **`auth/routes.py`** (`/api/auth`): `register`, `login`, `refresh`, `me`, `POST /api-keys` (admin).
 - CORS открыт (`*`) на все ответы (`add_cors` в `app.py`).
 
@@ -168,7 +178,7 @@ alembic upgrade head
 ## 3. Конфигурация
 - Основные константы — `backend/config.py` (пороги, тайминги, цвета, `CLASS_NAMES`, Re-ID/Event/MinIO-параметры). `CLASS_NAMES` переопределяет имена классов модели **только для `.pt`** (не для `.engine`).
 - Рантайм-состояние в `data/`: `cameras.json`, `cameras_config.json`, `detect_modes.json`, `face_gallery.pkl`, `ppe.db`, `jwt_secret.txt`.
-- Env: `JWT_SECRET`, `ADMIN_USERNAME`/`ADMIN_PASSWORD`/`ADMIN_EMAIL`, `INSIGHTFACE_ROOT`, `VITE_API_TARGET` (фронт), `BACKEND_URL` (nginx-фронт). Frigate-слой (2.13): `MOTION_DETECTION_ENABLED`, `MQTT_ENABLED`/`MQTT_HOST`/`MQTT_PORT`/`MQTT_USER`/`MQTT_PASSWORD`/`MQTT_TOPIC_PREFIX`/`MQTT_HA_DISCOVERY`.
+- Env: `JWT_SECRET`, `ADMIN_USERNAME`/`ADMIN_PASSWORD`/`ADMIN_EMAIL`, `INSIGHTFACE_ROOT`, `VITE_API_TARGET` (фронт), `BACKEND_URL` (nginx-фронт). Frigate-слой (2.13): `MOTION_DETECTION_ENABLED`, `MQTT_ENABLED`/`MQTT_HOST`/`MQTT_PORT`/`MQTT_USER`/`MQTT_PASSWORD`/`MQTT_TOPIC_PREFIX`/`MQTT_HA_DISCOVERY`. NVR (2.7.1): `RECORD_ENABLED`, `RECORD_MODE`(motion/continuous), `RECORD_DIR`, `RECORD_SEGMENT_SEC`, `RECORD_RETAIN_DAYS`, `RECORD_MAX_DISK_PERCENT`, `RECORD_MOTION_GRACE_SEC`, `RECORD_CLEAN_INTERVAL_SEC`.
 
 ---
 

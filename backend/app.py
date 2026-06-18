@@ -15,6 +15,7 @@ from backend.api.cameras import configure_camera_routes
 from backend.api.reid import configure_reid_routes
 from backend.api.events import events_bp
 from backend.api.monitoring import monitoring_bp
+from backend.api.recordings import recordings_bp
 from backend.config import CAMERAS
 from backend.db.engine import init_db
 from backend.auth.routes import auth_bp
@@ -67,6 +68,7 @@ app = configure_camera_routes(app, state, camera_captures)
 app = configure_reid_routes(app, state)
 app.register_blueprint(events_bp)
 app.register_blueprint(monitoring_bp)
+app.register_blueprint(recordings_bp)
 
 if __name__ == "__main__":
     from waitress import serve
