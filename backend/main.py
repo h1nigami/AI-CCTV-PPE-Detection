@@ -618,6 +618,7 @@ def start_live():
         time.sleep(0.5)
     state.clear_log()
     state.clear_tracks()
+    state.clear_notifications()
     _motion_detectors.clear()
     for buf in annotated_buffers.values():
         buf.clear()

@@ -332,3 +332,7 @@ class DetectionState:
             items = list(self._notifications)
             self._notifications.clear()
             return items
+
+    def clear_notifications(self):
+        with self._lock:
+            self._notifications.clear()

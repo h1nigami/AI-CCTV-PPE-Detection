@@ -68,6 +68,7 @@ export default function ArchivePage() {
   const [loading, setLoading] = useState(false)
   const [player, setPlayer] = useState<PlayerState | null>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
+  const reqIdRef = useRef(0)
 
   // Камера по умолчанию — первая доступная.
   useEffect(() => {
@@ -79,20 +80,23 @@ export default function ArchivePage() {
 
   const fetchData = useCallback(async () => {
     if (!camId) return
+    const reqId = ++reqIdRef.current  // защита от гонки: применяем только свежий ответ
     try {
       setLoading(true)
       const [recs, evs] = await Promise.all([
         api.getRecordings({ camId, from: dayStart, to: dayEnd, limit: 1000 }),
         api.getEvents({ camera: camId, limit: 1000 }),
       ])
+      if (reqId !== reqIdRef.current) return  // пришёл ответ от устаревшего запроса
       setSegments(recs.recordings)
       // У /api/events нет фильтра по времени — режем по суткам на клиенте.
       setEvents(evs.events.filter((e) => e.timestamp >= dayStart && e.timestamp < dayEnd))
     } catch {
+      if (reqId !== reqIdRef.current) return
       setSegments([])
       setEvents([])
     } finally {
-      setLoading(false)
+      if (reqId === reqIdRef.current) setLoading(false)
     }
   }, [camId, dayStart, dayEnd])
 

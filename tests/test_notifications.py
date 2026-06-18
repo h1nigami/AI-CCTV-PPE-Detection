@@ -27,3 +27,10 @@ def test_notification_default_sub(state):
     state.push_notification("warning", "Заголовок")
     item = state.pop_notifications()[0]
     assert item["sub"] == ""
+
+
+def test_clear_notifications(state):
+    state.push_notification("granted", "A")
+    state.push_notification("missing", "B")
+    state.clear_notifications()
+    assert state.pop_notifications() == []
