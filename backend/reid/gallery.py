@@ -16,12 +16,13 @@ except ImportError:
 
 class FaceGallery:
     def __init__(self, gallery_path: Path, sim_threshold: float = 0.55,
-                 max_embeddings_per_id: int = 5):
+                 max_embeddings_per_id: int = 5, diversity_max_sim: float = 0.92):
         if isinstance(gallery_path, str):
             gallery_path = Path(gallery_path)
         self.gallery_path = gallery_path
         self.sim_threshold = sim_threshold
         self.max_embeddings = max_embeddings_per_id
+        self.diversity_max_sim = diversity_max_sim
         self._lock = threading.Lock()
         self._gallery: Dict[int, Dict] = {}
         self._next_id = 1
@@ -68,9 +69,14 @@ class FaceGallery:
         """Публичный доступ к адаптивному порогу (для «липкой» верификации в state)."""
         return self._adaptive_threshold(quality)
 
-    def _append_embedding(self, data: Dict, embedding: np.ndarray):
+    def _append_embedding(self, data: Dict, embedding: np.ndarray, diverse: bool = False):
         """Добавить эмбеддинг, защищая якорный (первый/эталонный) от вытеснения.
-        При переполнении выбрасываем самый старый НЕ-якорный (индекс 1), а не индекс 0."""
+        При переполнении выбрасываем самый старый НЕ-якорный (индекс 1), а не индекс 0.
+        Если diverse=True — добавляем, только если ракурс заметно отличается от уже
+        сохранённых (max косинус < diversity_max_sim); иначе это почти-дубль кадра."""
+        if diverse and data['embeddings']:
+            if max(self._cosine_sim(embedding, e) for e in data['embeddings']) >= self.diversity_max_sim:
+                return
         data['embeddings'].append(embedding)
         if len(data['embeddings']) > self.max_embeddings:
             data['embeddings'].pop(1)
@@ -92,7 +98,8 @@ class FaceGallery:
             if data is None:
                 return False
             if store:
-                self._append_embedding(data, embedding)
+                # diverse=True: «липкий» путь накапливает только новые ракурсы
+                self._append_embedding(data, embedding, diverse=True)
             data['last_seen'] = time.time()
             data['cameras'].add(cam_id)
             return True
@@ -216,6 +223,9 @@ class FaceGallery:
             print("[ReID] Галерея очищена")
 
     def cleanup_old(self, max_age_days: int = 30):
+        if max_age_days <= 0:
+            # 0/отрицательное — личности хранятся «навсегда», авто-удаление выключено
+            return
         with self._lock:
             now = time.time()
             to_del = [gid for gid, d in self._gallery.items()

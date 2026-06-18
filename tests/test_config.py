@@ -6,10 +6,11 @@ class TestReidConfig:
         assert config.REID_SIM_THRESHOLD == 0.55
 
     def test_max_embeddings(self):
-        assert config.REID_MAX_EMBEDDINGS == 5
+        assert config.REID_MAX_EMBEDDINGS == 30
 
     def test_max_age_days(self):
-        assert config.REID_MAX_AGE_DAYS == 30
+        # 0 — авто-удаление старых личностей отключено («навсегда»)
+        assert config.REID_MAX_AGE_DAYS == 0
 
     def test_gallery_path_exists(self):
         assert config.REID_GALLERY_PATH is not None

@@ -8,7 +8,8 @@ from backend.config import (
     APPROVAL_DURATION, PERSON_ID_GRID, MAX_LOG_SIZE,
     GESTURE_DISPLAY_DURATION, GESTURE_COOLDOWN,
     REID_SIM_THRESHOLD, REID_MAX_EMBEDDINGS, REID_GALLERY_PATH, REID_MAX_AGE_DAYS,
-    REID_MIN_STORE_QUALITY, REID_STORE_INTERVAL, REID_STICKY_MARGIN,
+    REID_MIN_STORE_QUALITY, REID_STORE_INTERVAL, REID_STICKY_MARGIN, REID_STICKY_MIN,
+    REID_DIVERSITY_MAX_SIM,
 )
 
 TRACK_EXPIRY = 60.0
@@ -43,6 +44,7 @@ class DetectionState:
             gallery_path=path,
             sim_threshold=REID_SIM_THRESHOLD,
             max_embeddings_per_id=REID_MAX_EMBEDDINGS,
+            diversity_max_sim=REID_DIVERSITY_MAX_SIM,
         )
 
     @property
@@ -94,7 +96,7 @@ class DetectionState:
                 # новое лицо её подтверждает (мягкий порог) — не пересматчиваем,
                 # чтобы один плохой кадр не сбросил имя на нового «Гостя».
                 if old_id is not None and self._gallery.has_id(old_id):
-                    sticky = max(0.35, self._gallery.threshold_for(quality) - REID_STICKY_MARGIN)
+                    sticky = max(REID_STICKY_MIN, self._gallery.threshold_for(quality) - REID_STICKY_MARGIN)
                     if self._gallery.similarity(old_id, face_embedding) >= sticky:
                         self._gallery.add_observation(
                             old_id, cam_id, face_embedding, quality, store=should_store)
