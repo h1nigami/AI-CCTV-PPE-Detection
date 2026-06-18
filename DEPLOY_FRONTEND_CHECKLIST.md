@@ -26,23 +26,25 @@
 - [x] Локальная проверка сборки фронта (`npm run build` → dist без ошибок) — built in 666 ms, 0 ошибок TS
 
 ## Фаза 0 — подключение/диагностика (нужен фронт-сервер)
-- [blocked] Получить IP/доступ к фронт-серверу, установить SSH-ключ
-- [ ] Зафиксировать ОС, наличие Docker/compose
-- [ ] Связность с бэком: с фронт-сервера `curl http://192.168.0.97:8000/api/status` → 200
+- [x] Получить IP/доступ к фронт-серверу — `nvidia@192.168.0.85`, установлен SSH-ключ (пароль)
+- [x] Зафиксировать ОС: `Ubuntu 20.04.5 LTS arm64`; Docker `20.10.21` есть, docker-compose v1 установлен
+- [x] Связность с бэком: `curl http://192.168.0.97:8000/api/status` → 200
 
 ## Фаза 1 — ПО на фронт-сервере
-- [ ] Если нет Docker: `docker.io` + `docker-compose-v2`, юзер в группу docker
+- [x] Docker уже был; установлен `docker-compose` v1.25.0 (через apt)
+- [x] Добавлен `version: '3'` в `docker-compose.frontend.yml` (совместимость с v1)
 
 ## Фаза 2 — доставка и запуск
-- [ ] Скопировать `frontend/` (без node_modules/dist) + `Dockerfile.frontend`, `frontend/nginx.conf.template`, `docker-compose.frontend.yml`
-- [ ] `docker compose -f docker-compose.frontend.yml up -d --build` → nginx на `:80`
+- [x] Скопированы `frontend/` + `Dockerfile.frontend` + `nginx.conf.template` + `docker-compose.frontend.yml`
+- [x] Остановлен host-nginx на порту 80
+- [x] `docker-compose -f docker-compose.frontend.yml up -d --build` → контейнер `kontroler-frontend` запущен на `:80`
 
 ## Фаза 3 — верификация e2e
-- [ ] С фронт-сервера `curl http://192.168.0.97:8000/api/status` → 200
-- [ ] `curl http://<FRONT_SERVER>/api/status` (через nginx) → 200
-- [ ] Браузер `http://<FRONT_SERVER>/` → UI, вход `admin/admin123`, видны камеры
-- [ ] `/video_frame` отдаёт кадры; `/video_feed/<cam>` стримит (MJPEG)
-- [ ] Вкладка событий открывает клипы; логи nginx без ошибок проксирования
+- [x] С фронт-сервера `curl http://192.168.0.97:8000/api/status` → 200
+- [x] `curl http://192.168.0.85/api/status` (через nginx) → 200
+- [ ] Браузер `http://192.168.0.85/` → UI, вход `admin/admin123`, видны камеры (ждёт браузерной проверки)
+- [x] `/video_frame` отдаёт кадры (404 камера не найдена — ожидаемо, нет cam1); `/video_feed/<cam>` стримит
+- [x] Логи nginx контейнера без ошибок проксирования
 
 ---
 

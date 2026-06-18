@@ -1,7 +1,7 @@
 # Запуск фронта на ОТДЕЛЬНОМ сервере (nginx раздаёт статику + reverse-proxy на бэк).
-# Использование на фронт-сервере:
-#   docker compose -f docker-compose.frontend.yml up -d --build
 # Адрес бэка меняется через BACKEND_URL (без пересборки кода — только пересоздать контейнер).
+
+version: '3'
 
 services:
   frontend-web:
