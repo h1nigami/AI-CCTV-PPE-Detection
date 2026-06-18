@@ -617,7 +617,7 @@ frigate_disk_usage_percent{mount="/media"} 45
 - [x] SQLite/PostgreSQL events DB — SQLite (`Event`, `Recording`)
 - [ ] Миграция state.py → DB
 - [x] API эндпоинты для событий — `api/events.py`
-- [x] Timeline скраббер в UI — `ArchivePage` (24ч-полоса сегментов архива); событийный скраббер поверх — TODO
+- [x] Timeline скраббер в UI — `ArchivePage` (24ч-полоса сегментов + метки событий поверх; клик по событию → переход к моменту в записи с перемоткой, fallback на event-клип)
 - [x] Фильтры и поиск по событиям — `EventsPage` (камера/тип)
 - [ ] Экспорт клипов/снимков
 

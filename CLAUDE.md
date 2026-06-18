@@ -163,7 +163,7 @@ alembic upgrade head
 
 ### 2.12. Фронтенд (`frontend/`)
 - React 19 + TypeScript + Vite 6, роутинг `react-router-dom` v7 (`App.tsx`: Dashboard, EventsPage, ArchivePage `/archive`, SettingsPage, Login/Register).
-- **`ArchivePage`** (`/archive`) — просмотр NVR-архива: выбор камеры+даты → `api.getRecordings({camId, from, to})` → 24-часовой таймлайн сегментов (цвет = есть движение) + список + `<video>`-плеер с перемоткой (Range через `/api/recordings/<id>/play`). Появляется при `RECORD_ENABLED` на бэке.
+- **`ArchivePage`** (`/archive`) — просмотр NVR-архива: выбор камеры+даты → `api.getRecordings({camId, from, to})` + `api.getEvents` → 24-часовой таймлайн сегментов (цвет = есть движение) с **метками событий** поверх (цвет по label); клик по метке → открывает покрывающий сегмент и перематывает к моменту события (`onLoadedMetadata` → `currentTime`), при отсутствии сегмента — fallback на event-клип. Плеер с перемоткой (Range через `/api/recordings/<id>/play`). Появляется при `RECORD_ENABLED` на бэке.
 - `src/api/client.ts` — HTTP-клиент с авто-refresh JWT. `src/contexts/` — Auth, Camera. `src/hooks/` — useBreakpoint, useOrientation, useClock, useCameras, useLogs.
 - Адаптив 3 брейкпоинта (моб <768 / планшет 768–1199 / десктоп ≥1200): дизайн-токены `src/design/tokens.ts`, UI-примитивы `src/components/ui/` (Box, Flex, Grid, Responsive, BottomSheet).
 - Дев-сервер проксирует список префиксов API на удалённый бэк (`vite.config.ts`, env `VITE_API_TARGET`).
