@@ -6,6 +6,7 @@ import LoginPage from "./pages/LoginPage"
 import RegisterPage from "./pages/RegisterPage"
 import DashboardPage from "./pages/Dashboard"
 import EventsPage from "./pages/EventsPage"
+import ArchivePage from "./pages/ArchivePage"
 import SettingsPage from "./pages/SettingsPage"
 import { useVoiceAlerts } from "./hooks/useVoiceAlerts"
 
@@ -48,6 +49,7 @@ export default function App() {
           <Route element={<ProtectedLayout />}>
             <Route path="/" element={<DashboardPage />} />
             <Route path="/events" element={<EventsPage />} />
+            <Route path="/archive" element={<ArchivePage />} />
             <Route path="/settings" element={<SettingsPage />} />
           </Route>
 

@@ -116,6 +116,18 @@ export interface TimelineEvent {
   boxH: number | null
 }
 
+/** Сегмент непрерывной записи (NVR-архив) */
+export interface RecordingSegment {
+  id: string
+  cameraId: string
+  startTime: number
+  endTime: number
+  duration: number
+  sizeBytes: number
+  hasMotion: boolean
+  playUrl: string
+}
+
 /** Состояние диспетчерской панели */
 export interface DispatcherState {
   /** Открыта ли панель */

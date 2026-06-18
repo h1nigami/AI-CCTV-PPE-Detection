@@ -614,11 +614,11 @@ frigate_disk_usage_percent{mount="/media"} 45
 ### Фаза 3: События и Review
 **Срок: 2 недели** — 🟡 Приоритет 2
 
-- [ ] SQLite/PostgreSQL events DB
+- [x] SQLite/PostgreSQL events DB — SQLite (`Event`, `Recording`)
 - [ ] Миграция state.py → DB
-- [ ] API эндпоинты для событий
-- [ ] Timeline скраббер в UI
-- [ ] Фильтры и поиск по событиям
+- [x] API эндпоинты для событий — `api/events.py`
+- [x] Timeline скраббер в UI — `ArchivePage` (24ч-полоса сегментов архива); событийный скраббер поверх — TODO
+- [x] Фильтры и поиск по событиям — `EventsPage` (камера/тип)
 - [ ] Экспорт клипов/снимков
 
 ### Фаза 4: Зоны и маски
@@ -677,7 +677,7 @@ frigate_disk_usage_percent{mount="/media"} 45
 | Запись видео | event-клипы + 24/7 NVR ✅ (сегменты+retention) | 24/7 + event + retention |
 | Live view | Polling JPEG (100ms) | WebRTC (<500ms) |
 | Зоны | Только конусы | Полигоны + редактор + маски |
-| События | LogEntry в памяти | SQLite/DB + поиск + timeline |
+| События | SQLite (events) + лента ✅ + архив-timeline ✅ | SQLite/DB + поиск + timeline |
 | Лица | InsightFace | InsightFace + gallery управление |
 | Детекторы | Только CPU/CUDA | CPU + Coral + TensorRT + OpenVINO |
 | БД | Data classes | SQLite / PostgreSQL |
@@ -947,7 +947,7 @@ branding:
 - [x] Event-triggered запись (пребуфер 10 сек) — `_finalize_recording` (ранее)
 - [x] Snapshot capture при событиях — снапшот из середины клипа (ранее)
 - [x] API для просмотра записей — `backend/api/recordings.py`
-- [ ] Timeline в UI (просмотр архива)
+- [x] Timeline в UI (просмотр архива) — `frontend/src/pages/ArchivePage.tsx` (выбор камеры/даты, 24ч-таймлайн сегментов с пометкой движения, плеер с перемоткой)
 - [x] Retention policy (очистка старых записей) — `RetentionCleaner` (срок/motion/диск)
 
 ### Фаза 3: Брендинг и упаковка (2 недели)

@@ -162,7 +162,8 @@ alembic upgrade head
 `DETECT_MODES = {people, ppe, faces}` (`backend/config.py`), персистятся в `data/detect_modes.json`, меняются через `PUT /api/detect-modes` / UI. Если все три выключены — YOLO пропускается целиком. Выключение `people` каскадно гасит `ppe` и `faces`. Переключение `faces` стартует/глушит face-воркеры на лету.
 
 ### 2.12. Фронтенд (`frontend/`)
-- React 19 + TypeScript + Vite 6, роутинг `react-router-dom` v7 (`App.tsx`: Dashboard, EventsPage, SettingsPage, Login/Register).
+- React 19 + TypeScript + Vite 6, роутинг `react-router-dom` v7 (`App.tsx`: Dashboard, EventsPage, ArchivePage `/archive`, SettingsPage, Login/Register).
+- **`ArchivePage`** (`/archive`) — просмотр NVR-архива: выбор камеры+даты → `api.getRecordings({camId, from, to})` → 24-часовой таймлайн сегментов (цвет = есть движение) + список + `<video>`-плеер с перемоткой (Range через `/api/recordings/<id>/play`). Появляется при `RECORD_ENABLED` на бэке.
 - `src/api/client.ts` — HTTP-клиент с авто-refresh JWT. `src/contexts/` — Auth, Camera. `src/hooks/` — useBreakpoint, useOrientation, useClock, useCameras, useLogs.
 - Адаптив 3 брейкпоинта (моб <768 / планшет 768–1199 / десктоп ≥1200): дизайн-токены `src/design/tokens.ts`, UI-примитивы `src/components/ui/` (Box, Flex, Grid, Responsive, BottomSheet).
 - Дев-сервер проксирует список префиксов API на удалённый бэк (`vite.config.ts`, env `VITE_API_TARGET`).
