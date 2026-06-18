@@ -19,25 +19,51 @@ def has_item_on_person(person_box, item_box, top_ratio: float = TOP_RATIO) -> bo
     return px1 <= cx <= px2 and cy <= upper_y
 
 
-def get_danger_zone(cone_boxes) -> Optional[Tuple]:
+def get_danger_zone(cone_boxes) -> Optional[np.ndarray]:
+    """Опасная зона — МНОГОУГОЛЬНИК с вершинами по конусам (N углов = N конусов),
+    а не bbox. Вершина = центр конуса; вершины упорядочены по полярному углу
+    вокруг центроида (чтобы многоугольник не самопересекался) и раздвинуты
+    наружу от центроида на ZONE_EXPAND_PX. Возвращает массив вершин (N, 2) int
+    или None, если конусов меньше MIN_CONES."""
     if len(cone_boxes) < MIN_CONES:
         return None
-    return (
-        int(min(b[0] for b in cone_boxes) - ZONE_EXPAND_PX),
-        int(min(b[1] for b in cone_boxes) - ZONE_EXPAND_PX),
-        int(max(b[2] for b in cone_boxes) + ZONE_EXPAND_PX),
-        int(max(b[3] for b in cone_boxes) + ZONE_EXPAND_PX),
+    pts = np.array(
+        [[(b[0] + b[2]) / 2.0, (b[1] + b[3]) / 2.0] for b in cone_boxes],
+        dtype=np.float64,
     )
+    centroid = pts.mean(axis=0)
+    angles = np.arctan2(pts[:, 1] - centroid[1], pts[:, 0] - centroid[0])
+    pts = pts[np.argsort(angles)]
+    vecs = pts - centroid
+    norms = np.linalg.norm(vecs, axis=1, keepdims=True)
+    norms[norms == 0] = 1.0
+    pts = pts + vecs / norms * ZONE_EXPAND_PX
+    return pts.astype(int)
+
+
+def _point_in_polygon(x: float, y: float, poly) -> bool:
+    """Точка внутри многоугольника (алгоритм ray-casting). poly — (N, 2)."""
+    n = len(poly)
+    if n < 3:
+        return False
+    inside = False
+    j = n - 1
+    for i in range(n):
+        xi, yi = poly[i][0], poly[i][1]
+        xj, yj = poly[j][0], poly[j][1]
+        if (yi > y) != (yj > y) and x < (xj - xi) * (y - yi) / (yj - yi + 1e-12) + xi:
+            inside = not inside
+        j = i
+    return inside
 
 
 def is_in_danger_zone(person_box, danger_zone) -> bool:
     if danger_zone is None:
         return False
     px1, py1, px2, py2 = person_box
-    zx1, zy1, zx2, zy2 = danger_zone
     foot_x = (px1 + px2) / 2
     foot_y = py2
-    return zx1 <= foot_x <= zx2 and zy1 <= foot_y <= zy2
+    return _point_in_polygon(foot_x, foot_y, danger_zone)
 
 
 TRACKER_CFG = str(BASE_DIR / "backend" / "detection" / "bytetrack_custom.yaml")

@@ -33,15 +33,18 @@ def put_text(frame, text: str, pos: Tuple, color=COLOR_WHITE, font=None):
     return cv2.cvtColor(np.array(img_pil), cv2.COLOR_RGB2BGR)
 
 
-def draw_danger_zone(frame, danger_zone: Optional[Tuple]):
+def draw_danger_zone(frame, danger_zone):
+    """Рисует опасную зону как МНОГОУГОЛЬНИК по вершинам (массив (N,2))."""
     if danger_zone is None:
         return frame
-    x1, y1, x2, y2 = danger_zone
+    pts = np.asarray(danger_zone, dtype=np.int32).reshape(-1, 1, 2)
     overlay = frame.copy()
-    cv2.rectangle(overlay, (x1, y1), (x2, y2), COLOR_RED, -1)
+    cv2.fillPoly(overlay, [pts], COLOR_RED)
     cv2.addWeighted(overlay, 0.25, frame, 0.75, 0, frame)
-    cv2.rectangle(frame, (x1, y1), (x2, y2), COLOR_RED, 2)
-    return put_text(frame, "ОПАСНАЯ ЗОНА", (x1, max(0, y1 - 25)),
+    cv2.polylines(frame, [pts], isClosed=True, color=COLOR_RED, thickness=2)
+    # Подпись у самой верхней вершины
+    top = min(danger_zone, key=lambda p: p[1])
+    return put_text(frame, "ОПАСНАЯ ЗОНА", (int(top[0]), max(0, int(top[1]) - 25)),
                     color=COLOR_RED, font=FONT_LARGE)
 
 

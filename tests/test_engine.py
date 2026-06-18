@@ -222,151 +222,74 @@ class TestHasItemOnPerson:
         assert has_item_on_person(person, item, top_ratio=0.0) is False
 
 
-class TestGetDangerZone:
+class TestGetDangerZonePolygon:
+    """Зона — многоугольник: N вершин = N конусов (вершина = центр конуса)."""
+    def _square_cones(self):
+        return [[0, 0, 20, 20], [100, 0, 120, 20],
+                [100, 100, 120, 120], [0, 100, 20, 120]]
+
     def test_empty_cones_returns_none(self):
         from backend.detection.engine import get_danger_zone
         assert get_danger_zone([]) is None
 
-    def test_single_cone_below_min_returns_none(self):
+    def test_below_min_cones_returns_none(self):
         from backend.detection.engine import get_danger_zone
         from backend.config import MIN_CONES
-        if MIN_CONES > 1:
-            assert get_danger_zone([[0, 0, 10, 10]]) is None
+        cones = [[0, 0, 10, 10]] * (MIN_CONES - 1)
+        assert get_danger_zone(cones) is None
 
-    def test_two_cones_returns_four_int_tuple(self):
+    def test_vertices_count_equals_cones(self):
         from backend.detection.engine import get_danger_zone
-        cones = [[0, 0, 50, 50], [100, 100, 150, 150]]
-        zone = get_danger_zone(cones)
-        assert zone is not None
-        assert len(zone) == 4
-        assert all(isinstance(v, int) for v in zone)
+        base = [[0, 0, 20, 20], [100, 0, 120, 20], [100, 100, 120, 120],
+                [0, 100, 20, 120], [50, 150, 70, 170]]
+        for n in (3, 4, 5):
+            zone = get_danger_zone(base[:n])
+            assert zone is not None
+            assert zone.shape == (n, 2)   # N углов = N конусов
 
-    def test_expansion_applied(self):
+    def test_four_cones_quadrilateral(self):
         from backend.detection.engine import get_danger_zone
-        from backend.config import ZONE_EXPAND_PX
-        cones = [[10, 10, 50, 50], [60, 60, 100, 100]]
-        zone = get_danger_zone(cones)
-        assert zone[0] == 10 - ZONE_EXPAND_PX    # min x1 - expand
-        assert zone[1] == 10 - ZONE_EXPAND_PX    # min y1 - expand
-        assert zone[2] == 100 + ZONE_EXPAND_PX   # max x2 + expand
-        assert zone[3] == 100 + ZONE_EXPAND_PX   # max y2 + expand
+        zone = get_danger_zone(self._square_cones())
+        assert zone.shape == (4, 2)
 
-    def test_zone_uses_min_max_of_all_cones(self):
+    def test_expansion_pushes_outward(self):
         from backend.detection.engine import get_danger_zone
-        from backend.config import ZONE_EXPAND_PX
-        cones = [[5, 10, 20, 30], [50, 15, 80, 90]]
+        cones = self._square_cones()
+        centers = np.array([[(c[0] + c[2]) / 2, (c[1] + c[3]) / 2] for c in cones])
+        centroid = centers.mean(axis=0)
         zone = get_danger_zone(cones)
-        assert zone[0] == 5 - ZONE_EXPAND_PX
-        assert zone[1] == 10 - ZONE_EXPAND_PX
-        assert zone[2] == 80 + ZONE_EXPAND_PX
-        assert zone[3] == 90 + ZONE_EXPAND_PX
+        zone_max = max(np.linalg.norm(np.array(v) - centroid) for v in zone)
+        base_max = max(np.linalg.norm(c - centroid) for c in centers)
+        assert zone_max > base_max   # вершины раздвинуты наружу на ZONE_EXPAND_PX
 
 
-class TestIsInDangerZone:
-    def test_none_danger_zone_always_false(self):
+class TestIsInDangerZonePolygon:
+    def _square_zone(self):
+        from backend.detection.engine import get_danger_zone
+        return get_danger_zone([[0, 0, 20, 20], [100, 0, 120, 20],
+                                [100, 100, 120, 120], [0, 100, 20, 120]])
+
+    def test_none_zone_false(self):
         from backend.detection.engine import is_in_danger_zone
         assert is_in_danger_zone([0, 0, 100, 200], None) is False
 
-    def test_foot_inside_zone(self):
+    def test_foot_inside_polygon(self):
         from backend.detection.engine import is_in_danger_zone
-        person = [40, 0, 60, 100]   # foot_x=50, foot_y=100
-        zone = (0, 80, 100, 150)    # zone covers x[0..100], y[80..150]
+        zone = self._square_zone()
+        person = [50, 0, 70, 60]    # foot=(60,60) — центр квадрата
         assert is_in_danger_zone(person, zone) is True
 
-    def test_foot_outside_zone_horizontally(self):
+    def test_foot_outside_polygon(self):
         from backend.detection.engine import is_in_danger_zone
-        person = [200, 0, 220, 100]  # foot_x=210
-        zone = (0, 80, 100, 150)
+        zone = self._square_zone()
+        person = [300, 0, 320, 400]  # foot=(310,400) — далеко за пределами
         assert is_in_danger_zone(person, zone) is False
 
-    def test_foot_outside_zone_vertically_above(self):
-        from backend.detection.engine import is_in_danger_zone
-        person = [40, 0, 60, 50]    # foot_y=50
-        zone = (0, 80, 100, 150)    # zone y starts at 80
-        assert is_in_danger_zone(person, zone) is False
-
-    def test_foot_at_zone_boundary(self):
-        from backend.detection.engine import is_in_danger_zone
-        person = [0, 0, 100, 80]    # foot_x=50, foot_y=80
-        zone = (0, 80, 100, 150)    # exactly on zy1 boundary
-        assert is_in_danger_zone(person, zone) is True
-
-
-class TestDangerZone:
-    @pytest.fixture
-    def two_cones(self):
-        return [np.array([100, 200, 120, 300]), np.array([300, 200, 320, 300])]
-
-    @pytest.fixture
-    def three_cones(self):
-        return [
-            np.array([100, 200, 120, 300]),
-            np.array([300, 200, 320, 300]),
-            np.array([200, 100, 220, 200]),
-        ]
-
-    def test_no_cones_returns_none(self):
-        from backend.detection.engine import get_danger_zone
-        assert get_danger_zone([]) is None
-
-    def test_one_cone_returns_none(self):
-        from backend.detection.engine import get_danger_zone
-        assert get_danger_zone([np.array([100, 200, 120, 300])]) is None
-
-    def test_two_cones_returns_zone(self, two_cones):
-        from backend.detection.engine import get_danger_zone
-        zone = get_danger_zone(two_cones)
-        assert zone is not None
-        x1, y1, x2, y2 = zone
-        assert x1 == 80   # min(100, 300) - 20
-        assert y1 == 180  # min(200, 200) - 20
-        assert x2 == 340  # max(120, 320) + 20
-        assert y2 == 320  # max(300, 300) + 20
-
-    def test_three_cones_returns_zone(self, three_cones):
-        from backend.detection.engine import get_danger_zone
-        zone = get_danger_zone(three_cones)
-        assert zone is not None
-        x1, y1, x2, y2 = zone
-        assert x1 == 80   # min(100, 300, 200) - 20
-        assert y1 == 80   # min(200, 200, 100) - 20
-        assert x2 == 340  # max(120, 320, 220) + 20
-        assert y2 == 320  # max(300, 300, 200) + 20
-
-    def test_is_in_danger_zone_person_inside(self):
-        from backend.detection.engine import is_in_danger_zone
-        zone = (80, 180, 340, 320)
-        person = [150, 250, 200, 350]   # foot at (175, 350) — outside by y
-        assert not is_in_danger_zone(person, zone)
-
-    def test_is_in_danger_zone_person_foot_inside(self):
-        from backend.detection.engine import is_in_danger_zone
-        zone = (80, 180, 340, 320)
-        person = [150, 200, 200, 300]   # foot at (175, 300) — inside
-        assert is_in_danger_zone(person, zone)
-
-    def test_is_in_danger_zone_person_outside_left(self):
-        from backend.detection.engine import is_in_danger_zone
-        zone = (80, 180, 340, 320)
-        person = [10, 200, 50, 300]    # foot at (30, 300) — outside left
-        assert not is_in_danger_zone(person, zone)
-
-    def test_is_in_danger_zone_person_outside_below(self):
-        from backend.detection.engine import is_in_danger_zone
-        zone = (80, 180, 340, 320)
-        person = [150, 400, 200, 500]  # foot at (175, 500) — outside below
-        assert not is_in_danger_zone(person, zone)
-
-    def test_is_in_danger_zone_person_on_boundary(self):
-        from backend.detection.engine import is_in_danger_zone
-        zone = (80, 180, 340, 320)
-        person = [80, 180, 80, 180]    # foot at (80, 180) — on top-left corner
-        assert is_in_danger_zone(person, zone)
-
-    def test_is_in_danger_zone_none_zone_returns_false(self):
-        from backend.detection.engine import is_in_danger_zone
-        person = [150, 200, 200, 300]
-        assert not is_in_danger_zone(person, None)
+    def test_two_cones_degenerate_no_area(self):
+        # 2 конуса → полигон из 2 точек, площади нет → никто не «в зоне»
+        from backend.detection.engine import get_danger_zone, is_in_danger_zone
+        zone = get_danger_zone([[0, 0, 20, 20], [100, 100, 120, 120]])
+        assert is_in_danger_zone([50, 0, 70, 60], zone) is False
 
 
 class TestHasItemOnPersonStashed:
