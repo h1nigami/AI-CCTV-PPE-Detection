@@ -317,6 +317,21 @@ class TestGestureMethods:
         assert 7 in state._last_gesture_time
         assert state._last_gesture_time[7] <= time.time()
 
+    def test_should_run_gesture_throttles(self, state):
+        # Первый вызов — разрешён, второй сразу — нет (троттлинг).
+        assert state.should_run_gesture(global_id=42) is True
+        assert state.should_run_gesture(global_id=42) is False
+
+    def test_should_run_gesture_again_after_interval(self, state):
+        from backend.config import GESTURE_CHECK_INTERVAL
+        assert state.should_run_gesture(global_id=42) is True
+        state._last_gesture_check[42] = time.time() - GESTURE_CHECK_INTERVAL - 0.01
+        assert state.should_run_gesture(global_id=42) is True
+
+    def test_should_run_gesture_independent_per_person(self, state):
+        assert state.should_run_gesture(global_id=1) is True
+        assert state.should_run_gesture(global_id=2) is True  # другая личность не заблокирована
+
 
 # ── Status change tracking ────────────────────────────────────────────────────
 

@@ -125,6 +125,7 @@ alembic upgrade head
 ### 2.6. Жесты (`backend/gestures/detector.py`)
 - `detect_ok_gesture` — YOLOv8-pose находит поднятую руку (запястье выше плеча) → кроп кисти → OpenCV-контурный анализ (`convexityDefects`) считает «дырки» жеста ОК (`DEFECT_MIN..MAX`). Это эвристика на классическом CV, не ML-классификатор.
 - `detect_raised_hand` — запястье выше носа. Кулдаун жестов `GESTURE_COOLDOWN`(3с) на личность (`can_gesture`).
+- **Троттлинг pose-инференса**: `detect_ok_gesture` дорогой (отдельный YOLO-pose проход на кроп человека), поэтому в `process_frame` запускается только если `not approved and can_gesture(gid) and should_run_gesture(gid)` — последний ограничивает запуск до раза в `GESTURE_CHECK_INTERVAL`(0.5с) на личность. Без этого толпа из N человек = N pose-инференсов на каждый кадр → просадка FPS.
 
 ### 2.7. События и хранение
 - В `detection_loop` при `category == "нарушение"` стартует запись клипа: pre-буфер `_frame_prebuf` (`EVENT_PRE_FRAMES`=30) + кадры нарушения + post-кадры (`EVENT_POST_FRAMES`=30 после спада), максимум `EVENT_MAX_FRAMES`=300.

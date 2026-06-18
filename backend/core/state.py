@@ -7,7 +7,7 @@ import numpy as np
 from backend.core.models import LogEntry
 from backend.config import (
     APPROVAL_DURATION, PERSON_ID_GRID, MAX_LOG_SIZE,
-    GESTURE_DISPLAY_DURATION, GESTURE_COOLDOWN,
+    GESTURE_DISPLAY_DURATION, GESTURE_COOLDOWN, GESTURE_CHECK_INTERVAL,
     REID_SIM_THRESHOLD, REID_MAX_EMBEDDINGS, REID_GALLERY_PATH, REID_MAX_AGE_DAYS,
     REID_MIN_STORE_QUALITY, REID_STORE_INTERVAL, REID_STICKY_MARGIN, REID_STICKY_MIN,
     REID_DIVERSITY_MAX_SIM, VOICE_ALERT_COOLDOWN,
@@ -29,6 +29,8 @@ class DetectionState:
         self._approved: Dict[int, float] = {}
         self._gesture_until: float = 0
         self._last_gesture_time: Dict[int, float] = {}
+        # Троттлинг запуска pose-инференса жеста (global_id → время последней проверки)
+        self._last_gesture_check: Dict[int, float] = {}
         self._gallery = None
         self._track_to_global: Dict[Tuple[str, int], int] = {}
         self._track_last_seen: Dict[Tuple[str, int], float] = {}
@@ -222,6 +224,7 @@ class DetectionState:
             self._last_body_store.clear()
             self._fallback_names.clear()
             self._last_logged_status.clear()
+            self._last_gesture_check.clear()
 
     def get_person_name(self, global_id: int, cam_id: str, has_face: bool = False) -> str:
         if global_id <= 0:
@@ -274,6 +277,17 @@ class DetectionState:
         with self._lock:
             last = self._last_gesture_time.get(global_id, 0)
             return time.time() - last >= GESTURE_COOLDOWN
+
+    def should_run_gesture(self, global_id: int) -> bool:
+        """Троттлинг ДОРОГОГО pose-инференса жеста: True не чаще раза в
+        GESTURE_CHECK_INTERVAL сек на личность. Имеет побочный эффект (обновляет
+        метку), поэтому вызывать последним в короткой конъюнкции условий."""
+        with self._lock:
+            now = time.time()
+            if now - self._last_gesture_check.get(global_id, 0.0) < GESTURE_CHECK_INTERVAL:
+                return False
+            self._last_gesture_check[global_id] = now
+            return True
 
     def set_gesture_time(self, global_id: int):
         with self._lock:

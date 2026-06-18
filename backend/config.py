@@ -102,6 +102,11 @@ APPROVAL_DURATION = 300
 PERSON_ID_GRID = 50
 GESTURE_DISPLAY_DURATION = 3
 GESTURE_COOLDOWN = 3.0
+# Троттлинг ДОРОГОГО pose-инференса жеста: на одну личность запускаем
+# detect_ok_gesture не чаще раза в GESTURE_CHECK_INTERVAL сек (жест держится
+# секундами, чаще проверять незачем). Без этого при толпе N людей = N pose-
+# инференсов на КАЖДЫЙ кадр → просадка FPS.
+GESTURE_CHECK_INTERVAL = 0.5
 
 FONT_PATHS = [
     Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),

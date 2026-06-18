@@ -503,9 +503,13 @@ def process_frame(frame, cam_id: str, face_worker=None, det_model=None, det_pose
             ppe = " ".join(f"{_letters[i]}" if _present[i] else f"!{_letters[i]}"
                            for i in ("helmet", "mask", "vest") if i in required)
             person_name = state.get_person_name(global_id, cam_id, face_emb is not None and detect_faces_mode) if detect_faces_mode else ""
+            # Pose-инференс жеста дорогой — запускаем только для неодобренных,
+            # вне кулдауна И не чаще GESTURE_CHECK_INTERVAL на личность (троттлинг
+            # должен идти ПОСЛЕДНИМ в конъюнкции — у него побочный эффект).
             gesture_ok = (
                 detect_ok_gesture(frame, pbox, det_pose)
-                if not approved and state.can_gesture(global_id)
+                if (not approved and state.can_gesture(global_id)
+                    and state.should_run_gesture(global_id))
                 else False
             )
             if gesture_ok:
