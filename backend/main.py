@@ -20,7 +20,12 @@ from backend.config import (
     REID_GALLERY_PATH, REID_DET_SIZE, REID_FRAME_SKIP, REID_MAX_AGE_DAYS,
     EVENT_PRE_FRAMES, EVENT_POST_FRAMES, EVENT_MAX_FRAMES, EVENT_CLIP_FPS,
     VIOLATION_LOGS_DIR, get_camera_config, VOICE_ALERT_COOLDOWN,
+    MOTION_DETECTION_ENABLED, MOTION_THRESHOLD, MOTION_MIN_AREA,
+    MOTION_COOLDOWN_FRAMES, MQTT_HEARTBEAT_INTERVAL,
 )
+from backend.core.metrics import get_metrics
+from backend.detection.motion import MotionDetector
+from backend.mqtt.publisher import get_publisher
 from backend.capture.buffer import FrameBuffer
 from backend.capture.camera import CameraCapture
 from backend.detection.engine import run_detection, get_danger_zone, has_item_on_person, is_in_danger_zone
@@ -212,6 +217,18 @@ face_workers: dict[str, 'FaceRecognitionWorker'] = {}
 _event_recordings: dict[str, Optional[dict]] = {}
 _frame_prebuf: dict[str, deque] = {}
 
+# ── Motion detection (MOG2) — по экземпляру на камеру ──
+_motion_detectors: dict[str, MotionDetector] = {}
+
+
+def _get_motion_detector(cam_id: str) -> MotionDetector:
+    det = _motion_detectors.get(cam_id)
+    if det is None:
+        det = MotionDetector(threshold=MOTION_THRESHOLD, min_area=MOTION_MIN_AREA,
+                             cooldown_frames=MOTION_COOLDOWN_FRAMES)
+        _motion_detectors[cam_id] = det
+    return det
+
 
 def process_frame(frame, cam_id: str, face_worker=None):
     from backend.config import DETECT_MODES
@@ -393,6 +410,7 @@ def start_live():
         time.sleep(0.5)
     state.clear_log()
     state.clear_tracks()
+    _motion_detectors.clear()
     for buf in annotated_buffers.values():
         buf.clear()
     state.live_active = True
@@ -428,8 +446,19 @@ def stop_live():
 
 
 def detection_loop():
+    metrics = get_metrics()
+    publisher = get_publisher()
+    last_heartbeat = 0.0
     while state.live_active:
         had_any = False
+        now = time.time()
+        if publisher is not None and now - last_heartbeat >= MQTT_HEARTBEAT_INTERVAL:
+            metrics.heartbeat()
+            publisher.publish_heartbeat({
+                "ts": now, "uptime_seconds": metrics.uptime_seconds(),
+                "cameras": len(CAMERAS),
+            })
+            last_heartbeat = now
         for cam_id in list(CAMERAS.keys()):
             if not state.live_active:
                 return
@@ -450,10 +479,34 @@ def detection_loop():
                 out_buf.write(frame)
                 continue
 
+            # «Motion First»: пропускаем тяжёлую YOLO-детекцию на статичной сцене.
+            # Не пропускаем, если идёт запись события (нужны кадры пост-буфера).
+            if MOTION_DETECTION_ENABLED:
+                rec = _event_recordings.get(cam_id)
+                recording = rec is not None and rec.get('active')
+                motion = _get_motion_detector(cam_id).detect(frame)
+                if publisher is not None:
+                    publisher.publish_motion(cam_id, bool(motion), motion.area_ratio)
+                if not motion and not recording:
+                    out_buf.write(frame)
+                    metrics.record_skipped(cam_id)
+                    continue
+
             try:
+                _t0 = time.time()
                 annotated, message, category, global_ids, statuses = process_frame(
                     frame, cam_id, face_worker=face_workers.get(cam_id))
+                metrics.record_frame(cam_id, (time.time() - _t0) * 1000.0)
+                metrics.record_event(category)
                 out_buf.write(annotated)
+
+                if publisher is not None:
+                    people = len(statuses)
+                    # Строчная буква в позициях КМЖ = отсутствует СИЗ → нарушитель.
+                    violations = sum(1 for v in statuses.values()
+                                     if len(v) >= 3 and any(c.islower() for c in v[:3]))
+                    publisher.publish_detection(cam_id, people, violations,
+                                                max(0, people - violations), category)
 
                 is_violation = category == "нарушение"
                 rec = _event_recordings.get(cam_id)
@@ -478,6 +531,9 @@ def detection_loop():
                             'cam_id': cam_id,
                         }
                         _event_recordings[cam_id] = rec
+                        if publisher is not None:
+                            publisher.publish_violation(cam_id, person_name or "",
+                                                        gid or 0)
                         print(f"[Events] Запись {event_id} начата на {cam_id}")
                     if rec is not None and rec.get('active'):
                         rec['frames'].append(annotated.copy())

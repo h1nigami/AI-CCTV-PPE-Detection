@@ -579,10 +579,10 @@ frigate_disk_usage_percent{mount="/media"} 45
 ```
 
 ### Задачи
-1. Добавить `/api/stats` — JSON метрики
+1. ✅ Добавить `/api/stats` — JSON метрики (`backend/api/monitoring.py`)
 2. Структурированное логирование (JSON, не print)
-3. Healthcheck endpoint (`/health`)
-4. Prometheus exporter (`/metrics`)
+3. ✅ Healthcheck endpoint (`/health`)
+4. ✅ Prometheus exporter (`/metrics`, `backend/core/metrics.py`)
 5. Grafana dashboard (опционально, предоставить JSON шаблон)
 
 ---
@@ -593,9 +593,9 @@ frigate_disk_usage_percent{mount="/media"} 45
 **Срок: 2-3 недели** — 🔴 Приоритет 1
 
 - [ ] YAML конфигурация + парсер
-- [ ] MQTT брокер + клиент
+- [x] MQTT брокер + клиент (брокер в docker-compose; клиент-публикатор `backend/mqtt/publisher.py`, опционален, мягкая деградация)
 - [ ] Разделение на процессы: capture, detect, record, api
-- [ ] Motion detection (MOG2) перед YOLO
+- [x] Motion detection (MOG2) перед YOLO (`backend/detection/motion.py`, гейт в `detection_loop`, конфиг `MOTION_*`)
 - [ ] Shared memory для кадров (zero-copy)
 - [ ] Базовая запись (24/7 segmented MP4)
 
@@ -640,11 +640,11 @@ frigate_disk_usage_percent{mount="/media"} 45
 ### Фаза 6: Экосистема
 **Срок: 2 недели** — 🟢 Приоритет 3
 
-- [ ] Home Assistant MQTT discovery
+- [x] Home Assistant MQTT discovery (`MqttPublisher._publish_discovery`, тумблер `MQTT_HA_DISCOVERY`)
 - [ ] Custom component для HA
 - [ ] Docker Compose (multi-service)
-- [ ] Prometheus метрики
-- [ ] Healthchecks
+- [x] Prometheus метрики (`/metrics`, `backend/core/metrics.py`)
+- [x] Healthchecks (`/health`)
 - [ ] Документация (README, config reference)
 
 ### Фаза 7: UI Renaissance

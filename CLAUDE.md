@@ -135,6 +135,7 @@ alembic upgrade head
 - **`api/cameras.py`**: `GET /cameras`, `POST /api/cameras`, `PUT|DELETE /api/cameras/<id>`, `POST /api/cameras/<id>/rename`, `PUT /api/cameras/<id>/analytics` (вкл/выкл детекцию на камере). CRUD идёт через функции `main.py` (`add_camera`/`remove_camera`/`rename_camera`) — они синхронно правят буферы, воркеры и `cameras.json`.
 - **`api/reid.py`**: `GET /api/reid/persons`, `POST .../rename`, `DELETE .../<id>`, `POST /api/reid/clear`, `GET /api/reid/stats` — управление галереей лиц.
 - **`api/events.py`** (Blueprint `events_bp`): `GET /api/events` (фильтры camera/label, пагинация), `GET /api/events/<id>`, `.../clip`, `.../snapshot`.
+- **`api/monitoring.py`** (Blueprint `monitoring_bp`): `GET /health` (healthcheck), `GET /metrics` (Prometheus text), `GET /api/stats` (JSON-метрики). Читают реестр `backend/core/metrics.py`.
 - **`auth/routes.py`** (`/api/auth`): `register`, `login`, `refresh`, `me`, `POST /api-keys` (admin).
 - CORS открыт (`*`) на все ответы (`add_cors` в `app.py`).
 
@@ -153,18 +154,24 @@ alembic upgrade head
 - Адаптив 3 брейкпоинта (моб <768 / планшет 768–1199 / десктоп ≥1200): дизайн-токены `src/design/tokens.ts`, UI-примитивы `src/components/ui/` (Box, Flex, Grid, Responsive, BottomSheet).
 - Дев-сервер проксирует список префиксов API на удалённый бэк (`vite.config.ts`, env `VITE_API_TARGET`).
 
+### 2.13. Motion detection / MQTT / Observability (Frigate-слой)
+Три опциональных подсистемы, по умолчанию **выключены** (не меняют поведение), включаются конфигом/env. Интегрированы в `detection_loop`.
+- **Motion detection** (`backend/detection/motion.py::MotionDetector`) — вычитание фона MOG2 + морфология + контуры, по экземпляру на камеру (`_motion_detectors` в `main.py`, сбрасываются на `start_live`). При `MOTION_DETECTION_ENABLED` (env-тумблер) кадры без движения **не прогоняются через YOLO** (экономия CPU): в `out_buf` пишется raw-кадр, считается `record_skipped`. Не пропускает кадры во время активной записи события (нужен пост-буфер). Антидребезг — `MOTION_COOLDOWN_FRAMES` кадров удержания после спада. Параметры: `MOTION_THRESHOLD`/`MOTION_MIN_AREA`/`MOTION_COOLDOWN_FRAMES`.
+- **MQTT** (`backend/mqtt/publisher.py::MqttPublisher`, синглтон `get_publisher()`) — публикация в брокер (eclipse-mosquitto уже в `docker-compose.yml`). Топики `${MQTT_TOPIC_PREFIX=frigate}/<cam>/{motion,detection,violation,approved}` + `frigate/system/{heartbeat,status}`. **Опционален и мягко деградирует**: нет `paho-mqtt` / `MQTT_ENABLED=false` / брокер недоступен → no-op, пайплайн не падает (connect_async + loop_start, Last-Will `offline`). `MQTT_HA_DISCOVERY` публикует конфиги Home Assistant MQTT discovery (motion/people/violations сенсоры). Все настройки — env (`MQTT_ENABLED`/`MQTT_HOST`/`MQTT_PORT`/`MQTT_USER`/`MQTT_PASSWORD`/`MQTT_TOPIC_PREFIX`/`MQTT_HA_DISCOVERY`).
+- **Метрики** (`backend/core/metrics.py::MetricsRegistry`, синглтон `get_metrics()`) — потокобезопасный реестр: FPS (скользящее окно 5с) и латентность детекции по камерам, счётчики обработанных/пропущенных кадров, события по `category`, аптайм, системные (psutil). Эндпоинты — см. 2.9 (`/health`, `/metrics`, `/api/stats`). `detection_loop` пишет `record_frame`/`record_skipped`/`record_event` и шлёт MQTT-heartbeat раз в `MQTT_HEARTBEAT_INTERVAL`.
+
 ---
 
 ## 3. Конфигурация
 - Основные константы — `backend/config.py` (пороги, тайминги, цвета, `CLASS_NAMES`, Re-ID/Event/MinIO-параметры). `CLASS_NAMES` переопределяет имена классов модели **только для `.pt`** (не для `.engine`).
 - Рантайм-состояние в `data/`: `cameras.json`, `cameras_config.json`, `detect_modes.json`, `face_gallery.pkl`, `ppe.db`, `jwt_secret.txt`.
-- Env: `JWT_SECRET`, `ADMIN_USERNAME`/`ADMIN_PASSWORD`/`ADMIN_EMAIL`, `INSIGHTFACE_ROOT`, `VITE_API_TARGET` (фронт), `BACKEND_URL` (nginx-фронт).
+- Env: `JWT_SECRET`, `ADMIN_USERNAME`/`ADMIN_PASSWORD`/`ADMIN_EMAIL`, `INSIGHTFACE_ROOT`, `VITE_API_TARGET` (фронт), `BACKEND_URL` (nginx-фронт). Frigate-слой (2.13): `MOTION_DETECTION_ENABLED`, `MQTT_ENABLED`/`MQTT_HOST`/`MQTT_PORT`/`MQTT_USER`/`MQTT_PASSWORD`/`MQTT_TOPIC_PREFIX`/`MQTT_HA_DISCOVERY`.
 
 ---
 
 ## 4. Известные ловушки
 - **Слабые security-дефолты:** `admin/admin123`, MinIO `minioadmin/minioadmin` (в `config.py` и compose), пустой `JWT_SECRET` → автогенерация. Переопределять через env. Бизнес-API в основном не закрыты авторизацией.
-- **Фейковые метрики во фронте:** часть статусов парсится из текста лог-строк; метрики CPU/RAM/FPS местами не настоящие. Не источник истины.
+- **Фейковые метрики во фронте:** часть статусов парсится из текста лог-строк; метрики CPU/RAM/FPS во фронте местами не настоящие. **Настоящие** метрики — в `/api/stats`, `/metrics` (см. 2.13), фронт их пока не потребляет.
 - **Tesla P4 (Pascal, sm_61)** несовместима с torch cu124/cu130 → нужен torch 2.4.1 cu121 (см. `Dockerfile.gpu`, `DEPLOY_FRONTEND_CHECKLIST.md`). `requirements.txt` фиксирует torch 2.12.0 — это для CPU/современных GPU.
 - **`detection_worker` — мёртвый код** (см. 2.2). **`FaceDetector`/`yolov8n-face.pt` — не задействованы** (см. 2.5).
 - **Камеры не в БД, а в JSON** (см. 2.8). Таблица `Camera` рассинхронизирована с рантаймом.
