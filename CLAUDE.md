@@ -135,7 +135,7 @@ alembic upgrade head
 - **`RetentionCleaner`/`plan_deletions`** (чистая логика, тестируема): удаляет (1) старше `RECORD_RETAIN_DAYS`(7); (2) в `RECORD_MODE="motion"` — сегменты без движения старше `RECORD_MOTION_GRACE_SEC`(120с), **но только для камер, у которых есть хоть один motion-сегмент** (защита от потери данных, если motion-пайплайн выключен); (3) при занятости диска выше `RECORD_MAX_DISK_PERCENT`(80%) — старейшие.
 - **`RecordingManager`** (синглтон `get_recording_manager()`): поднимает/останавливает рекордеры вместе с `start_live`/`stop_live`, фоновым циклом индексирует и чистит, принимает `note_motion(cam_id)` из потока детекции (флаг `has_motion` сегмента). В режиме "motion" поток детекции считает MOG2 даже если «Motion First» (`MOTION_DETECTION_ENABLED`) выключен.
 - API — см. 2.9 (`api/recordings.py`).
-- Таблица `Recording` создаётся `init_db()` (`create_all` — новая таблица создаётся без миграции; для прод-БД при желании сделать `alembic revision --autogenerate`).
+- Таблица `Recording` создаётся `init_db()` (`create_all`) для свежей БД; для существующих прод-БД есть Alembic-миграция `a1b2c3d4e5f6_add_recordings` (`alembic upgrade head`).
 
 ### 2.8. БД (`backend/db/`)
 - SQLAlchemy + SQLite `data/ppe.db`, `check_same_thread=False`, `scoped_session`. `get_session()` на каждый запрос, закрывать вручную.
