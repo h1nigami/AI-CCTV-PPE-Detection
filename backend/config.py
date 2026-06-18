@@ -81,10 +81,10 @@ STREAM_STALE_SEC = 6.0
 
 # Какие СИЗ обязательны ПО УМОЛЧАНИЮ (вне пользовательских зон и в зоне по
 # конусам). Пер-зонные требования (`require_ppe` зоны) переопределяют это для
-# людей внутри зоны. Для демо/выставки можно ослабить через env, например
-# PPE_REQUIRED_DEFAULT=mask (нужна только маска) или PPE_REQUIRED_DEFAULT=""
-# (СИЗ не обязательны нигде — не нужно нести каску/жилет).
-PPE_REQUIRED_DEFAULT = [x for x in _env_list("PPE_REQUIRED_DEFAULT", ["helmet", "mask", "vest"])
+# людей внутри зоны. Дефолт — только каска (на выставку берём каску); полный
+# комплект или другой набор задаётся через env, например
+# PPE_REQUIRED_DEFAULT=helmet,mask,vest или PPE_REQUIRED_DEFAULT="" (СИЗ не нужны).
+PPE_REQUIRED_DEFAULT = [x for x in _env_list("PPE_REQUIRED_DEFAULT", ["helmet"])
                         if x in ("helmet", "mask", "vest")]
 # Минимум 3 конуса: из 2 точек многоугольник вырождается в отрезок (нет площади),
 # зона рисовалась бы линией, в которую невозможно «войти» (is_in_danger_zone
