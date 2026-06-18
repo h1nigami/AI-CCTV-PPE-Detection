@@ -196,6 +196,11 @@ def process_frame(frame, cam_id: str, face_worker=None):
     if danger_zone is not None:
         frame = draw_danger_zone(frame, danger_zone)
     persons_count = len(detected["persons"])
+    # Извлекаем до любых веток: используется и в цикле отрисовки, и в цикле statuses.
+    # Раньше присваивалось внутри `if detected["persons"] and detect_people` →
+    # при выключенной детекции людей с людьми в кадре цикл statuses падал с
+    # UnboundLocalError и ронял обработку кадра (стрим «зависал»).
+    person_track_ids = detected.get("person_track_ids", [])
     approved_count = 0
     violation_count = 0
     has_any_violation = False
@@ -209,7 +214,6 @@ def process_frame(frame, cam_id: str, face_worker=None):
         if face_worker is not None and detect_faces_mode:
             face_data = face_worker.get_faces()
             face_embeddings = match_faces_to_persons(detected["persons"], face_data)
-        person_track_ids = detected.get("person_track_ids", [])
         for idx, pbox in enumerate(detected["persons"]):
             track_id = person_track_ids[idx] if idx < len(person_track_ids) else -1
             if track_id < 0:
