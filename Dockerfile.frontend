@@ -1,0 +1,23 @@
+# ─────────────────────────────────────────────────────────
+#  Stage 1: сборка React-фронта
+# ─────────────────────────────────────────────────────────
+FROM node:20-alpine AS build
+
+WORKDIR /frontend
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+
+COPY frontend/ .
+RUN npm run build
+
+# ─────────────────────────────────────────────────────────
+#  Stage 2: nginx — раздача статики + reverse-proxy на бэк
+# ─────────────────────────────────────────────────────────
+FROM nginx:alpine
+
+# nginx:alpine при старте прогоняет envsubst по /etc/nginx/templates/*.template,
+# подставляя ТОЛЬКО переменные окружения (BACKEND_URL), не трогая $host/$uri и т.п.
+COPY frontend/nginx.conf.template /etc/nginx/templates/default.conf.template
+COPY --from=build /frontend/dist /usr/share/nginx/html
+
+EXPOSE 80

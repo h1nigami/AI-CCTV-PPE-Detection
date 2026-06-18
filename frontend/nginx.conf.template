@@ -1,0 +1,30 @@
+# Конфиг nginx для фронт-сервера. ${BACKEND_URL} подставляется envsubst'ом при старте
+# контейнера (см. nginx:alpine entrypoint), напр. BACKEND_URL=http://192.168.0.97:8000.
+server {
+    listen 80;
+    server_name _;
+
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # SPA React Router: отдаём файл, иначе фоллбэк на index.html
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # API и медиа-потоки проксируем на бэкенд.
+    location ~ ^/(api|video_frame|video_feed|start|stop|cameras|detection_log|export_logs|upload) {
+        proxy_pass ${BACKEND_URL};
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # MJPEG (/video_feed) и другие потоковые ответы — без буферизации.
+        proxy_buffering off;
+        proxy_request_buffering off;
+        proxy_read_timeout 3600s;
+        chunked_transfer_encoding off;
+    }
+}
