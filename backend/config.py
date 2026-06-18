@@ -1,6 +1,14 @@
 from __future__ import annotations
 import json
+import os
 from pathlib import Path
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    val = os.environ.get(name)
+    if val is None:
+        return default
+    return val.strip().lower() in ("1", "true", "yes", "on")
 
 BASE_DIR = Path(__file__).parent.parent
 
@@ -170,6 +178,30 @@ VIOLATION_LOGS_DIR = BASE_DIR / "violation_logs"
 # ── Голосовые предупреждения ──────────────────────────────
 # Минимальный интервал между предупреждениями на одну камеру (секунды).
 VOICE_ALERT_COOLDOWN = 15.0
+
+# ── Motion detection (MOG2) перед YOLO ────────────────────
+# «Motion First»: тяжёлая YOLO-детекция прогоняется только по кадрам с движением,
+# на статичной сцене экономится 80-90% CPU/GPU. По умолчанию ВЫКЛЮЧЕНО — включение
+# меняет поведение (пока нет движения, детекция/логи не обновляются). Включать на
+# статичных сценах (RTSP с фиксированных камер). Параметры — см. backend/detection/motion.py.
+MOTION_DETECTION_ENABLED = _env_bool("MOTION_DETECTION_ENABLED", False)
+MOTION_THRESHOLD = 30        # порог бинаризации маски переднего плана (0..255)
+MOTION_MIN_AREA = 1500       # минимальная площадь контура движения (px²)
+MOTION_COOLDOWN_FRAMES = 15  # сколько кадров после спада движения ещё детектить
+
+# ── MQTT (шина событий + Home Assistant) ──────────────────
+# Публикация детекций/нарушений/heartbeat в MQTT-брокер (eclipse-mosquitto из
+# docker-compose). По умолчанию ВЫКЛЮЧЕНО; деградирует мягко (нет paho/брокера —
+# no-op). Реализация — backend/mqtt/publisher.py.
+MQTT_ENABLED = _env_bool("MQTT_ENABLED", False)
+MQTT_HOST = os.environ.get("MQTT_HOST", "localhost")
+MQTT_PORT = int(os.environ.get("MQTT_PORT", "1883"))
+MQTT_USER = os.environ.get("MQTT_USER", "")
+MQTT_PASSWORD = os.environ.get("MQTT_PASSWORD", "")
+MQTT_TOPIC_PREFIX = os.environ.get("MQTT_TOPIC_PREFIX", "frigate")
+MQTT_HA_DISCOVERY = _env_bool("MQTT_HA_DISCOVERY", False)  # Home Assistant MQTT discovery
+# Минимальный интервал heartbeat в MQTT (сек).
+MQTT_HEARTBEAT_INTERVAL = 30.0
 
 # ── Глобальные режимы детекции ────────────────────────────
 DETECT_MODES: dict[str, bool] = {

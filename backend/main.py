@@ -20,7 +20,12 @@ from backend.config import (
     REID_GALLERY_PATH, REID_DET_SIZE, REID_FRAME_SKIP, REID_MAX_AGE_DAYS,
     EVENT_PRE_FRAMES, EVENT_POST_FRAMES, EVENT_MAX_FRAMES, EVENT_CLIP_FPS,
     VIOLATION_LOGS_DIR, get_camera_config, VOICE_ALERT_COOLDOWN,
+    MOTION_DETECTION_ENABLED, MOTION_THRESHOLD, MOTION_MIN_AREA,
+    MOTION_COOLDOWN_FRAMES, MQTT_HEARTBEAT_INTERVAL,
 )
+from backend.core.metrics import get_metrics
+from backend.detection.motion import MotionDetector
+from backend.mqtt.publisher import get_publisher
 from backend.capture.buffer import FrameBuffer
 from backend.capture.camera import CameraCapture
 from backend.detection.engine import run_detection, get_danger_zone, has_item_on_person, is_in_danger_zone
@@ -167,6 +172,11 @@ def add_camera(cam_id: str, source: str | int):
             fw = FaceRecognitionWorker(frame_buffers[cam_id], face_recognizer, REID_FRAME_SKIP)
             fw.start()
             face_workers[cam_id] = fw
+        # Поднимаем поток детекции для новой камеры на лету.
+        if cam_id not in detection_threads or not detection_threads[cam_id].is_alive():
+            t = threading.Thread(target=_camera_detection_worker, args=(cam_id,), daemon=True)
+            detection_threads[cam_id] = t
+            t.start()
     print(f"[Камера] Добавлена: {cam_id} -> {source}")
 
 
@@ -183,6 +193,11 @@ def remove_camera(cam_id: str):
     if cam_id in annotated_buffers:
         annotated_buffers.pop(cam_id)
     CAMERAS.pop(cam_id, None)
+    # Поток детекции сам завершится (условие `cam_id in CAMERAS`); снимаем ссылки.
+    detection_threads.pop(cam_id, None)
+    with _cam_models_lock:
+        _cam_models.pop(cam_id, None)
+    _motion_detectors.pop(cam_id, None)
     save_cameras()
     print(f"[Камера] Удалена: {cam_id}")
 
@@ -196,9 +211,19 @@ def rename_camera(old_id: str, new_id: str) -> bool:
         return False
     source = CAMERAS.pop(old_id)
     CAMERAS[new_id] = source
-    for dct in (frame_buffers, annotated_buffers, camera_captures, face_workers):
+    for dct in (frame_buffers, annotated_buffers, camera_captures, face_workers,
+                _motion_detectors):
         if old_id in dct:
             dct[new_id] = dct.pop(old_id)
+    with _cam_models_lock:
+        if old_id in _cam_models:
+            _cam_models[new_id] = _cam_models.pop(old_id)
+    # Старый поток детекции завершится (нет old_id в CAMERAS); поднимаем новый.
+    detection_threads.pop(old_id, None)
+    if state.live_active:
+        t = threading.Thread(target=_camera_detection_worker, args=(new_id,), daemon=True)
+        detection_threads[new_id] = t
+        t.start()
     from backend.config import save_cameras
     save_cameras()
     print(f"[Камера] Переименована: {old_id} -> {new_id}")
@@ -212,14 +237,54 @@ face_workers: dict[str, 'FaceRecognitionWorker'] = {}
 _event_recordings: dict[str, Optional[dict]] = {}
 _frame_prebuf: dict[str, deque] = {}
 
+# ── Motion detection (MOG2) — по экземпляру на камеру ──
+_motion_detectors: dict[str, MotionDetector] = {}
 
-def process_frame(frame, cam_id: str, face_worker=None):
+# ── Модели YOLO по экземпляру на камеру ──────────────────────
+# Каждой камере — свой экземпляр YOLO: ByteTrack хранит состояние трекера ВНУТРИ
+# модели (model.track(persist=True)), поэтому общий объект на потоки нескольких
+# камер перемешал бы track_id. Веса крошечные (~6 МБ), N экземпляров недороги.
+# Глобальные `model`/`pose_model` остаются для /upload (одиночные предсказания).
+_cam_models: dict[str, tuple] = {}
+_cam_models_lock = threading.Lock()
+
+
+def _get_cam_models(cam_id: str) -> tuple:
+    """Вернуть (yolo, pose) для камеры, создав при первом обращении."""
+    with _cam_models_lock:
+        pair = _cam_models.get(cam_id)
+        if pair is None:
+            ym = YOLO(str(model_path))
+            ym.to(DEVICE)
+            if model_path.suffix == '.pt':
+                ym.model.names = CLASS_NAMES
+            pm = YOLO(str(pose_path))
+            pm.to(DEVICE)
+            pair = (ym, pm)
+            _cam_models[cam_id] = pair
+        return pair
+
+
+def _get_motion_detector(cam_id: str) -> MotionDetector:
+    det = _motion_detectors.get(cam_id)
+    if det is None:
+        det = MotionDetector(threshold=MOTION_THRESHOLD, min_area=MOTION_MIN_AREA,
+                             cooldown_frames=MOTION_COOLDOWN_FRAMES)
+        _motion_detectors[cam_id] = det
+    return det
+
+
+def process_frame(frame, cam_id: str, face_worker=None, det_model=None, det_pose=None):
     from backend.config import DETECT_MODES
+    # Модели на камеру (для параллельных потоков детекции); по умолчанию —
+    # глобальные (обратная совместимость с /upload и тестами).
+    det_model = det_model if det_model is not None else model
+    det_pose = det_pose if det_pose is not None else pose_model
     if not any(DETECT_MODES.values()):
         frame = draw_legend(frame)
         return frame, f"{datetime.now().strftime('%H:%M:%S')} [{cam_id}] Детекция отключена", "норма", [], {}
     state.cleanup_stale_tracks()
-    detected = run_detection(frame, model)
+    detected = run_detection(frame, det_model)
     # Чистый кадр ДО любой отрисовки — для body Re-ID (рамки/заливка зоны исказили
     # бы цвета одежды). Берём копию только когда body Re-ID реально нужен.
     clean_frame = frame.copy() if (body_recognizer is not None
@@ -289,7 +354,7 @@ def process_frame(frame, cam_id: str, face_worker=None):
             ppe = f"{'К' if has_helmet else '!К'} {'М' if has_mask else '!М'} {'Ж' if has_vest else '!Ж'}" if DETECT_MODES.get("ppe", True) else ""
             person_name = state.get_person_name(global_id, cam_id, face_emb is not None and detect_faces_mode) if detect_faces_mode else ""
             gesture_ok = (
-                detect_ok_gesture(frame, pbox, pose_model)
+                detect_ok_gesture(frame, pbox, det_pose)
                 if not approved and state.can_gesture(global_id)
                 else False
             )
@@ -393,6 +458,7 @@ def start_live():
         time.sleep(0.5)
     state.clear_log()
     state.clear_tracks()
+    _motion_detectors.clear()
     for buf in annotated_buffers.values():
         buf.clear()
     state.live_active = True
@@ -400,10 +466,16 @@ def start_live():
         _init_camera_resources(cam_id, CAMERAS[cam_id])
         camera_captures[cam_id].start()
     start_face_workers()
-    t = threading.Thread(target=detection_loop, daemon=True)
-    detection_threads["main"] = t
-    t.start()
-    print(f"Детекция запущена на {len(CAMERAS)} камерах")
+    # Поток детекции на КАЖДУЮ камеру — параллельная обработка вместо
+    # последовательного round-robin (см. _camera_detection_worker).
+    for cam_id in list(CAMERAS.keys()):
+        t = threading.Thread(target=_camera_detection_worker, args=(cam_id,), daemon=True)
+        detection_threads[cam_id] = t
+        t.start()
+    hb = threading.Thread(target=_heartbeat_loop, daemon=True)
+    detection_threads["_heartbeat"] = hb
+    hb.start()
+    print(f"Детекция запущена на {len(CAMERAS)} камерах ({len(CAMERAS)} потоков)")
 
 
 def stop_live():
@@ -427,89 +499,138 @@ def stop_live():
     print("Детекция остановлена")
 
 
-def detection_loop():
+def _heartbeat_loop():
+    """Отдельный поток: периодический MQTT-heartbeat и отметка в метриках.
+    Вынесен из петли детекции, т.к. петель теперь несколько (по камере)."""
+    metrics = get_metrics()
+    publisher = get_publisher()
     while state.live_active:
-        had_any = False
-        for cam_id in list(CAMERAS.keys()):
-            if not state.live_active:
-                return
-            if cam_id not in frame_buffers:
-                continue
-            raw_buf = frame_buffers[cam_id]
-            out_buf = annotated_buffers[cam_id]
-            frame = raw_buf.read()
-            if frame is None:
-                continue
-            had_any = True
+        metrics.heartbeat()
+        if publisher is not None:
+            publisher.publish_heartbeat({
+                "ts": time.time(), "uptime_seconds": metrics.uptime_seconds(),
+                "cameras": len(CAMERAS),
+            })
+        # Дробный сон, чтобы быстро реагировать на stop_live.
+        slept = 0.0
+        while state.live_active and slept < MQTT_HEARTBEAT_INTERVAL:
+            time.sleep(0.5)
+            slept += 0.5
 
-            if cam_id not in _frame_prebuf:
-                _frame_prebuf[cam_id] = deque(maxlen=EVENT_PRE_FRAMES)
-            _frame_prebuf[cam_id].append(frame.copy())
 
-            if not get_camera_config(cam_id).get("detect_enabled", True):
+def _camera_detection_worker(cam_id: str):
+    """Поток детекции ОДНОЙ камеры. Запускается по экземпляру на камеру —
+    YOLO/InsightFace/OpenCV отпускают GIL на время вычислений, поэтому камеры
+    обрабатываются параллельно (на CPU — по ядрам, на GPU — с перекрытием),
+    без последовательного round-robin прежней единой петли."""
+    metrics = get_metrics()
+    publisher = get_publisher()
+    det_model, det_pose = _get_cam_models(cam_id)
+    while state.live_active and cam_id in CAMERAS:
+        if cam_id not in frame_buffers:
+            return
+        raw_buf = frame_buffers[cam_id]
+        out_buf = annotated_buffers[cam_id]
+        # Блокируемся до нового кадра (без busy-loop); по таймауту проверяем флаги.
+        raw_buf.wait(timeout=1.0)
+        frame = raw_buf.read()
+        if frame is None:
+            continue
+
+        if cam_id not in _frame_prebuf:
+            _frame_prebuf[cam_id] = deque(maxlen=EVENT_PRE_FRAMES)
+        _frame_prebuf[cam_id].append(frame.copy())
+
+        if not get_camera_config(cam_id).get("detect_enabled", True):
+            out_buf.write(frame)
+            continue
+
+        # «Motion First»: пропускаем тяжёлую YOLO-детекцию на статичной сцене.
+        # Не пропускаем, если идёт запись события (нужны кадры пост-буфера).
+        if MOTION_DETECTION_ENABLED:
+            rec = _event_recordings.get(cam_id)
+            recording = rec is not None and rec.get('active')
+            motion = _get_motion_detector(cam_id).detect(frame)
+            if publisher is not None:
+                publisher.publish_motion(cam_id, bool(motion), motion.area_ratio)
+            if not motion and not recording:
                 out_buf.write(frame)
+                metrics.record_skipped(cam_id)
                 continue
 
-            try:
-                annotated, message, category, global_ids, statuses = process_frame(
-                    frame, cam_id, face_worker=face_workers.get(cam_id))
-                out_buf.write(annotated)
+        try:
+            _t0 = time.time()
+            annotated, message, category, global_ids, statuses = process_frame(
+                frame, cam_id, face_worker=face_workers.get(cam_id),
+                det_model=det_model, det_pose=det_pose)
+            metrics.record_frame(cam_id, (time.time() - _t0) * 1000.0)
+            metrics.record_event(category)
+            out_buf.write(annotated)
 
-                is_violation = category == "нарушение"
-                rec = _event_recordings.get(cam_id)
-                if is_violation:
-                    if rec is None or not rec.get('active'):
-                        gid = global_ids[0] if global_ids else 0
-                        person_name = state.get_person_name(gid, cam_id, has_face=True) if gid else ""
-                        voice_text = _build_voice_text(statuses, person_name)
-                        if voice_text:
-                            state.push_voice_alert(cam_id, voice_text)
-                        event_id = create_event_record(
-                            cam_id=cam_id,
-                            label=EventLabel.VIOLATION,
-                            person_name=person_name or None,
-                            person_id=gid or None,
-                        )
-                        rec = {
-                            'active': True,
-                            'event_id': event_id,
-                            'start_time': time.time(),
-                            'frames': list(_frame_prebuf[cam_id]),
-                            'cam_id': cam_id,
-                        }
-                        _event_recordings[cam_id] = rec
-                        print(f"[Events] Запись {event_id} начата на {cam_id}")
-                    if rec is not None and rec.get('active'):
-                        rec['frames'].append(annotated.copy())
-                        if len(rec['frames']) >= EVENT_MAX_FRAMES:
-                            rec['active'] = False
-                            _finalize_recording(cam_id, rec)
-                else:
-                    if rec is not None and rec.get('active'):
-                        post = rec.get('post_count', 0) + 1
-                        rec['post_count'] = post
-                        rec['frames'].append(annotated.copy())
-                        if post >= EVENT_POST_FRAMES:
-                            rec['active'] = False
-                            _finalize_recording(cam_id, rec)
+            if publisher is not None:
+                people = len(statuses)
+                # Строчная буква в позициях КМЖ = отсутствует СИЗ → нарушитель.
+                violations = sum(1 for v in statuses.values()
+                                 if len(v) >= 3 and any(c.islower() for c in v[:3]))
+                publisher.publish_detection(cam_id, people, violations,
+                                            max(0, people - violations), category)
 
-                any_changed = any(state.is_status_changed(cam_id, int(k.split(":")[1]), v) for k, v in statuses.items())
-                if any_changed:
+            is_violation = category == "нарушение"
+            rec = _event_recordings.get(cam_id)
+            if is_violation:
+                if rec is None or not rec.get('active'):
                     gid = global_ids[0] if global_ids else 0
-                    state.add_log(LogEntry(
-                        id=str(datetime.now().timestamp()),
-                        timestamp=datetime.now().strftime('%H:%M:%S'),
-                        message=message,
-                        category=category,
+                    person_name = state.get_person_name(gid, cam_id, has_face=True) if gid else ""
+                    voice_text = _build_voice_text(statuses, person_name)
+                    if voice_text:
+                        state.push_voice_alert(cam_id, voice_text)
+                    event_id = create_event_record(
                         cam_id=cam_id,
-                        global_id=gid,
-                    ))
-                    print(message)
-            except Exception as e:
-                print(f"[{cam_id}] Ошибка детекции: {e}")
-                traceback.print_exc()
-        if not had_any:
-            time.sleep(0.01)
+                        label=EventLabel.VIOLATION,
+                        person_name=person_name or None,
+                        person_id=gid or None,
+                    )
+                    rec = {
+                        'active': True,
+                        'event_id': event_id,
+                        'start_time': time.time(),
+                        'frames': list(_frame_prebuf[cam_id]),
+                        'cam_id': cam_id,
+                    }
+                    _event_recordings[cam_id] = rec
+                    if publisher is not None:
+                        publisher.publish_violation(cam_id, person_name or "",
+                                                    gid or 0)
+                    print(f"[Events] Запись {event_id} начата на {cam_id}")
+                if rec is not None and rec.get('active'):
+                    rec['frames'].append(annotated.copy())
+                    if len(rec['frames']) >= EVENT_MAX_FRAMES:
+                        rec['active'] = False
+                        _finalize_recording(cam_id, rec)
+            else:
+                if rec is not None and rec.get('active'):
+                    post = rec.get('post_count', 0) + 1
+                    rec['post_count'] = post
+                    rec['frames'].append(annotated.copy())
+                    if post >= EVENT_POST_FRAMES:
+                        rec['active'] = False
+                        _finalize_recording(cam_id, rec)
+
+            any_changed = any(state.is_status_changed(cam_id, int(k.split(":")[1]), v) for k, v in statuses.items())
+            if any_changed:
+                gid = global_ids[0] if global_ids else 0
+                state.add_log(LogEntry(
+                    id=str(datetime.now().timestamp()),
+                    timestamp=datetime.now().strftime('%H:%M:%S'),
+                    message=message,
+                    category=category,
+                    cam_id=cam_id,
+                    global_id=gid,
+                ))
+                print(message)
+        except Exception as e:
+            print(f"[{cam_id}] Ошибка детекции: {e}")
+            traceback.print_exc()
 
 
 def _finalize_recording(cam_id: str, rec: dict):

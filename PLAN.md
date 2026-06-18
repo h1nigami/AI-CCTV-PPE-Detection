@@ -579,10 +579,10 @@ frigate_disk_usage_percent{mount="/media"} 45
 ```
 
 ### Задачи
-1. Добавить `/api/stats` — JSON метрики
+1. ✅ Добавить `/api/stats` — JSON метрики (`backend/api/monitoring.py`)
 2. Структурированное логирование (JSON, не print)
-3. Healthcheck endpoint (`/health`)
-4. Prometheus exporter (`/metrics`)
+3. ✅ Healthcheck endpoint (`/health`)
+4. ✅ Prometheus exporter (`/metrics`, `backend/core/metrics.py`)
 5. Grafana dashboard (опционально, предоставить JSON шаблон)
 
 ---
@@ -593,9 +593,10 @@ frigate_disk_usage_percent{mount="/media"} 45
 **Срок: 2-3 недели** — 🔴 Приоритет 1
 
 - [ ] YAML конфигурация + парсер
-- [ ] MQTT брокер + клиент
+- [x] MQTT брокер + клиент (брокер в docker-compose; клиент-публикатор `backend/mqtt/publisher.py`, опционален, мягкая деградация)
 - [ ] Разделение на процессы: capture, detect, record, api
-- [ ] Motion detection (MOG2) перед YOLO
+  - 🔶 Частично: детекция распараллелена **по потоку на камеру** (`_camera_detection_worker`, свой экземпляр YOLO на камеру) вместо последовательного round-robin — даёт параллелизм на CPU-ядрах без накладных multiprocessing/shared_memory и без дублирования галереи Re-ID. Полное разделение на процессы — позже (упор. при росте числа камер на CPU).
+- [x] Motion detection (MOG2) перед YOLO (`backend/detection/motion.py`, гейт в потоке детекции, конфиг `MOTION_*`)
 - [ ] Shared memory для кадров (zero-copy)
 - [ ] Базовая запись (24/7 segmented MP4)
 
@@ -640,11 +641,11 @@ frigate_disk_usage_percent{mount="/media"} 45
 ### Фаза 6: Экосистема
 **Срок: 2 недели** — 🟢 Приоритет 3
 
-- [ ] Home Assistant MQTT discovery
+- [x] Home Assistant MQTT discovery (`MqttPublisher._publish_discovery`, тумблер `MQTT_HA_DISCOVERY`)
 - [ ] Custom component для HA
 - [ ] Docker Compose (multi-service)
-- [ ] Prometheus метрики
-- [ ] Healthchecks
+- [x] Prometheus метрики (`/metrics`, `backend/core/metrics.py`)
+- [x] Healthchecks (`/health`)
 - [ ] Документация (README, config reference)
 
 ### Фаза 7: UI Renaissance
@@ -669,8 +670,8 @@ frigate_disk_usage_percent{mount="/media"} 45
 
 | Функция | Сейчас | После трансформации (как Frigate) |
 |---------|--------|----------------------------------|
-| Архитектура | Один процесс + threading | Multiprocess + MQTT |
-| Детекция | YOLO (каждый кадр) | Motion-triggered YOLO |
+| Архитектура | Один процесс + threading (детекция — поток на камеру 🔶) | Multiprocess + MQTT |
+| Детекция | YOLO (каждый кадр) | Motion-triggered YOLO ✅ (MOG2-гейт, опц.) |
 | Конфиг | Python `.py` + JSON | YAML + hot-reload |
 | Запись видео | ❌ Нет | 24/7 + event + retention |
 | Live view | Polling JPEG (100ms) | WebRTC (<500ms) |
@@ -679,10 +680,10 @@ frigate_disk_usage_percent{mount="/media"} 45
 | Лица | InsightFace | InsightFace + gallery управление |
 | Детекторы | Только CPU/CUDA | CPU + Coral + TensorRT + OpenVINO |
 | БД | Data classes | SQLite / PostgreSQL |
-| HA интеграция | ❌ Нет | MQTT discovery + custom component |
+| HA интеграция | ❌ Нет | MQTT discovery ✅ + custom component |
 | RTSP restream | ❌ Нет | ffmpeg restream |
 | Docker | Один контейнер | Docker Compose + hardware passthrough |
-| Мониторинг | print() | Prometheus + JSON logs + healthchecks |
+| Мониторинг | print() | Prometheus ✅ + /health ✅ + JSON logs |
 | Web UI | Vanilla JS + Flask templates | Vite + React + TypeScript + Canvas (в работе) |
 
 ---

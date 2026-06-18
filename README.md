@@ -15,6 +15,13 @@
 - **ByteTrack** — стабильные track_id между кадрами, `track_buffer: 90`
 - **Жест ОК** — распознавание жеста для пропуска в зону
 - **Динамические face workers** — запуск/остановка потока распознавания лиц по чекбоксу
+- **Motion detection (MOG2)** — опциональный гейт «Motion First»: на статичной сцене тяжёлая YOLO-детекция пропускается (экономия CPU). Включается `MOTION_DETECTION_ENABLED` (по умолчанию выкл.)
+
+### Мониторинг & интеграции (Frigate-слой)
+- **MQTT-шина событий** — публикация детекций/нарушений/heartbeat в брокер (eclipse-mosquitto): топики `frigate/<cam>/{motion,detection,violation,approved}` + `system/heartbeat`. Опционально, мягко деградирует без брокера/`paho-mqtt`. Включается `MQTT_ENABLED`
+- **Home Assistant** — авто-обнаружение через MQTT discovery (сенсоры движения, людей, нарушений) при `MQTT_HA_DISCOVERY`
+- **Метрики** — `GET /api/stats` (JSON), `GET /metrics` (Prometheus): FPS, латентность детекции, счётчики кадров/событий, CPU/RAM/диск
+- **Healthcheck** — `GET /health` (используется в docker-compose healthcheck)
 
 ### Управление
 - **CRUD камер** — добавление/удаление/переименование через веб-интерфейс
@@ -144,6 +151,12 @@ EVENT_POST_FRAMES = 30             # кадров после разрешени�
 EVENT_MAX_FRAMES = 300             # макс. кадров клипа
 MINIO_ENDPOINT = "minio:9000"
 MINIO_BUCKET_EVENTS = "events"
+
+# Frigate-слой (по умолчанию выключен, не меняет поведение)
+MOTION_DETECTION_ENABLED = False   # MOG2-гейт перед YOLO (экономия CPU)
+MOTION_MIN_AREA = 1500             # мин. площадь контура движения (px²)
+MQTT_ENABLED = False               # публикация событий в MQTT-брокер
+MQTT_HA_DISCOVERY = False          # Home Assistant MQTT discovery
 ```
 
 Окружение (`.env`):
@@ -151,6 +164,13 @@ MINIO_BUCKET_EVENTS = "events"
 JWT_SECRET=your-random-secret
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=your-password
+# Frigate-слой (опционально)
+MOTION_DETECTION_ENABLED=true
+MQTT_ENABLED=true
+MQTT_HOST=mqtt
+MQTT_PORT=1883
+MQTT_TOPIC_PREFIX=frigate
+MQTT_HA_DISCOVERY=true
 ```
 
 ---
@@ -164,12 +184,16 @@ backend/
 ├── main.py                # Оркестратор (start/stop, detection_loop, recording)
 ├── core/
 │   ├── state.py           # DetectionState (треки, пропуска, логи, жесты)
+│   ├── metrics.py         # MetricsRegistry (FPS, латентность, события)
 │   └── models.py          # LogEntry
+├── mqtt/
+│   └── publisher.py       # MqttPublisher (события + HA discovery)
 ├── capture/
 │   ├── buffer.py          # FrameBuffer
 │   └── camera.py          # CameraCapture (RTSP/ffmpeg/local)
 ├── detection/
-│   └── engine.py          # run_detection, danger_zone
+│   ├── engine.py          # run_detection, danger_zone
+│   └── motion.py          # MotionDetector (MOG2 «Motion First»)
 ├── gestures/
 │   └── detector.py        # detect_ok_gesture, detect_raised_hand
 ├── reid/
@@ -190,7 +214,8 @@ backend/
     ├── detection.py       # /start, /stop, /video_feed, /detect-modes, /upload
     ├── cameras.py         # CRUD камер + группы
     ├── reid.py            # Управление галереей лиц
-    └── events.py          # События: GET, clip, snapshot
+    ├── events.py          # События: GET, clip, snapshot
+    └── monitoring.py      # /health, /metrics, /api/stats
 
 frontend/
 ├── src/
@@ -221,7 +246,7 @@ frontend/
 
 ## 🔧 Производительность
 
-- **Последовательная детекция** — камеры обрабатываются по одной в цикле (CPU ~50-60% на 3-4 камерах)
+- **Параллельная детекция** — поток детекции на каждую камеру (свой экземпляр YOLO), камеры обрабатываются одновременно; нативные либы (YOLO/InsightFace/OpenCV) отпускают GIL → реальный параллелизм на CPU-ядрах (на одном GPU агрегатный FPS ограничен GPU)
 - **JPEG load-driven поллинг** — `/video_frame/<cam_id>`: следующий кадр запрашивается из `onload` предыдущего (без `setInterval`, не забивает пулы соединений/Waitress)
 - **Re-ID** — распознавание каждый `REID_FRAME_SKIP` (3) кадр; порог матчинга адаптивный 0.45–0.60
 - **ByteTrack** — `persist=True` + `track_buffer: 90` для стабильных ID
@@ -282,6 +307,13 @@ frontend/
 | `POST` | `/auth/refresh` | Refresh токена |
 | `GET` | `/auth/me` | Текущий пользователь |
 
+### Мониторинг
+| Метод | Эндпоинт | Описание |
+|-------|----------|----------|
+| `GET` | `/health` | Healthcheck (status, uptime) |
+| `GET` | `/metrics` | Метрики в формате Prometheus |
+| `GET` | `/api/stats` | Метрики в JSON (FPS, латентность, события, система) |
+
 ---
 
 ## 🔁 Docker Compose
@@ -307,7 +339,9 @@ docker compose --profile cpu restart app-cpu
 - `app-cpu` / `app-gpu` — основное приложение
 - `minio` — S3-хранилище клипов (порт 9000 API, 9002 console)
 - `createbuckets` — инициализация bucket'ов при старте
-- `mqtt` — Mosquitto брокер (для будущей архитектуры)
+- `mqtt` — Mosquitto брокер для шины событий (включается `MQTT_ENABLED`, см. Frigate-слой)
+
+Все сервисы имеют healthcheck (`app-cpu`/`app-gpu` — через `GET /health`).
 
 ---
 
