@@ -59,12 +59,19 @@ def configure_detection_routes(app, state, annotated_buffers, generate_live_feed
 
     @app.route("/video_frame/<cam_id>")
     def video_frame(cam_id):
-        from backend.config import CAMERAS
+        from backend.config import CAMERAS, STREAM_STALE_SEC
         if cam_id not in CAMERAS:
             return "Камера не найдена", 404
         ann_buf = annotated_buffers.get(cam_id)
         if ann_buf is None:
             return "Буфер не найден", 404
+        # Свежесть судим по RAW-буферу захвата: при потере камеры capture
+        # перестаёт писать кадры → отдаём 204, фронт показывает «NO SIGNAL»
+        # (иначе висел бы замороженный последний кадр как «живой»).
+        from backend.main import frame_buffers
+        raw_buf = frame_buffers.get(cam_id)
+        if raw_buf is not None and raw_buf.age() > STREAM_STALE_SEC:
+            return b"", 204
         frame = ann_buf.read()
         if frame is None:
             return b"", 204

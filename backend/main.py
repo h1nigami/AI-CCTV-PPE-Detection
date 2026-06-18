@@ -22,7 +22,7 @@ from backend.config import (
     VIOLATION_LOGS_DIR, get_camera_config, VOICE_ALERT_COOLDOWN,
     MOTION_DETECTION_ENABLED, MOTION_THRESHOLD, MOTION_MIN_AREA,
     MOTION_COOLDOWN_FRAMES, MQTT_HEARTBEAT_INTERVAL,
-    RECORD_ENABLED, RECORD_MODE, PPE_REQUIRED_DEFAULT,
+    RECORD_ENABLED, RECORD_MODE, PPE_REQUIRED_DEFAULT, STREAM_STALE_SEC,
 )
 from backend.core.metrics import get_metrics
 from backend.detection.motion import MotionDetector
@@ -700,6 +700,12 @@ def _camera_detection_worker(cam_id: str):
         raw_buf.wait(timeout=1.0)
         frame = raw_buf.read()
         if frame is None:
+            continue
+
+        # Камера «отвалилась» (capture не пишет новые кадры) — не гоняем YOLO по
+        # застывшему кадру: пропускаем, annotated_buffer устаревает, /video_frame
+        # отдаст 204 → фронт покажет «NO SIGNAL» вместо замороженного кадра.
+        if raw_buf.age() > STREAM_STALE_SEC:
             continue
 
         if cam_id not in _frame_prebuf:
