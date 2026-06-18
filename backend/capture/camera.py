@@ -224,7 +224,10 @@ class CameraCapture:
         cmd = [
             'ffmpeg',
             '-rtsp_transport', 'tcp',
-            '-timeout', '5000000',
+            # ВАЖНО: для RTSP-источника опция -timeout трактуется ffmpeg как
+            # listen-timeout (серверный режим) → "Unable to open RTSP for listening".
+            # Клиентский таймаут сокета задаётся через -stimeout (микросекунды).
+            '-stimeout', '5000000',
             '-i', self.source,
             '-an',
             '-f', 'rawvideo',

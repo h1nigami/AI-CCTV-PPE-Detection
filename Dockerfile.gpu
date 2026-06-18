@@ -12,8 +12,9 @@ RUN npm run build
 
 # ─────────────────────────────────────────────────────────
 #  Stage 2: Python + CUDA runtime
+#  cudnn-вариант базы обязателен: onnxruntime-gpu (InsightFace) требует cuDNN 9
 # ─────────────────────────────────────────────────────────
-FROM nvidia/cuda:12.4-runtime-ubuntu22.04
+FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04
 
 WORKDIR /app
 
@@ -33,8 +34,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 RUN ln -sf /usr/bin/python3 /usr/bin/python
 
-# ── Python зависимости (CUDA 12.4) ────────────────────────
+# ── PyTorch с поддержкой Pascal (sm_61) для Tesla P4 ──────────
+# Официальные cu124/cu130-колёса собираются только под sm_75+ и на Pascal падают
+# ("no kernel image is available"). Ставим cu121-сборку ПЕРВОЙ: ultralytics требует
+# лишь torch>=1.8, поэтому не перетянет более новый torch поверх.
 COPY requirements.txt .
+RUN pip install --no-cache-dir torch==2.4.1 torchvision==0.19.1 \
+    --index-url https://download.pytorch.org/whl/cu121
 RUN pip install --no-cache-dir --timeout=300 \
     opencv-python-headless \
     flask \
@@ -45,9 +51,12 @@ RUN pip install --no-cache-dir --timeout=300 \
     insightface \
     sqlalchemy \
     alembic \
-    pyjwt \
-    --extra-index-url https://download.pytorch.org/whl/cu124 \
-    2>&1 | tail -10
+    pyjwt
+
+# ── ReID на GPU: insightface тянет CPU-onnxruntime, заменяем на GPU-сборку ──
+# (без этого FaceAnalysis молча откатывается на CPUExecutionProvider)
+RUN pip uninstall -y onnxruntime onnxruntime-gpu || true && \
+    pip install --no-cache-dir boto3 onnxruntime-gpu
 
 # ── Код приложения (backend package) ──────────────────────
 COPY backend/ ./backend/
@@ -64,6 +73,12 @@ RUN mkdir -p uploads
 
 # ── Собранный frontend из Stage 1 ──────────────────────────
 COPY --from=frontend-builder /frontend/dist /app/frontend/dist
+
+# YOLO пишет конфиг в неперезаписываемый HOME контейнера — направляем в /tmp.
+ENV YOLO_CONFIG_DIR=/tmp/Ultralytics
+# InsightFace ищет <root>/models/<name>; buffalo_l лежит в /app/models (volume),
+# иначе модель каждый старт скачивается из интернета.
+ENV INSIGHTFACE_ROOT=/app
 
 EXPOSE 8000
 CMD ["python3", "-u", "app.py"]
