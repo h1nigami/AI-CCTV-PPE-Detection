@@ -61,21 +61,26 @@ export default function DashboardPage() {
   }, [closeDispatcher])
 
   const handleStart = useCallback(async () => {
+    // Оптимистично: сразу поднимаем стримы, при ошибке откатываем.
+    setDetectionRunning(true)
     try {
       await api.start()
-      setDetectionRunning(true)
     } catch {
+      setDetectionRunning(false)
       addNotification("violation", "Ошибка запуска")
     }
   }, [addNotification, setDetectionRunning])
 
   const handleStop = useCallback(async () => {
+    // Оптимистично гасим UI ДО запроса: это размонтирует <img> и освобождает
+    // соединения/потоки, иначе POST /stop встаёт в очередь за стримами и
+    // первый клик «не срабатывает» (нужно было жать дважды).
+    setDetectionRunning(false)
+    setLogs([])
     try {
       await api.stop()
-      setDetectionRunning(false)
-      setLogs([])
     } catch {
-      // ignore
+      // ignore — бэк дотормозит детекцию сам; UI уже остановлен
     }
   }, [setDetectionRunning])
 

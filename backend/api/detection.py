@@ -2,6 +2,12 @@ import os
 import uuid
 import cv2
 from flask import Flask, send_file, render_template, Response, request, jsonify, send_from_directory
+from backend.detection.engine import get_danger_zone
+from backend.visualization.renderer import draw_danger_zone, put_text
+
+
+def _get_boxes_by_class(boxes, classes, names, class_name: str):
+    return [boxes[i] for i, c in enumerate(classes) if names[int(c)] == class_name]
 
 
 def configure_detection_routes(app, state, annotated_buffers, generate_live_feed,
@@ -142,8 +148,22 @@ def configure_detection_routes(app, state, annotated_buffers, generate_live_feed
                 os.remove(path)
                 return "Invalid image file", 400
             result = model(img)[0]
+            names = model.names
+            boxes = result.boxes.xyxy.cpu().numpy()
+            classes = result.boxes.cls.cpu().numpy().astype(int)
+            cone_boxes = _get_boxes_by_class(boxes, classes, names, "Конус безопасности")
+            danger_zone = get_danger_zone(cone_boxes)
+            annotated = result.plot().copy()
+            if danger_zone is not None:
+                annotated = draw_danger_zone(annotated, danger_zone)
+                for box in cone_boxes:
+                    x1, y1, x2, y2 = map(int, box)
+                    cv2.rectangle(annotated, (x1, y1), (x2, y2), (0, 128, 255), 2)
+                    annotated = put_text(annotated, "Конус", (x1, max(0, y1 - 20)), color=(0, 128, 255))
+                annotated = put_text(annotated, f"Опасная зона ({len(cone_boxes)} кон.)",
+                                     (10, 30), color=(0, 0, 255))
             output = os.path.join(UPLOAD_FOLDER, f"result_{filename}")
-            cv2.imwrite(output, result.plot())
+            cv2.imwrite(output, annotated)
             return send_file(output, mimetype="image/jpeg")
         elif filename.lower().endswith((".mp4", ".avi", ".mov")):
             cap = cv2.VideoCapture(path)
@@ -155,7 +175,20 @@ def configure_detection_routes(app, state, annotated_buffers, generate_live_feed
                 ret, frame = cap.read()
                 if not ret:
                     break
-                out.write(model(frame)[0].plot())
+                result = model(frame)[0]
+                names = model.names
+                boxes = result.boxes.xyxy.cpu().numpy()
+                classes = result.boxes.cls.cpu().numpy().astype(int)
+                cone_boxes = _get_boxes_by_class(boxes, classes, names, "Конус безопасности")
+                danger_zone = get_danger_zone(cone_boxes)
+                annotated = result.plot().copy()
+                if danger_zone is not None:
+                    annotated = draw_danger_zone(annotated, danger_zone)
+                    for box in cone_boxes:
+                        x1, y1, x2, y2 = map(int, box)
+                        cv2.rectangle(annotated, (x1, y1), (x2, y2), (0, 128, 255), 2)
+                        annotated = put_text(annotated, "Конус", (x1, max(0, y1 - 20)), color=(0, 128, 255))
+                out.write(annotated)
             cap.release()
             out.release()
             return send_file(output, mimetype="video/mp4")

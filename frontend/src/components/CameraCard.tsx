@@ -1,11 +1,16 @@
-import { useState, useEffect, useRef, useCallback } from "react"
+import { useState, useEffect, useRef } from "react"
 import { api } from "../api/client"
 import type { CameraStatus } from "../types"
 
 // ============================================================
 // Карточка камеры — основной элемент сетки.
-// Когда система запущена — использует MJPEG-поток для макс. FPS,
-// при ошибке MJPEG падает на HTTP polling.
+// Стрим реализован через load-driven HTTP-поллинг одиночных JPEG
+// (/video_frame): следующий кадр запрашивается только ПОСЛЕ загрузки
+// предыдущего, поэтому в полёте всегда одно короткое соединение.
+// Это сознательный отказ от постоянного MJPEG (/video_feed): тот держал
+// по соединению+потоку на камеру и при нескольких камерах забивал пулы
+// браузера (~6 соединений) и Waitress (4 потока) → лаги и зависание /stop
+// (POST не мог уйти, пока стримы держат соединения).
 // Когда система остановлена — показывает "СИСТЕМА ОСТАНОВЛЕНА".
 // Клик открывает диспетчерскую панель.
 // ============================================================
@@ -34,61 +39,78 @@ export function CameraCard({
   isFullscreen = false,
   isLandscape = false,
 }: CameraCardProps) {
-  const [streamError, setStreamError] = useState(false)
+  // src — URL уже ЗАГРУЖЕННОГО кадра (меняется только после успешной
+  // фоновой загрузки), поэтому в DOM-картинке нет «битых» кадров и мигания.
+  const [src, setSrc] = useState("")
   const [hasFrame, setHasFrame] = useState(false)
-  const [pollSrc, setPollSrc] = useState("")
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const [streamError, setStreamError] = useState(false)
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const errCountRef = useRef(0)
   const mountedRef = useRef(true)
-
-  // Уникальный ключ при каждом монтировании —
-  // браузер делает новый запрос, а не цепляется за старый MJPEG-канал.
-  const mountRef = useRef(Date.now())
-  const mjpegUrl = api.getFrameUrlMJPEG(name) + `?m=${mountRef.current}`
-
-  // Сброс стрима при старте/остановке/смене камеры
-  useEffect(() => {
-    setStreamError(false)
-    setHasFrame(false)
-  }, [isRunning, name])
-
-  // HTTP polling (fallback для MJPEG или при !isRunning)
-  const setupPolling = useCallback(() => {
-    if (pollRef.current) clearInterval(pollRef.current)
-    if (!mountedRef.current) return
-
-    const refresh = () => {
-      if (!mountedRef.current || !isRunning) return
-      setPollSrc(api.getFrameUrl(name))
-    }
-    refresh()
-    const interval = detectEnabled ? 100 : 2000
-    pollRef.current = setInterval(refresh, interval)
-  }, [name, detectEnabled, isRunning])
 
   // Очистка при размонтировании
   useEffect(() => {
     mountedRef.current = true
     return () => {
       mountedRef.current = false
-      if (pollRef.current) clearInterval(pollRef.current)
+      if (timerRef.current) clearTimeout(timerRef.current)
     }
   }, [])
 
-  // Ставим polling когда:
-  // - MJPEG упал с ошибкой, или
-  // - система остановлена (пока не запустится) — не поллим, просто ждём
+  // Цикл опроса: одно фоновое изображение грузится за раз, следующий кадр
+  // запрашивается из onload/onerror предыдущего. Никаких setInterval —
+  // запросы не наслаиваются даже при медленной сети/бэке.
   useEffect(() => {
+    if (timerRef.current) clearTimeout(timerRef.current)
+
     if (!isRunning) {
-      if (pollRef.current) clearInterval(pollRef.current)
+      setHasFrame(false)
+      setStreamError(false)
+      errCountRef.current = 0
       return
     }
-    if (streamError) {
-      setupPolling()
+
+    errCountRef.current = 0
+    const okDelay = detectEnabled ? 100 : 1000
+    // Флаг этого прогона: гасит колбэки уже летящего кадра после стопа/смены
+    // камеры, иначе его onload перезапустил бы цикл опроса.
+    let cancelled = false
+
+    const schedule = (delay: number) => {
+      if (cancelled) return
+      if (timerRef.current) clearTimeout(timerRef.current)
+      timerRef.current = setTimeout(loadNext, delay)
     }
+
+    const loadNext = () => {
+      if (cancelled || !mountedRef.current) return
+      const img = new Image()
+      img.onload = () => {
+        if (cancelled || !mountedRef.current) return
+        errCountRef.current = 0
+        setSrc(img.src)
+        setHasFrame(true)
+        setStreamError(false)
+        schedule(okDelay)
+      }
+      img.onerror = () => {
+        if (cancelled || !mountedRef.current) return
+        errCountRef.current += 1
+        // Не пугаем пользователя на старте: «NO SIGNAL» только после серии ошибок.
+        if (errCountRef.current >= 5) setStreamError(true)
+        // Бэкофф: чем дольше нет кадров, тем реже долбим бэк (макс. 2с).
+        schedule(Math.min(2000, 300 * errCountRef.current))
+      }
+      img.src = api.getFrameUrl(name)
+    }
+
+    loadNext()
+
     return () => {
-      if (pollRef.current) clearInterval(pollRef.current)
+      cancelled = true
+      if (timerRef.current) clearTimeout(timerRef.current)
     }
-  }, [isRunning, streamError, setupPolling])
+  }, [isRunning, name, detectEnabled])
 
   // Цвет рамки статуса
   const statusColors: Record<CameraStatus, string> = {
@@ -97,7 +119,7 @@ export function CameraCard({
     error: "#ff9800",
   }
 
-  const frameSrc = streamError ? pollSrc : mjpegUrl
+  const frameSrc = src
 
   return (
     <div
@@ -132,25 +154,18 @@ export function CameraCard({
         </div>
       ) : (
         <>
-          <img
-            key={name + String(isRunning)}
-            src={frameSrc}
-            alt={name}
-            style={{ ...styles.img, objectFit: isLandscape ? 'cover' : 'contain' }}
-            onLoad={() => {
-              setHasFrame(true)
-            }}
-            onError={() => {
-              if (!streamError) {
-                setStreamError(true)
-              }
-            }}
-          />
+          {hasFrame && (
+            <img
+              src={frameSrc}
+              alt={name}
+              style={{ ...styles.img, objectFit: isLandscape ? 'cover' : 'contain' }}
+            />
+          )}
 
-          {!hasFrame && (
+          {(!hasFrame || streamError) && (
             <div style={styles.spinner}>
               <div style={styles.spinnerRing} />
-              <div style={styles.spinnerText}>CONNECTING...</div>
+              <div style={styles.spinnerText}>{streamError ? "NO SIGNAL" : "CONNECTING..."}</div>
             </div>
           )}
         </>

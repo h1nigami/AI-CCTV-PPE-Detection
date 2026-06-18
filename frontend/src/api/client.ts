@@ -177,8 +177,8 @@ export const api = {
     }),
 
   // ---- Вспомогательные URL ----
-  /** URL для HTTP polling (статичный JPEG-кадр) */
+  /** URL одиночного JPEG-кадра для load-driven поллинга (см. CameraCard).
+   *  Постоянный MJPEG (/video_feed) намеренно НЕ используем: он держит
+   *  соединение+поток на камеру и забивает пулы браузера/Waitress. */
   getFrameUrl: (camId: string) => `/video_frame/${camId}?t=${Date.now()}`,
-  /** URL для MJPEG-потока (постоянное соединение, фреймы приходят автоматически) */
-  getFrameUrlMJPEG: (camId: string) => `/video_feed/${camId}`,
 }
