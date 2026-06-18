@@ -237,6 +237,16 @@ MQTT_HA_DISCOVERY = _env_bool("MQTT_HA_DISCOVERY", False)  # Home Assistant MQTT
 # Минимальный интервал heartbeat в MQTT (сек).
 MQTT_HEARTBEAT_INTERVAL = 30.0
 
+# ── Автообнаружение камер (ONVIF + скан подсети) ──────────
+# Поиск непаролёных RTSP-потоков в локальной сети. Кнопка «Найти камеры» в UI
+# доступна всегда; CAMERA_AUTODISCOVER=true дополнительно запускает поиск и
+# авто-добавление при старте сервера (по умолчанию выкл.). В Docker для ONVIF
+# (multicast) нужен network_mode: host. См. backend/discovery.py.
+CAMERA_AUTODISCOVER = _env_bool("CAMERA_AUTODISCOVER", False)
+DISCOVERY_USE_ONVIF = _env_bool("DISCOVERY_USE_ONVIF", True)
+DISCOVERY_USE_SCAN = _env_bool("DISCOVERY_USE_SCAN", True)
+DISCOVERY_ONVIF_TIMEOUT = float(os.environ.get("DISCOVERY_ONVIF_TIMEOUT", "3"))
+
 # ── Глобальные режимы детекции ────────────────────────────
 DETECT_MODES: dict[str, bool] = {
     "people": True,

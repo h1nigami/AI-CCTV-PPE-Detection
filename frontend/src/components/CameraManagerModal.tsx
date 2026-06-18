@@ -23,7 +23,35 @@ export function CameraManagerModal({
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editingName, setEditingName] = useState("")
   const [editingSource, setEditingSource] = useState("")
+  const [discovering, setDiscovering] = useState(false)
+  const [discovered, setDiscovered] = useState<
+    { ip: string; rtsp_url: string; name: string; status: string }[]
+  >([])
   if (!open) return null
+
+  const handleDiscover = async () => {
+    setDiscovering(true)
+    setStatus("Поиск камер в сети…")
+    try {
+      const res = await api.discoverCameras(false)
+      setDiscovered(res.found)
+      setStatus(res.found.length ? `Найдено: ${res.found.length}` : "Открытых камер не найдено")
+    } catch (err) {
+      setStatus("ERR " + (err as Error).message)
+    } finally {
+      setDiscovering(false)
+    }
+  }
+
+  const handleAddDiscovered = async (d: { name: string; rtsp_url: string }) => {
+    try {
+      await api.addCamera(d.name, d.rtsp_url)
+      setDiscovered((prev) => prev.filter((x) => x.rtsp_url !== d.rtsp_url))
+      onRefresh()
+    } catch (err) {
+      setStatus("ERR " + (err as Error).message)
+    }
+  }
 
   const handleAdd = async () => {
     if (!newName.trim() || !newSource.trim()) {
@@ -102,7 +130,30 @@ export function CameraManagerModal({
             <button style={styles.addBtn} onClick={handleAdd}>
               + Добавить
             </button>
+            <button style={styles.discoverBtn} onClick={handleDiscover} disabled={discovering}>
+              {discovering ? "Поиск…" : "🔍 Найти камеры"}
+            </button>
           </div>
+
+          {discovered.length > 0 && (
+            <div style={styles.discoverList}>
+              {discovered.map((d) => (
+                <div key={d.rtsp_url} style={styles.discoverItem}>
+                  <div style={styles.discoverInfo}>
+                    <span style={{ color: "#00b0ff" }}>{d.ip}</span>
+                    <span style={styles.discoverUrl}>{d.rtsp_url}</span>
+                  </div>
+                  {d.status === "exists" ? (
+                    <span style={styles.discoverExists}>уже есть</span>
+                  ) : (
+                    <button style={styles.actionBtn} onClick={() => handleAddDiscovered(d)}>
+                      + Добавить
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
 
             {status && (
             <div
@@ -266,6 +317,43 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: ".7rem",
     marginBottom: "8px",
   },
+  discoverBtn: {
+    background: "#2a2a2a",
+    border: "1px solid #00b0ff",
+    color: "#00b0ff",
+    borderRadius: "6px",
+    padding: "6px 12px",
+    cursor: "pointer",
+    fontFamily: "'Inter', sans-serif",
+    fontWeight: 600,
+    fontSize: ".7rem",
+    textTransform: "uppercase",
+  },
+  discoverList: {
+    marginBottom: "12px",
+    border: "1px solid #2e3a44",
+    borderRadius: "8px",
+    overflow: "hidden",
+  },
+  discoverItem: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "8px",
+    padding: "8px 12px",
+    borderBottom: "1px solid #222",
+  },
+  discoverInfo: { display: "flex", flexDirection: "column", minWidth: 0, gap: "2px" },
+  discoverUrl: {
+    fontFamily: "monospace",
+    fontSize: "0.65rem",
+    color: "#888",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+    maxWidth: "320px",
+  },
+  discoverExists: { fontFamily: "monospace", fontSize: "0.65rem", color: "#666" },
   empty: {
     textAlign: "center",
     padding: "30px 20px",

@@ -163,10 +163,47 @@ def _build_voice_text(statuses: dict, person_name: str) -> str:
     return f"Внимание! {who} вошёл в опасную зону без необходимых средств защиты"
 
 
+def _db_upsert_camera(cam_id: str, source):
+    """Продублировать камеру в таблицу Camera (БД). Не роняет операцию при сбое."""
+    try:
+        from backend.db.engine import get_session
+        from backend.db.models import Camera
+        s = get_session()
+        try:
+            row = s.query(Camera).filter(Camera.id == cam_id).first()
+            if row is None:
+                s.add(Camera(id=cam_id, name=cam_id, source=str(source)))
+            else:
+                row.source = str(source)
+                row.name = cam_id
+            s.commit()
+        finally:
+            s.close()
+    except Exception as exc:
+        print(f"[DB] Не удалось записать камеру {cam_id}: {exc}")
+
+
+def _db_delete_camera(cam_id: str):
+    try:
+        from backend.db.engine import get_session
+        from backend.db.models import Camera
+        s = get_session()
+        try:
+            row = s.query(Camera).filter(Camera.id == cam_id).first()
+            if row is not None:
+                s.delete(row)
+                s.commit()
+        finally:
+            s.close()
+    except Exception as exc:
+        print(f"[DB] Не удалось удалить камеру {cam_id}: {exc}")
+
+
 def add_camera(cam_id: str, source: str | int):
     from backend.config import save_cameras, DETECT_MODES
     CAMERAS[cam_id] = source
     save_cameras()
+    _db_upsert_camera(cam_id, source)
     _init_camera_resources(cam_id, source)
     if state.live_active:
         camera_captures[cam_id].start()
@@ -206,6 +243,7 @@ def remove_camera(cam_id: str):
     if RECORD_ENABLED:
         get_recording_manager().remove_camera(cam_id)
     save_cameras()
+    _db_delete_camera(cam_id)
     print(f"[Камера] Удалена: {cam_id}")
 
 
@@ -237,8 +275,53 @@ def rename_camera(old_id: str, new_id: str) -> bool:
             mgr.add_camera(new_id, source)
     from backend.config import save_cameras
     save_cameras()
+    _db_delete_camera(old_id)
+    _db_upsert_camera(new_id, source)
     print(f"[Камера] Переименована: {old_id} -> {new_id}")
     return True
+
+
+def _unique_cam_name(base: str) -> str:
+    if base not in CAMERAS:
+        return base
+    i = 2
+    while f"{base}_{i}" in CAMERAS:
+        i += 1
+    return f"{base}_{i}"
+
+
+def discover_cameras(add: bool = False) -> dict:
+    """Найти открытые RTSP-потоки в локальной сети (ONVIF + скан подсети).
+    При add=True добавляет новые (не дублируя уже существующие источники)."""
+    from backend.config import (DISCOVERY_USE_ONVIF, DISCOVERY_USE_SCAN,
+                                 DISCOVERY_ONVIF_TIMEOUT)
+    from backend.discovery import discover_streams
+    found = discover_streams(use_onvif=DISCOVERY_USE_ONVIF,
+                             use_scan=DISCOVERY_USE_SCAN,
+                             onvif_timeout=DISCOVERY_ONVIF_TIMEOUT)
+    existing = {str(v) for v in CAMERAS.values()}
+    added = []
+    for f in found:
+        if f["rtsp_url"] in existing:
+            f["status"] = "exists"
+            continue
+        f["status"] = "new"
+        if add:
+            name = _unique_cam_name(f["name"])
+            add_camera(name, f["rtsp_url"])
+            f["added_as"] = name
+            f["status"] = "added"
+            added.append(name)
+    return {"found": found, "added": added}
+
+
+def autodiscover_and_add():
+    """Фоновый автозапуск обнаружения при старте (CAMERA_AUTODISCOVER)."""
+    try:
+        result = discover_cameras(add=True)
+        print(f"[Discovery] Автообнаружение: добавлено {len(result['added'])} камер")
+    except Exception as exc:
+        print(f"[Discovery] Ошибка автообнаружения: {exc}")
 
 
 detection_threads: dict[str, threading.Thread] = {}
