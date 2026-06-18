@@ -670,7 +670,7 @@ frigate_disk_usage_percent{mount="/media"} 45
 | Функция | Сейчас | После трансформации (как Frigate) |
 |---------|--------|----------------------------------|
 | Архитектура | Один процесс + threading | Multiprocess + MQTT |
-| Детекция | YOLO (каждый кадр) | Motion-triggered YOLO |
+| Детекция | YOLO (каждый кадр) | Motion-triggered YOLO ✅ (MOG2-гейт, опц.) |
 | Конфиг | Python `.py` + JSON | YAML + hot-reload |
 | Запись видео | ❌ Нет | 24/7 + event + retention |
 | Live view | Polling JPEG (100ms) | WebRTC (<500ms) |
@@ -679,10 +679,10 @@ frigate_disk_usage_percent{mount="/media"} 45
 | Лица | InsightFace | InsightFace + gallery управление |
 | Детекторы | Только CPU/CUDA | CPU + Coral + TensorRT + OpenVINO |
 | БД | Data classes | SQLite / PostgreSQL |
-| HA интеграция | ❌ Нет | MQTT discovery + custom component |
+| HA интеграция | ❌ Нет | MQTT discovery ✅ + custom component |
 | RTSP restream | ❌ Нет | ffmpeg restream |
 | Docker | Один контейнер | Docker Compose + hardware passthrough |
-| Мониторинг | print() | Prometheus + JSON logs + healthchecks |
+| Мониторинг | print() | Prometheus ✅ + /health ✅ + JSON logs |
 | Web UI | Vanilla JS + Flask templates | Vite + React + TypeScript + Canvas (в работе) |
 
 ---
