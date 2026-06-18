@@ -11,6 +11,8 @@ from backend.config import (
     REID_SIM_THRESHOLD, REID_MAX_EMBEDDINGS, REID_GALLERY_PATH, REID_MAX_AGE_DAYS,
     REID_MIN_STORE_QUALITY, REID_STORE_INTERVAL, REID_STICKY_MARGIN, REID_STICKY_MIN,
     REID_DIVERSITY_MAX_SIM, VOICE_ALERT_COOLDOWN,
+    REID_BODY_ENABLED, REID_BODY_MATCH_THRESHOLD, REID_BODY_MAX_EMBEDDINGS,
+    REID_BODY_DIVERSITY_MAX_SIM, REID_BODY_STORE_INTERVAL,
 )
 
 TRACK_EXPIRY = 60.0
@@ -31,6 +33,7 @@ class DetectionState:
         self._track_to_global: Dict[Tuple[str, int], int] = {}
         self._track_last_seen: Dict[Tuple[str, int], float] = {}
         self._last_emb_store: Dict[Tuple[str, int], float] = {}
+        self._last_body_store: Dict[Tuple[str, int], float] = {}
         self._fallback_names: Dict[int, str] = {}
 
         # Статусы последнего залогированного события (cam_id+track_id → compact_status)
@@ -50,6 +53,8 @@ class DetectionState:
             sim_threshold=REID_SIM_THRESHOLD,
             max_embeddings_per_id=REID_MAX_EMBEDDINGS,
             diversity_max_sim=REID_DIVERSITY_MAX_SIM,
+            max_body_embeddings=REID_BODY_MAX_EMBEDDINGS,
+            body_diversity_max_sim=REID_BODY_DIVERSITY_MAX_SIM,
         )
 
     @property
@@ -78,9 +83,34 @@ class DetectionState:
     def _assign_fallback_name(self) -> str:
         return f"Гость_{len(self._fallback_names) + 1}"
 
+    def _gid_active_on_other_track(self, gid: int, key: Tuple[str, int], now: float,
+                                   window: float = 2.0) -> bool:
+        """Назначена ли личность gid ДРУГОМУ недавно виденному треку. Защита от
+        слияния двух разных людей в похожей одежде в одну личность при body-Re-ID
+        (вызывать под self._reid_lock)."""
+        for k, g in self._track_to_global.items():
+            if k == key or g != gid:
+                continue
+            if now - self._track_last_seen.get(k, 0.0) <= window:
+                return True
+        return False
+
+    def _store_body(self, gid: int, key: Tuple[str, int],
+                    body_embedding: Optional[np.ndarray], now: float):
+        """Дописать дескриптор тела к личности gid с троттлингом по треку.
+        Вызывать под self._reid_lock; галерея потокобезопасна своим локом."""
+        if (not REID_BODY_ENABLED or body_embedding is None
+                or gid <= 0 or self._gallery is None):
+            return
+        if now - self._last_body_store.get(key, 0.0) < REID_BODY_STORE_INTERVAL:
+            return
+        self._last_body_store[key] = now
+        self._gallery.add_body(gid, body_embedding, diverse=True)
+
     def get_global_id(self, track_id: int, cam_id: str,
                       face_embedding: Optional[np.ndarray] = None,
-                      quality: float = 0.0, person_box=None) -> int:
+                      quality: float = 0.0, person_box=None,
+                      body_embedding: Optional[np.ndarray] = None) -> int:
         key = (cam_id, track_id)
         now = time.time()
         with self._reid_lock:
@@ -109,6 +139,8 @@ class DetectionState:
                             self._last_emb_store[key] = now
                         self._track_to_global[key] = old_id
                         self._track_last_seen[key] = now
+                        # Запоминаем, как личность выглядит «со спины», пока лицо видно.
+                        self._store_body(old_id, key, body_embedding, now)
                         return old_id
 
                 gallery_id = self._gallery.match_or_register(
@@ -138,11 +170,30 @@ class DetectionState:
                             print(f"[ReID] Track {key}: global_id {old_id} -> {gallery_id}")
                 self._track_to_global[key] = gallery_id
                 self._track_last_seen[key] = now
+                # Привязываем внешний вид (тело/одежду) к личности с известным лицом.
+                self._store_body(gallery_id, key, body_embedding, now)
                 return gallery_id
 
+            # ── Лица нет (человек спиной/боком) ──────────────────────────────
             if old_id is not None:
+                # У трека уже есть личность — держим её и продолжаем запоминать тело.
+                self._store_body(old_id, key, body_embedding, now)
                 self._track_last_seen[key] = now
                 return old_id
+
+            # Ни лица, ни личности у трека: пробуем опознать «со спины» по телу —
+            # это восстанавливает имя для нового/переинициализированного трека.
+            if (REID_BODY_ENABLED and body_embedding is not None
+                    and self._gallery is not None):
+                gid, sim = self._gallery.match_body(body_embedding, REID_BODY_MATCH_THRESHOLD)
+                # Не приписываем личность, уже активную на другом треке (два разных
+                # человека в похожей одежде не должны слиться в одно имя).
+                if gid is not None and not self._gid_active_on_other_track(gid, key, now):
+                    self._track_to_global[key] = gid
+                    self._track_last_seen[key] = now
+                    self._store_body(gid, key, body_embedding, now)
+                    print(f"[ReID/body] Трек {key} опознан по телу как {gid} (sim={sim:.2f})")
+                    return gid
             return 0
 
     def cleanup_stale_tracks(self):
@@ -154,6 +205,7 @@ class DetectionState:
                 del self._track_to_global[k]
                 del self._track_last_seen[k]
                 self._last_emb_store.pop(k, None)
+                self._last_body_store.pop(k, None)
             if stale:
                 print(f"[ReID] Очищено {len(stale)} устаревших треков")
 
@@ -162,6 +214,7 @@ class DetectionState:
             self._track_to_global.clear()
             self._track_last_seen.clear()
             self._last_emb_store.clear()
+            self._last_body_store.clear()
             self._fallback_names.clear()
             self._last_logged_status.clear()
 

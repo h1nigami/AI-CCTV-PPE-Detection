@@ -16,13 +16,17 @@ except ImportError:
 
 class FaceGallery:
     def __init__(self, gallery_path: Path, sim_threshold: float = 0.55,
-                 max_embeddings_per_id: int = 5, diversity_max_sim: float = 0.92):
+                 max_embeddings_per_id: int = 5, diversity_max_sim: float = 0.92,
+                 max_body_embeddings: int = 12, body_diversity_max_sim: float = 0.97):
         if isinstance(gallery_path, str):
             gallery_path = Path(gallery_path)
         self.gallery_path = gallery_path
         self.sim_threshold = sim_threshold
         self.max_embeddings = max_embeddings_per_id
         self.diversity_max_sim = diversity_max_sim
+        # Body Re-ID: дескрипторы внешнего вида (одежда) для опознания «со спины».
+        self.max_body_embeddings = max_body_embeddings
+        self.body_diversity_max_sim = body_diversity_max_sim
         self._lock = threading.Lock()
         self._gallery: Dict[int, Dict] = {}
         self._next_id = 1
@@ -104,6 +108,56 @@ class FaceGallery:
             data['cameras'].add(cam_id)
             return True
 
+    def add_body(self, global_id: int, embedding: np.ndarray, diverse: bool = True) -> bool:
+        """Добавить дескриптор внешнего вида (тело/одежда) к личности.
+        diverse=True — копим только заметно разные ракурсы (max косинус к уже
+        сохранённым < body_diversity_max_sim), иначе почти-дубль кадра. Кап —
+        max_body_embeddings (выбрасываем самый старый, индекс 0). Не пишет на
+        диск (как и «липкое» дописывание лиц) — обучение в рамках сессии."""
+        if embedding is None:
+            return False
+        with self._lock:
+            data = self._gallery.get(global_id)
+            if data is None:
+                return False
+            bodies = data.setdefault('body_embeddings', [])
+            if diverse and bodies:
+                if max(self._cosine_sim(embedding, e) for e in bodies) >= self.body_diversity_max_sim:
+                    return False
+            bodies.append(embedding)
+            if len(bodies) > self.max_body_embeddings:
+                bodies.pop(0)
+            return True
+
+    def match_body(self, embedding: np.ndarray, threshold: float) -> Tuple[Optional[int], float]:
+        """Найти личность по дескриптору тела: лучший global_id с max косинусом
+        ≥ threshold (или (None, best_sim), если никто не прошёл порог)."""
+        if embedding is None:
+            return None, -1.0
+        with self._lock:
+            best_id: Optional[int] = None
+            best_sim = -1.0
+            for gid, data in self._gallery.items():
+                bodies = data.get('body_embeddings')
+                if not bodies:
+                    continue
+                sim = max(self._cosine_sim(embedding, e) for e in bodies)
+                if sim >= threshold and sim > best_sim:
+                    best_sim = sim
+                    best_id = gid
+            return best_id, best_sim
+
+    def body_similarity(self, global_id: int, embedding: np.ndarray) -> float:
+        """Максимальная косинусная близость дескриптора тела к личности (−1, если нет)."""
+        if embedding is None:
+            return -1.0
+        with self._lock:
+            data = self._gallery.get(global_id)
+            bodies = data.get('body_embeddings') if data else None
+            if not bodies:
+                return -1.0
+            return max(self._cosine_sim(embedding, e) for e in bodies)
+
     def match_or_register(self, embedding: np.ndarray, cam_id: str,
                           quality: float = 0.5, store: bool = True) -> int:
         threshold = self._adaptive_threshold(quality)
@@ -132,6 +186,7 @@ class FaceGallery:
             name = self._assign_name()
             self._gallery[new_id] = {
                 'embeddings': [embedding],
+                'body_embeddings': [],
                 'last_seen': time.time(),
                 'cameras': {cam_id},
                 'name': name,
@@ -157,6 +212,10 @@ class FaceGallery:
             target['embeddings'].extend(source['embeddings'])
             if len(target['embeddings']) > self.max_embeddings * 2:
                 target['embeddings'] = target['embeddings'][-self.max_embeddings:]
+            tgt_bodies = target.setdefault('body_embeddings', [])
+            tgt_bodies.extend(source.get('body_embeddings', []))
+            if len(tgt_bodies) > self.max_body_embeddings * 2:
+                target['body_embeddings'] = tgt_bodies[-self.max_body_embeddings:]
             target['cameras'].update(source['cameras'])
             target['last_seen'] = max(target['last_seen'], source['last_seen'])
             del self._gallery[source_id]
@@ -194,6 +253,7 @@ class FaceGallery:
                 'last_seen': data['last_seen'],
                 'cameras': list(data['cameras']),
                 'embedding_count': len(data['embeddings']),
+                'body_count': len(data.get('body_embeddings', [])),
             }
 
     def list_all(self) -> List[Dict]:

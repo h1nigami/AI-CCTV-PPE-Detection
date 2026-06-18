@@ -4,6 +4,7 @@ import cv2
 from flask import Flask, send_file, render_template, Response, request, jsonify, send_from_directory
 from backend.detection.engine import get_danger_zone, is_in_danger_zone
 from backend.visualization.renderer import draw_danger_zone, put_text
+from backend.config import CONF_THRESH
 
 
 def _get_boxes_by_class(boxes, classes, names, class_name: str):
@@ -184,7 +185,7 @@ def configure_detection_routes(app, state, annotated_buffers, generate_live_feed
             if img is None:
                 os.remove(path)
                 return "Invalid image file", 400
-            result = model(img)[0]
+            result = model(img, conf=CONF_THRESH)[0]
             annotated = _annotate_with_zone(result, model.names)
             output = os.path.join(UPLOAD_FOLDER, f"result_{filename}")
             cv2.imwrite(output, annotated)
@@ -199,7 +200,7 @@ def configure_detection_routes(app, state, annotated_buffers, generate_live_feed
                 ret, frame = cap.read()
                 if not ret:
                     break
-                result = model(frame)[0]
+                result = model(frame, conf=CONF_THRESH)[0]
                 annotated = _annotate_with_zone(result, model.names)
                 out.write(annotated)
             cap.release()

@@ -24,10 +24,10 @@ from backend.config import (
 from backend.capture.buffer import FrameBuffer
 from backend.capture.camera import CameraCapture
 from backend.detection.engine import run_detection, get_danger_zone, has_item_on_person, is_in_danger_zone
-from backend.gestures.detector import detect_ok_gesture, detect_raised_hand
+from backend.gestures.detector import detect_ok_gesture
 from backend.visualization.renderer import (
     draw_danger_zone, draw_person, draw_hint,
-    draw_legend, draw_stats_panel, put_text, FONT_LARGE
+    draw_legend, put_text, FONT_LARGE
 )
 from backend.core.state import DetectionState, LogEntry
 from backend.api.events import create_event_record, update_event_clip, update_event_snapshot
@@ -63,6 +63,18 @@ try:
     face_recognizer = FaceRecognizer(model_name='buffalo_l', det_size=REID_DET_SIZE)
 except Exception as e:
     print(f"[ReID] InsightFace не загружен: {e}. Re-ID отключён.")
+
+# Body Re-ID (опознание «со спины» по одежде) — лёгкий цветовой дескриптор, без
+# тяжёлых зависимостей. Включается флагом REID_BODY_ENABLED.
+body_recognizer = None
+try:
+    from backend.config import REID_BODY_ENABLED
+    if REID_BODY_ENABLED:
+        from backend.reid.body import BodyRecognizer
+        body_recognizer = BodyRecognizer()
+        print("[ReID] Body Re-ID активен (дескриптор одежды)")
+except Exception as e:
+    print(f"[ReID] Body Re-ID не загружен: {e}")
 
 state = DetectionState()
 state.init_gallery(REID_GALLERY_PATH)
@@ -113,16 +125,30 @@ def stop_face_workers():
 def _build_voice_text(statuses: dict, person_name: str) -> str:
     """Сформировать текст голосового предупреждения по статусам СИЗ.
     Статус-строка: 'КМЖз' — позиции 0=каска, 1=маска, 2=жилет, 3=зона;
-    заглавная = есть, строчная = нет."""
+    заглавная = есть, строчная = нет.
+
+    Озвучиваем ТОЛЬКО реальное нарушение В опасной зоне (человек внутри зоны
+    без СИЗ). Если нарушение СИЗ есть, но человек ВНЕ зоны — возвращаем ''
+    (пустую строку), чтобы не проигрывать ложное «в опасной зоне» (категория
+    «нарушение» в пайплайне срабатывает и на отсутствие СИЗ вне зоны)."""
     missing = []
+    zone_violation = False
     for status in statuses.values():
-        if len(status) >= 4 and status[3] == 'З':
-            if status[0] == 'к' and 'каска' not in missing:
-                missing.append('каска')
-            if status[1] == 'м' and 'маска' not in missing:
-                missing.append('маска')
-            if status[2] == 'ж' and 'жилет' not in missing:
-                missing.append('жилет')
+        if len(status) >= 4 and status[3] == 'З':  # человек в зоне
+            person_missing = []
+            if status[0] == 'к':
+                person_missing.append('каска')
+            if status[1] == 'м':
+                person_missing.append('маска')
+            if status[2] == 'ж':
+                person_missing.append('жилет')
+            if person_missing:
+                zone_violation = True
+                for item in person_missing:
+                    if item not in missing:
+                        missing.append(item)
+    if not zone_violation:
+        return ""
     who = person_name if person_name else "Человек"
     if missing:
         return f"Внимание! {who} в опасной зоне. Нет СИЗ: {', '.join(missing)}"
@@ -194,6 +220,11 @@ def process_frame(frame, cam_id: str, face_worker=None):
         return frame, f"{datetime.now().strftime('%H:%M:%S')} [{cam_id}] Детекция отключена", "норма", [], {}
     state.cleanup_stale_tracks()
     detected = run_detection(frame, model)
+    # Чистый кадр ДО любой отрисовки — для body Re-ID (рамки/заливка зоны исказили
+    # бы цвета одежды). Берём копию только когда body Re-ID реально нужен.
+    clean_frame = frame.copy() if (body_recognizer is not None
+                                   and DETECT_MODES.get("faces", True)
+                                   and detected["persons"]) else None
     danger_zone = get_danger_zone(detected["cones"]) if DETECT_MODES.get("ppe", True) else None
     if DETECT_MODES.get("ppe", True):
         for box in detected["helmets"]:
@@ -239,10 +270,14 @@ def process_frame(frame, cam_id: str, face_worker=None):
                 track_id = idx
             face_info = (face_embeddings or [(None, 0.0)])[idx] if face_embeddings else (None, 0.0)
             face_emb, face_quality = face_info
+            # Дескриптор тела (одежды) с ЧИСТОГО кадра — для опознания «со спины».
+            body_emb = (body_recognizer.extract(clean_frame, pbox)
+                        if clean_frame is not None else None)
             global_id = state.get_global_id(track_id, cam_id,
                                             face_embedding=face_emb,
                                             quality=face_quality,
-                                            person_box=pbox)
+                                            person_box=pbox,
+                                            body_embedding=body_emb)
             global_ids.append(global_id)
             has_helmet = any(has_item_on_person(pbox, h) for h in detected["helmets"]) if DETECT_MODES.get("ppe", True) else False
             has_mask = any(has_item_on_person(pbox, m) for m in detected["masks"]) if DETECT_MODES.get("ppe", True) else False
@@ -324,43 +359,6 @@ def process_frame(frame, cam_id: str, face_worker=None):
         key = f"{cam_id}:{track_id}"
         statuses[key] = f"{'К' if helmet else 'к'}{'М' if mask else 'м'}{'Ж' if vest else 'ж'}{'З' if dz else 'з'}"
     return frame, message, category, global_ids, statuses
-
-
-def detection_worker(cam_id: str):
-    raw_buf = frame_buffers[cam_id]
-    out_buf = annotated_buffers[cam_id]
-    frame_idx = 0
-    min_interval = 0.05
-    while state.live_active:
-        t0 = time.time()
-        frame = raw_buf.read()
-        if frame is None:
-            time.sleep(0.01)
-            continue
-        try:
-            annotated, message, category, global_ids, statuses = process_frame(
-                frame.copy(), cam_id, face_worker=face_workers.get(cam_id))
-            frame_idx += 1
-            out_buf.write(annotated)
-            any_changed = any(state.is_status_changed(cam_id, int(k.split(":")[1]), v) for k, v in statuses.items())
-            if any_changed or frame_idx % 30 == 0:
-                gid = global_ids[0] if global_ids else 0
-                state.add_log(LogEntry(
-                    id=str(datetime.now().timestamp()),
-                    timestamp=datetime.now().strftime('%H:%M:%S'),
-                    message=message,
-                    category=category,
-                    cam_id=cam_id,
-                    global_id=gid,
-                ))
-            if any_changed:
-                print(message)
-        except Exception as e:
-            print(f"[{cam_id}] Ошибка детекции: {e}")
-            traceback.print_exc()
-        elapsed = time.time() - t0
-        if elapsed < min_interval:
-            time.sleep(min_interval - elapsed)
 
 
 def generate_live_feed(cam_id: str = "cam1"):
@@ -463,8 +461,9 @@ def detection_loop():
                     if rec is None or not rec.get('active'):
                         gid = global_ids[0] if global_ids else 0
                         person_name = state.get_person_name(gid, cam_id, has_face=True) if gid else ""
-                        state.push_voice_alert(
-                            cam_id, _build_voice_text(statuses, person_name))
+                        voice_text = _build_voice_text(statuses, person_name)
+                        if voice_text:
+                            state.push_voice_alert(cam_id, voice_text)
                         event_id = create_event_record(
                             cam_id=cam_id,
                             label=EventLabel.VIOLATION,
