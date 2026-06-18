@@ -4,8 +4,8 @@ import { DispatcherPanel } from "../components/DispatcherPanel"
 import { GalleryModal } from "../components/GalleryModal"
 import { CameraManagerModal } from "../components/CameraManagerModal"
 import { Notifications } from "../components/Notifications"
-import { LeftPanel } from "../components/LeftPanel"
-import { RightPanel } from "../components/RightPanel"
+import { ControlPanel } from "../components/ControlPanel"
+import { EventsPanel } from "../components/EventsPanel"
 import { BottomSheet } from "../components/ui/BottomSheet"
 import { useCamerasContext } from "../contexts/CameraContext"
 import { useBreakpoint } from "../hooks/useBreakpoint"
@@ -128,7 +128,8 @@ export default function DashboardPage() {
 
       <div style={{ ...styles.main, gridTemplateColumns: gridColumns }}>
         {!isMobile && (
-          <LeftPanel
+          <ControlPanel
+            variant="sidebar"
             isRunning={isRunning}
             selectedCam={selectedCam}
             logs={logs}
@@ -199,7 +200,8 @@ export default function DashboardPage() {
         </div>
 
         {!isMobile && (
-          <RightPanel
+          <EventsPanel
+            variant="sidebar"
             logs={selectedCam ? logs.filter((l) => l.cam_id === selectedCam) : logs}
           />
         )}
@@ -237,7 +239,8 @@ export default function DashboardPage() {
       {isMobile && (
         <>
           <BottomSheet open={mobilePanel === 'left'} onClose={() => setMobilePanel(null)} title="Управление">
-            <LeftPanel
+            <ControlPanel
+              variant="sheet"
               isRunning={isRunning}
               selectedCam={selectedCam}
               logs={logs}
@@ -250,7 +253,8 @@ export default function DashboardPage() {
             />
           </BottomSheet>
           <BottomSheet open={mobilePanel === 'right'} onClose={() => setMobilePanel(null)} title="События">
-            <RightPanel
+            <EventsPanel
+              variant="sheet"
               logs={selectedCam ? logs.filter((l) => l.cam_id === selectedCam) : logs}
             />
           </BottomSheet>

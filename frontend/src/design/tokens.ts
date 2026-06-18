@@ -41,14 +41,14 @@ export const radius = {
 } as const
 
 export const fontSize = {
-  xs: '0.6rem',
-  sm: '0.65rem',
-  md: '0.7rem',
-  lg: '0.75rem',
-  xl: '0.8rem',
-  xxl: '0.85rem',
-  xxxl: '1rem',
-  hero: '4rem',
+  xs: 'clamp(0.55rem, 1.2vw, 0.6rem)',
+  sm: 'clamp(0.6rem, 1.5vw, 0.65rem)',
+  md: 'clamp(0.65rem, 1.8vw, 0.7rem)',
+  lg: 'clamp(0.7rem, 2vw, 0.75rem)',
+  xl: 'clamp(0.75rem, 2.2vw, 0.8rem)',
+  xxl: 'clamp(0.8rem, 2.5vw, 0.85rem)',
+  xxxl: 'clamp(0.9rem, 2.8vw, 1rem)',
+  hero: 'clamp(2.5rem, 8vw, 4rem)',
 } as const
 
 export const fontWeight = {
