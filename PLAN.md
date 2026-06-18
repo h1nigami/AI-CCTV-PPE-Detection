@@ -595,7 +595,8 @@ frigate_disk_usage_percent{mount="/media"} 45
 - [ ] YAML конфигурация + парсер
 - [x] MQTT брокер + клиент (брокер в docker-compose; клиент-публикатор `backend/mqtt/publisher.py`, опционален, мягкая деградация)
 - [ ] Разделение на процессы: capture, detect, record, api
-- [x] Motion detection (MOG2) перед YOLO (`backend/detection/motion.py`, гейт в `detection_loop`, конфиг `MOTION_*`)
+  - 🔶 Частично: детекция распараллелена **по потоку на камеру** (`_camera_detection_worker`, свой экземпляр YOLO на камеру) вместо последовательного round-robin — даёт параллелизм на CPU-ядрах без накладных multiprocessing/shared_memory и без дублирования галереи Re-ID. Полное разделение на процессы — позже (упор. при росте числа камер на CPU).
+- [x] Motion detection (MOG2) перед YOLO (`backend/detection/motion.py`, гейт в потоке детекции, конфиг `MOTION_*`)
 - [ ] Shared memory для кадров (zero-copy)
 - [ ] Базовая запись (24/7 segmented MP4)
 
@@ -669,7 +670,7 @@ frigate_disk_usage_percent{mount="/media"} 45
 
 | Функция | Сейчас | После трансформации (как Frigate) |
 |---------|--------|----------------------------------|
-| Архитектура | Один процесс + threading | Multiprocess + MQTT |
+| Архитектура | Один процесс + threading (детекция — поток на камеру 🔶) | Multiprocess + MQTT |
 | Детекция | YOLO (каждый кадр) | Motion-triggered YOLO ✅ (MOG2-гейт, опц.) |
 | Конфиг | Python `.py` + JSON | YAML + hot-reload |
 | Запись видео | ❌ Нет | 24/7 + event + retention |

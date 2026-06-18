@@ -80,11 +80,14 @@ alembic upgrade head
    - RTSP: NVIDIA GStreamer (если есть `nvv4l2decoder`) → иначе ffmpeg-subprocess → иначе OpenCV(`CAP_FFMPEG`). Кадры 1280×720, `-r 15`, `-rtsp_transport tcp`, клиентский таймаут через `-stimeout` (НЕ `-timeout` — тот для listen-режима).
    - Локальная камера (int source): OpenCV → fallback ffmpeg v4l2.
    - Авто-переподключение с экспоненциальным backoff; чёрные кадры (`mean<3`) отбрасываются.
-2. **Детекция** — `backend/main.py::detection_loop` (единый daemon-поток на ВСЕ камеры, последовательный обход, НЕ параллельно). Для каждой камеры: читает кадр → `process_frame` → пишет аннотированный кадр в `annotated_buffers[cam_id]`.
+2. **Детекция** — `backend/main.py::_camera_detection_worker(cam_id)` — **daemon-поток НА КАЖДУЮ камеру** (параллельно, не round-robin). `start_live` поднимает по потоку на камеру + отдельный `_heartbeat_loop`. Каждый поток блокируется на `FrameBuffer.wait()`, читает кадр → `process_frame` → пишет в `annotated_buffers[cam_id]`. Параллелизм реален, т.к. YOLO/InsightFace/OpenCV отпускают GIL на вычислениях (на CPU — по ядрам, на GPU — с перекрытием Python-склейки; агрегатный FPS на одном GPU всё равно ограничен GPU).
+   - **Модели на камеру** (`_cam_models`, `_get_cam_models`): свой экземпляр YOLO+pose на камеру — ByteTrack хранит трекер ВНУТРИ модели, общий объект перемешал бы `track_id`. Веса ~6 МБ, дёшево. Глобальные `model`/`pose_model` остаются только для `/upload`.
+   - `process_frame(..., det_model=None, det_pose=None)` — модели прокидываются параметрами (по умолчанию глобальные → совместимость с `/upload` и тестами).
+   - `add_camera`/`remove_camera`/`rename_camera` поднимают/снимают поток камеры на лету; воркер сам завершается по условию `cam_id in CAMERAS`.
 3. **`process_frame`** (`main.py`, ядро бизнес-логики): `run_detection` → построение опасной зоны → сопоставление СИЗ с людьми → Re-ID → жесты/пропуск → отрисовка → возвращает `(frame, message, category, global_ids, statuses)`. `category` ∈ {`норма`, `внимание`, `нарушение`}.
 4. **Раздача** — `backend/api/detection.py`: `/video_frame/<cam_id>` (одиночный JPEG, фронт поллит ~100мс, quality=85), `/video_feed[/<cam_id>]` (MJPEG `multipart/x-mixed-replace`).
 
-> ⚠️ В `main.py` есть `detection_worker(cam_id)` (поток на каждую камеру) — **мёртвый код**, не вызывается. Активен только `detection_loop`. Не путать.
+> ⚠️ Состояние `DetectionState` хитят параллельно N потоков детекции + N face-воркеров — все мутации под локами (`_lock`/`_reid_lock`). `get_global_id` под `_reid_lock` сериализует Re-ID между камерами (нужно для консистентности кросс-камерной личности; быстро относительно YOLO).
 
 ### 2.3. Детекция (`backend/detection/engine.py`)
 - `run_detection(frame, model)` → `model.track(..., persist=True, tracker=bytetrack_custom.yaml)`, возвращает dict: `persons`, `person_track_ids`, `helmets`, `masks`, `vests`, `cones`. Классы фильтруются по русским именам из `CLASS_NAMES`.
@@ -173,7 +176,8 @@ alembic upgrade head
 - **Слабые security-дефолты:** `admin/admin123`, MinIO `minioadmin/minioadmin` (в `config.py` и compose), пустой `JWT_SECRET` → автогенерация. Переопределять через env. Бизнес-API в основном не закрыты авторизацией.
 - **Фейковые метрики во фронте:** часть статусов парсится из текста лог-строк; метрики CPU/RAM/FPS во фронте местами не настоящие. **Настоящие** метрики — в `/api/stats`, `/metrics` (см. 2.13), фронт их пока не потребляет.
 - **Tesla P4 (Pascal, sm_61)** несовместима с torch cu124/cu130 → нужен torch 2.4.1 cu121 (см. `Dockerfile.gpu`, `DEPLOY_FRONTEND_CHECKLIST.md`). `requirements.txt` фиксирует torch 2.12.0 — это для CPU/современных GPU.
-- **`detection_worker` — мёртвый код** (см. 2.2). **`FaceDetector`/`yolov8n-face.pt` — не задействованы** (см. 2.5).
+- **`FaceDetector`/`yolov8n-face.pt` — не задействованы** (см. 2.5).
+- **Поток детекции на камеру** (см. 2.2): на одном GPU агрегатный FPS всё равно ограничен GPU (потоки перекрывают Python-склейку, но инференс на GPU сериализуется). Реальный рост FPS — на многоядерном CPU и при motion-гейте. N экземпляров YOLO в памяти (по 2 на камеру) — это норма, не утечка.
 - **Камеры не в БД, а в JSON** (см. 2.8). Таблица `Camera` рассинхронизирована с рантаймом.
 - **`stop_live` / `CameraCapture.stop`** — порядок важен: сначала рвём источник (terminate ffmpeg / release), потом join, иначе `/stop` висит на полном таймауте (по 5с/камеру). Исторический баг зависания.
 - **RTSP ffmpeg:** клиентский таймаут — `-stimeout` (мкс), НЕ `-timeout` (тот трактуется как listen-режим → ошибка).
