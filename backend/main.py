@@ -28,6 +28,7 @@ from backend.core.metrics import get_metrics
 from backend.detection.motion import MotionDetector
 from backend.mqtt.publisher import get_publisher
 from backend.recorder import get_recording_manager
+from backend.zones import get_zones, apply_masks, in_any_danger_zone, to_pixels
 from backend.capture.buffer import FrameBuffer
 from backend.capture.camera import CameraCapture
 from backend.detection.engine import run_detection, get_danger_zone, has_item_on_person, is_in_danger_zone
@@ -284,6 +285,30 @@ def _get_motion_detector(cam_id: str) -> MotionDetector:
     return det
 
 
+_ZONE_COLORS = {  # BGR
+    "danger": (0, 0, 255),
+    "restricted": (0, 165, 255),
+    "mask": (128, 128, 128),
+}
+
+
+def _draw_user_zones(frame, zones: list, w: int, h: int):
+    """Отрисовать пользовательские полигональные зоны (контур + лёгкая заливка)."""
+    import numpy as _np
+    for z in zones:
+        pts = to_pixels(z, w, h)
+        if len(pts) < 3:
+            continue
+        color = _ZONE_COLORS.get(z.get("type"), (0, 0, 255))
+        arr = _np.array(pts, dtype=_np.int32).reshape((-1, 1, 2))
+        overlay = frame.copy()
+        cv2.fillPoly(overlay, [arr], color)
+        cv2.addWeighted(overlay, 0.18, frame, 0.82, 0, frame)
+        cv2.polylines(frame, [arr], isClosed=True, color=color, thickness=2)
+        label = z.get("name") or z.get("type", "зона")
+        frame[:] = put_text(frame, label, (pts[0][0], max(0, pts[0][1] - 18)), color=color)
+
+
 def process_frame(frame, cam_id: str, face_worker=None, det_model=None, det_pose=None):
     from backend.config import DETECT_MODES
     # Модели на камеру (для параллельных потоков детекции); по умолчанию —
@@ -295,12 +320,28 @@ def process_frame(frame, cam_id: str, face_worker=None, det_model=None, det_pose
         return frame, f"{datetime.now().strftime('%H:%M:%S')} [{cam_id}] Детекция отключена", "норма", [], {}
     state.cleanup_stale_tracks()
     detected = run_detection(frame, det_model)
+    # Пользовательские зоны (нарисованы в редакторе): сперва маски — исключаем
+    # объекты в замаскированных областях ДО любой логики/отрисовки.
+    fh, fw = frame.shape[:2]
+    ppe_on = DETECT_MODES.get("ppe", True)
+    cam_zones = get_zones(cam_id)
+    if cam_zones:
+        detected = apply_masks(detected, cam_zones, fw, fh)
+    # Опасные/ограниченные пользовательские зоны учитываются вместе с зоной по
+    # конусам (только когда включена детекция СИЗ — как и зона по конусам).
+    danger_user = [z for z in cam_zones if z.get("type") in ("danger", "restricted")] if ppe_on else []
     # Чистый кадр ДО любой отрисовки — для body Re-ID (рамки/заливка зоны исказили
     # бы цвета одежды). Берём копию только когда body Re-ID реально нужен.
     clean_frame = frame.copy() if (body_recognizer is not None
                                    and DETECT_MODES.get("faces", True)
                                    and detected["persons"]) else None
-    danger_zone = get_danger_zone(detected["cones"]) if DETECT_MODES.get("ppe", True) else None
+    danger_zone = get_danger_zone(detected["cones"]) if ppe_on else None
+
+    def _in_danger(pbox) -> bool:
+        """Человек в любой опасной зоне: по конусам ИЛИ в пользовательской зоне."""
+        if danger_zone is not None and is_in_danger_zone(pbox, danger_zone):
+            return True
+        return in_any_danger_zone(pbox, danger_user, fw, fh) if danger_user else False
     if DETECT_MODES.get("ppe", True):
         for box in detected["helmets"]:
             x1, y1, x2, y2 = map(int, box)
@@ -320,6 +361,7 @@ def process_frame(frame, cam_id: str, face_worker=None, det_model=None, det_pose
             frame = put_text(frame, "Конус", (x1, max(0, y1 - 20)), color=(0, 128, 255))
     if danger_zone is not None:
         frame = draw_danger_zone(frame, danger_zone)
+    _draw_user_zones(frame, cam_zones, fw, fh)
     persons_count = len(detected["persons"])
     # Извлекаем до любых веток: используется и в цикле отрисовки, и в цикле statuses.
     # Раньше присваивалось внутри `if detected["persons"] and detect_people` →
@@ -357,7 +399,7 @@ def process_frame(frame, cam_id: str, face_worker=None, det_model=None, det_pose
             has_helmet = any(has_item_on_person(pbox, h) for h in detected["helmets"]) if DETECT_MODES.get("ppe", True) else False
             has_mask = any(has_item_on_person(pbox, m) for m in detected["masks"]) if DETECT_MODES.get("ppe", True) else False
             has_vest = any(has_item_on_person(pbox, v) for v in detected["vests"]) if DETECT_MODES.get("ppe", True) else False
-            in_danger = is_in_danger_zone(pbox, danger_zone) if danger_zone is not None else False
+            in_danger = _in_danger(pbox)
             approved = state.is_approved(pbox, cam_id, global_id=global_id)
             fully_equipped = has_helmet and has_mask and has_vest
             missing = [n for f, n in [(has_helmet, "каска"), (has_mask, "маска"), (has_vest, "жилет")] if not f] if DETECT_MODES.get("ppe", True) else []
@@ -421,7 +463,7 @@ def process_frame(frame, cam_id: str, face_worker=None, det_model=None, det_pose
     frame = draw_legend(frame)
     message = " | ".join(msg_parts)
     category = "нарушение" if has_any_violation else \
-        "внимание" if danger_zone is not None and detected["persons"] else "норма"
+        "внимание" if (danger_zone is not None or danger_user) and detected["persons"] else "норма"
     statuses: dict[str, str] = {}
     for idx, pbox in enumerate(detected["persons"]):
         track_id = person_track_ids[idx] if idx < len(person_track_ids) else -1
@@ -430,7 +472,7 @@ def process_frame(frame, cam_id: str, face_worker=None, det_model=None, det_pose
         helmet = any(has_item_on_person(pbox, h) for h in detected["helmets"]) if DETECT_MODES.get("ppe", True) else False
         mask = any(has_item_on_person(pbox, m) for m in detected["masks"]) if DETECT_MODES.get("ppe", True) else False
         vest = any(has_item_on_person(pbox, v) for v in detected["vests"]) if DETECT_MODES.get("ppe", True) else False
-        dz = is_in_danger_zone(pbox, danger_zone) if danger_zone is not None else False
+        dz = _in_danger(pbox)
         key = f"{cam_id}:{track_id}"
         statuses[key] = f"{'К' if helmet else 'к'}{'М' if mask else 'м'}{'Ж' if vest else 'ж'}{'З' if dz else 'з'}"
     return frame, message, category, global_ids, statuses

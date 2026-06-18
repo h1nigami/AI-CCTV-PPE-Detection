@@ -93,6 +93,7 @@ alembic upgrade head
 - `run_detection(frame, model)` → `model.track(..., persist=True, tracker=bytetrack_custom.yaml)`, возвращает dict: `persons`, `person_track_ids`, `helmets`, `masks`, `vests`, `cones`. Классы фильтруются по русским именам из `CLASS_NAMES`.
 - `bytetrack_custom.yaml`: `track_buffer: 90`, пороги 0.25/0.1 — для устойчивых `track_id` между кадрами.
 - `get_danger_zone(cones)` — bbox по ≥`MIN_CONES`(2) конусам + расширение `ZONE_EXPAND_PX`(20). `is_in_danger_zone` проверяет точку ног (центр низа bbox). `has_item_on_person` — СИЗ засчитывается, если центр предмета в верхних `TOP_RATIO`(0.4) человека.
+- **Пользовательские зоны** (`backend/zones.py`) — нарисованные оператором полигоны (редактор зон), в дополнение к авто-зоне по конусам. Хранятся в конфиге камеры (`cameras_config.json`, ключ `zones`), координаты **нормализованные [0..1]**. Типы: `danger`/`restricted` (вход = опасная зона, учитываются вместе с конусной в `_in_danger` внутри `process_frame`), `mask` (объекты в области исключаются из детекции — `apply_masks` до всей логики). Проверка вхождения — тот же ray-casting (`_point_in_polygon`), без shapely. CRUD: `get_zones`/`set_zones`/`add_zone`/`update_zone`/`delete_zone`. Hot-reload: читаются в `process_frame` на каждом кадре.
 
 ### 2.4. Состояние (`backend/core/state.py::DetectionState`)
 Потокобезопасный (два лока: `_lock` общий, `_reid_lock` для Re-ID) синглтон, держит:
@@ -144,7 +145,7 @@ alembic upgrade head
 
 ### 2.9. API (Flask blueprints, регистрируются в `backend/app.py`)
 - **`api/detection.py`** (`configure_detection_routes`): `POST /start`, `POST /stop`, `/video_frame/<cam>`, `/video_feed[/<cam>]`, `GET|PUT /api/detect-modes`, `GET /api/status`, `/detection_log`, `/export_logs` (CSV с BOM), `POST /upload` (детекция на загруженном фото/видео).
-- **`api/cameras.py`**: `GET /cameras`, `POST /api/cameras`, `PUT|DELETE /api/cameras/<id>`, `POST /api/cameras/<id>/rename`, `PUT /api/cameras/<id>/analytics` (вкл/выкл детекцию на камере). CRUD идёт через функции `main.py` (`add_camera`/`remove_camera`/`rename_camera`) — они синхронно правят буферы, воркеры и `cameras.json`.
+- **`api/cameras.py`**: `GET /cameras`, `POST /api/cameras`, `PUT|DELETE /api/cameras/<id>`, `POST /api/cameras/<id>/rename`, `PUT /api/cameras/<id>/analytics` (вкл/выкл детекцию на камере), `GET|PUT|POST /api/cameras/<id>/zones` + `PUT|DELETE /api/cameras/<id>/zones/<zone_id>` (зоны редактора). CRUD камер идёт через функции `main.py` (`add_camera`/`remove_camera`/`rename_camera`) — они синхронно правят буферы, воркеры и `cameras.json`.
 - **`api/reid.py`**: `GET /api/reid/persons`, `POST .../rename`, `DELETE .../<id>`, `POST /api/reid/clear`, `GET /api/reid/stats` — управление галереей лиц.
 - **`api/events.py`** (Blueprint `events_bp`): `GET /api/events` (фильтры camera/label, пагинация), `GET /api/events/<id>`, `.../clip`, `.../snapshot`.
 - **`api/monitoring.py`** (Blueprint `monitoring_bp`): `GET /health` (healthcheck), `GET /metrics` (Prometheus text), `GET /api/stats` (JSON-метрики). Читают реестр `backend/core/metrics.py`.
@@ -162,7 +163,8 @@ alembic upgrade head
 `DETECT_MODES = {people, ppe, faces}` (`backend/config.py`), персистятся в `data/detect_modes.json`, меняются через `PUT /api/detect-modes` / UI. Если все три выключены — YOLO пропускается целиком. Выключение `people` каскадно гасит `ppe` и `faces`. Переключение `faces` стартует/глушит face-воркеры на лету.
 
 ### 2.12. Фронтенд (`frontend/`)
-- React 19 + TypeScript + Vite 6, роутинг `react-router-dom` v7 (`App.tsx`: Dashboard, EventsPage, ArchivePage `/archive`, SettingsPage, Login/Register).
+- React 19 + TypeScript + Vite 6, роутинг `react-router-dom` v7 (`App.tsx`: Dashboard, EventsPage, ArchivePage `/archive`, ZonesPage `/zones`, SettingsPage, Login/Register).
+- **`ZonesPage`** (`/zones`) — редактор зон: SVG (`viewBox 0 0 1 1`, нормализованные координаты) поверх кадра камеры (`/video_frame`); клик = добавить вершину активной зоне, перетаскивание вершин (pointer events), выбор типа/названия/требуемых СИЗ; сохранение через `api.saveZones` (PUT всех зон).
 - **`ArchivePage`** (`/archive`) — просмотр NVR-архива: выбор камеры+даты → `api.getRecordings({camId, from, to})` + `api.getEvents` → 24-часовой таймлайн сегментов (цвет = есть движение) с **метками событий** поверх (цвет по label); клик по метке → открывает покрывающий сегмент и перематывает к моменту события (`onLoadedMetadata` → `currentTime`), при отсутствии сегмента — fallback на event-клип. Плеер с перемоткой (Range через `/api/recordings/<id>/play`) и **непрерывным воспроизведением** (тумблер «Непрерывно»: по `onEnded` автозапуск следующего сегмента, пропуская gaps motion-режима). Появляется при `RECORD_ENABLED` на бэке.
 - `src/api/client.ts` — HTTP-клиент с авто-refresh JWT. `src/contexts/` — Auth, Camera. `src/hooks/` — useBreakpoint, useOrientation, useClock, useCameras, useLogs.
 - Адаптив 3 брейкпоинта (моб <768 / планшет 768–1199 / десктоп ≥1200): дизайн-токены `src/design/tokens.ts`, UI-примитивы `src/components/ui/` (Box, Flex, Grid, Responsive, BottomSheet).

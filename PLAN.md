@@ -624,10 +624,11 @@ frigate_disk_usage_percent{mount="/media"} 45
 ### Фаза 4: Зоны и маски
 **Срок: 1-2 недели** — 🟡 Приоритет 2
 
-- [ ] Полигональные зоны (shapely)
-- [ ] Маски детекции/motion
-- [ ] Визуальный редактор в UI (Canvas)
-- [ ] Hot-reload конфигурации
+- [x] Полигональные зоны — `backend/zones.py` (ray-casting, без shapely; типы danger/restricted/mask, нормализованные координаты, хранение в конфиге камеры). API `GET/POST/PUT/DELETE /api/cameras/<id>/zones`
+- [x] Маски детекции — `apply_masks` исключает объекты в зонах-масках из детекции
+- [x] Визуальный редактор в UI — `frontend/src/pages/ZonesPage.tsx` (SVG поверх кадра, клик = вершина, перетаскивание точек, тип/название/требуемые СИЗ, сохранение)
+- [x] Hot-reload конфигурации — зоны читаются из конфига камеры на каждом кадре (`get_zones` в `process_frame`), правка применяется сразу
+  - 🔶 motion-маски (исключение из MOG2) и shapely-бэкенд для сложной геометрии — при необходимости позже
 
 ### Фаза 5: Multi-backend детекторы
 **Срок: 1 неделя** — 🟢 Приоритет 3
@@ -676,7 +677,7 @@ frigate_disk_usage_percent{mount="/media"} 45
 | Конфиг | Python `.py` + JSON | YAML + hot-reload |
 | Запись видео | event-клипы + 24/7 NVR ✅ (сегменты+retention) | 24/7 + event + retention |
 | Live view | Polling JPEG (100ms) | WebRTC (<500ms) |
-| Зоны | Только конусы | Полигоны + редактор + маски |
+| Зоны | Конусы + полигоны ✅ + редактор ✅ + маски ✅ | Полигоны + редактор + маски |
 | События | SQLite (events) + лента ✅ + архив-timeline ✅ | SQLite/DB + поиск + timeline |
 | Лица | InsightFace | InsightFace + gallery управление |
 | Детекторы | Только CPU/CUDA | CPU + Coral + TensorRT + OpenVINO |

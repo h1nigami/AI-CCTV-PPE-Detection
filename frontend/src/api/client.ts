@@ -9,6 +9,7 @@ import type {
   User,
   TimelineEvent,
   RecordingSegment,
+  Zone,
 } from "../types"
 
 // ============================================================
@@ -182,6 +183,15 @@ export const api = {
     )
   },
   getRecordingPlayUrl: (id: string) => `/api/recordings/${id}/play`,
+
+  // ---- Зоны (редактор зон) ----
+  getZones: (camId: string) =>
+    request<{ zones: Zone[] }>(`/api/cameras/${camId}/zones`),
+  saveZones: (camId: string, zones: Zone[]) =>
+    request<{ status: string; zones: Zone[] }>(`/api/cameras/${camId}/zones`, {
+      method: "PUT",
+      body: JSON.stringify({ zones }),
+    }),
 
   // ---- Режимы детекции ----
   getDetectModes: () =>

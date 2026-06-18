@@ -116,6 +116,17 @@ export interface TimelineEvent {
   boxH: number | null
 }
 
+/** Пользовательская полигональная зона (редактор зон) */
+export type ZoneType = "danger" | "restricted" | "mask"
+export interface Zone {
+  id?: string
+  name: string
+  type: ZoneType
+  /** Вершины в нормализованных координатах [0..1] относительно кадра */
+  points: [number, number][]
+  require_ppe: string[]
+}
+
 /** Сегмент непрерывной записи (NVR-архив) */
 export interface RecordingSegment {
   id: string

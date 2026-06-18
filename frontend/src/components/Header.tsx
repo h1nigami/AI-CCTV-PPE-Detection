@@ -121,6 +121,9 @@ export function Header() {
             <button style={{ ...styles.navBtn, ...(location.pathname === "/archive" ? styles.navActive : {}) }} onClick={() => navigate("/archive")}>
               АРХИВ
             </button>
+            <button style={{ ...styles.navBtn, ...(location.pathname === "/zones" ? styles.navActive : {}) }} onClick={() => navigate("/zones")}>
+              ЗОНЫ
+            </button>
             <button style={{ ...styles.navBtn, ...(location.pathname === "/settings" ? styles.navActive : {}) }} onClick={() => navigate("/settings")}>
               НАСТРОЙКИ
             </button>
@@ -217,6 +220,9 @@ export function Header() {
             </button>
             <button style={menuItem(location.pathname === "/archive")} onClick={() => handleNav("/archive")}>
               🎞️ Архив
+            </button>
+            <button style={menuItem(location.pathname === "/zones")} onClick={() => handleNav("/zones")}>
+              ✏️ Зоны
             </button>
             <button style={menuItem(location.pathname === "/settings")} onClick={() => handleNav("/settings")}>
               ⚙️ Настройки
