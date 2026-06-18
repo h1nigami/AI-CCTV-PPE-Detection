@@ -113,16 +113,30 @@ def stop_face_workers():
 def _build_voice_text(statuses: dict, person_name: str) -> str:
     """Сформировать текст голосового предупреждения по статусам СИЗ.
     Статус-строка: 'КМЖз' — позиции 0=каска, 1=маска, 2=жилет, 3=зона;
-    заглавная = есть, строчная = нет."""
+    заглавная = есть, строчная = нет.
+
+    Озвучиваем ТОЛЬКО реальное нарушение В опасной зоне (человек внутри зоны
+    без СИЗ). Если нарушение СИЗ есть, но человек ВНЕ зоны — возвращаем ''
+    (пустую строку), чтобы не проигрывать ложное «в опасной зоне» (категория
+    «нарушение» в пайплайне срабатывает и на отсутствие СИЗ вне зоны)."""
     missing = []
+    zone_violation = False
     for status in statuses.values():
-        if len(status) >= 4 and status[3] == 'З':
-            if status[0] == 'к' and 'каска' not in missing:
-                missing.append('каска')
-            if status[1] == 'м' and 'маска' not in missing:
-                missing.append('маска')
-            if status[2] == 'ж' and 'жилет' not in missing:
-                missing.append('жилет')
+        if len(status) >= 4 and status[3] == 'З':  # человек в зоне
+            person_missing = []
+            if status[0] == 'к':
+                person_missing.append('каска')
+            if status[1] == 'м':
+                person_missing.append('маска')
+            if status[2] == 'ж':
+                person_missing.append('жилет')
+            if person_missing:
+                zone_violation = True
+                for item in person_missing:
+                    if item not in missing:
+                        missing.append(item)
+    if not zone_violation:
+        return ""
     who = person_name if person_name else "Человек"
     if missing:
         return f"Внимание! {who} в опасной зоне. Нет СИЗ: {', '.join(missing)}"
@@ -463,8 +477,9 @@ def detection_loop():
                     if rec is None or not rec.get('active'):
                         gid = global_ids[0] if global_ids else 0
                         person_name = state.get_person_name(gid, cam_id, has_face=True) if gid else ""
-                        state.push_voice_alert(
-                            cam_id, _build_voice_text(statuses, person_name))
+                        voice_text = _build_voice_text(statuses, person_name)
+                        if voice_text:
+                            state.push_voice_alert(cam_id, voice_text)
                         event_id = create_event_record(
                             cam_id=cam_id,
                             label=EventLabel.VIOLATION,
