@@ -1,0 +1,158 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+Система видеоаналитики реального времени для контроля СИЗ (каски/маски/жилеты), опасных зон, Re-ID лиц и распознавания жестов на базе YOLOv8 + InsightFace. Flask-бэкенд (Waitress WSGI) раздаёт собранный React/Vite-фронтенд и MJPEG-стримы. Весь код и комментарии — на русском; придерживаться того же.
+
+---
+
+## 1. Команды
+
+### Тесты
+```bash
+python -m pytest tests/ -v                         # все тесты (87 шт.)
+python -m pytest tests/test_engine.py -v           # один файл
+python -m pytest tests/test_gallery.py::TestMatchOrRegister -v        # один класс
+python -m pytest tests/test_state.py::test_name -v # один тест
+python -m pytest tests/ --cov=backend              # с покрытием
+```
+- Тесты мокают YOLO/InsightFace (`tests/conftest.py`), GPU/камеры/сеть не нужны. Запускать из корня репо.
+- Покрытие: `test_engine.py` (детекция/зоны), `test_gallery.py` (Re-ID, адаптивный порог, merge), `test_state.py` (DetectionState), `test_config.py` (конфиг, CLASS_NAMES).
+
+### Локальный запуск
+```bash
+pip install -r requirements.txt
+python app.py [PORT]          # бэкенд на :8000 (Waitress); раздаёт frontend/dist если собран
+cd frontend && npm install
+cd frontend && npm run dev     # дев-фронт :5173, проксирует API на VITE_API_TARGET (по умолч. 192.168.0.97:8000)
+cd frontend && npm run build   # tsc -b + vite build → frontend/dist (прод раздаёт Flask)
+cd frontend && npm run preview # предпросмотр прод-сборки
+```
+**Важно:** в проде Flask раздаёт статику из `frontend/dist` (см. `serve_frontend` в `backend/app.py`), а не дев-сервер. После правок React обязателен `npm run build`.
+
+### Docker
+```bash
+docker compose --profile cpu up --build -d     # CPU (default) + MinIO + MQTT + createbuckets
+docker compose --profile gpu up --build -d     # NVIDIA CUDA
+docker compose --profile cpu restart app-cpu   # после правок Python (bind-mount, без пересборки)
+docker compose --profile cpu logs -f app-cpu
+```
+- `docker-compose.override.yml` (dev, применяется автоматически) bind-маунтит код и **прогоняет pytest перед стартом** (`pytest tests/ && python app.py`), плюс ставит FLASK_DEBUG=1.
+- После правок Python достаточно `restart` (код примонтирован). После правок React — `npm run build` + `restart`.
+- Dockerfile'ы: `Dockerfile` (CPU multi-stage), `Dockerfile.gpu` (CUDA), `Dockerfile.jetson` (ARM/Jetson), `Dockerfile.frontend` (nginx как reverse-proxy для отдельного фронт-сервера, `docker-compose.frontend.yml`, env `BACKEND_URL`).
+- Полный чеклист деплоя бэка на GPU-сервер + фронта отдельным контейнером — `DEPLOY_FRONTEND_CHECKLIST.md`.
+
+### Миграции БД (Alembic)
+```bash
+alembic revision --autogenerate -m "описание"   # конфиг в migrations/alembic.ini, env в migrations/env.py
+alembic upgrade head
+```
+`init_db()` в `backend/app.py` при старте делает `Base.metadata.create_all` — для свежей БД миграции не обязательны, нужны при изменении схемы существующей.
+
+### Модели
+- YOLO-веса в git: `models/best.pt` (PPE-детектор, 10 классов), `models/yolov8n-pose.pt` (жесты), `models/yolov8n.pt`.
+- `models/buffalo_l/` (InsightFace, ~190 МБ) в `.gitignore`. Докачка: `python download_models.py` (идемпотентно). В Docker качается в рантайме из `entrypoint.sh` — НЕ на этапе build, т.к. `./models` монтируется volume'ом и перекрывает COPY из образа.
+- Каталог моделей берётся из `INSIGHTFACE_ROOT` (в контейнере `/app`), иначе — корень репо; ожидается `<root>/models/buffalo_l/`.
+- `_resolve_model()` в `backend/main.py`: если рядом с `.pt` лежит `.engine` (TensorRT FP16) — грузится он. При TensorRT имена классов берутся из движка, `CLASS_NAMES` НЕ применяется.
+
+---
+
+## 2. Архитектура
+
+### 2.1. Корневые шим-модули — НЕ дубли
+`app.py`, `config.py`, `main.py`, `state.py`, `camera.py`, `detection.py`, `gestures.py`, `reid.py`, `visualization.py` в корне репо — тонкие реэкспорты из `backend/` (`from backend.X import *`). Существуют ради совместимости импортов (`Procfile` → `app:app`, dev-маунты Docker). **Логику править в `backend/`, не в корневых шимах.** Точка входа: `app.py` → `backend.app:app`.
+
+### 2.2. Поток обработки кадра
+1. **Захват** — `backend/capture/camera.py::CameraCapture` (поток на камеру) читает источник → пишет последний кадр в `FrameBuffer` (`backend/capture/buffer.py`, потокобезопасный single-slot с `Event`-сигналом). Стратегия источника в `_loop()`:
+   - RTSP: NVIDIA GStreamer (если есть `nvv4l2decoder`) → иначе ffmpeg-subprocess → иначе OpenCV(`CAP_FFMPEG`). Кадры 1280×720, `-r 15`, `-rtsp_transport tcp`, клиентский таймаут через `-stimeout` (НЕ `-timeout` — тот для listen-режима).
+   - Локальная камера (int source): OpenCV → fallback ffmpeg v4l2.
+   - Авто-переподключение с экспоненциальным backoff; чёрные кадры (`mean<3`) отбрасываются.
+2. **Детекция** — `backend/main.py::detection_loop` (единый daemon-поток на ВСЕ камеры, последовательный обход, НЕ параллельно). Для каждой камеры: читает кадр → `process_frame` → пишет аннотированный кадр в `annotated_buffers[cam_id]`.
+3. **`process_frame`** (`main.py`, ядро бизнес-логики): `run_detection` → построение опасной зоны → сопоставление СИЗ с людьми → Re-ID → жесты/пропуск → отрисовка → возвращает `(frame, message, category, global_ids, statuses)`. `category` ∈ {`норма`, `внимание`, `нарушение`}.
+4. **Раздача** — `backend/api/detection.py`: `/video_frame/<cam_id>` (одиночный JPEG, фронт поллит ~100мс, quality=85), `/video_feed[/<cam_id>]` (MJPEG `multipart/x-mixed-replace`).
+
+> ⚠️ В `main.py` есть `detection_worker(cam_id)` (поток на каждую камеру) — **мёртвый код**, не вызывается. Активен только `detection_loop`. Не путать.
+
+### 2.3. Детекция (`backend/detection/engine.py`)
+- `run_detection(frame, model)` → `model.track(..., persist=True, tracker=bytetrack_custom.yaml)`, возвращает dict: `persons`, `person_track_ids`, `helmets`, `masks`, `vests`, `cones`. Классы фильтруются по русским именам из `CLASS_NAMES`.
+- `bytetrack_custom.yaml`: `track_buffer: 90`, пороги 0.25/0.1 — для устойчивых `track_id` между кадрами.
+- `get_danger_zone(cones)` — bbox по ≥`MIN_CONES`(2) конусам + расширение `ZONE_EXPAND_PX`(20). `is_in_danger_zone` проверяет точку ног (центр низа bbox). `has_item_on_person` — СИЗ засчитывается, если центр предмета в верхних `TOP_RATIO`(0.4) человека.
+
+### 2.4. Состояние (`backend/core/state.py::DetectionState`)
+Потокобезопасный (два лока: `_lock` общий, `_reid_lock` для Re-ID) синглтон, держит:
+- **Логи** — кольцевой буфер `MAX_LOG_SIZE`(100) `LogEntry` (`backend/core/models.py`).
+- **Пропуска** (`_approved`) — `global_id → expiry`, TTL `APPROVAL_DURATION`(300с). Выдаются по жесту ОК при полном комплекте СИЗ.
+- **Маппинг трек→личность** (`_track_to_global`), `get_global_id()` — связывает ByteTrack `track_id` с устойчивым `global_id` из галереи. Логика «липкости» и троттлинга — см. 2.5.
+- **Дедуп логов** — `is_status_changed()` логирует только при смене компактного статуса СИЗ (`КМЖЗ`), чтобы не спамить.
+- `cleanup_stale_tracks()` чистит треки старше `TRACK_EXPIRY`(60с); `clear_tracks()` — при `start_live`.
+
+### 2.5. Re-ID лиц (`backend/reid/`) — самая хрупкая часть
+- `FaceRecognizer` (`recognizer.py`) — InsightFace `buffalo_l`, провайдеры CUDA→CPU, 3 попытки загрузки (чистит пустую папку модели и докачивает). `detect_faces` возвращает `(bbox, нормализованный эмбеддинг 512d, quality)`. `quality` = `det_score*0.7 + size_score*0.3`, клампится в [0.35, 1.0].
+- `FaceRecognitionWorker` — отдельный поток **на камеру**, детектит лица каждый `REID_FRAME_SKIP`(3) кадр, кеширует `_latest_faces`. Стартует/останавливается по флагу `DETECT_MODES["faces"]` (`start_face_workers`/`stop_face_workers` в `main.py`).
+- `match_faces_to_persons` — сопоставляет лица людям по overlap/центру bbox.
+- `FaceGallery` (`gallery.py`) — pickle-хранилище `data/face_gallery.pkl`. Ключевое:
+  - **Адаптивный порог** `_adaptive_threshold(quality)`: 0.45 (отл) … 0.60 (плох). Чем лучше лицо — тем строже не нужно. Дополнительно порог снижается для записей с ≥2 и ≥5 эмбеддингами.
+  - **Защита якоря** `_append_embedding`: при переполнении (`max_embeddings`=5) выбрасывается индекс 1, а не 0 — первый (эталонный) эмбеддинг неприкосновенен.
+  - `match_or_register` / `add_observation` / `merge_entries` (auto-merge дубликатов) / `cleanup_old` (старше `REID_MAX_AGE_DAYS`=30).
+- **`get_global_id`** в `state.py` — сердце стабильности имён (исторический баг «всё слетало на Гость_N»):
+  - **Троттлинг хранения**: эмбеддинг добавляется в галерею не чаще `REID_STORE_INTERVAL`(1.5с) с одного трека и только при `quality ≥ REID_MIN_STORE_QUALITY`(0.55). Иначе кэш детектора вытеснял эталоны.
+  - **«Липкость»**: если у трека уже есть личность и новое лицо её подтверждает по мягкому порогу (`threshold_for(q) - REID_STICKY_MARGIN`(0.10), но не ниже 0.35) — не пересматчиваем. Один плохой кадр не сбрасывает имя.
+  - Перенос fallback-имён и merge при смене global_id.
+- `worker.py::FaceDetector` (YOLO `yolov8n-face.pt`) — **по сути не задействован** в основном пайплайне (лица детектит InsightFace). Файла `models/yolov8n-face.pt` в репо нет — `FaceDetector` тихо не загрузится. Не опираться на него.
+
+### 2.6. Жесты (`backend/gestures/detector.py`)
+- `detect_ok_gesture` — YOLOv8-pose находит поднятую руку (запястье выше плеча) → кроп кисти → OpenCV-контурный анализ (`convexityDefects`) считает «дырки» жеста ОК (`DEFECT_MIN..MAX`). Это эвристика на классическом CV, не ML-классификатор.
+- `detect_raised_hand` — запястье выше носа. Кулдаун жестов `GESTURE_COOLDOWN`(3с) на личность (`can_gesture`).
+
+### 2.7. События и хранение
+- В `detection_loop` при `category == "нарушение"` стартует запись клипа: pre-буфер `_frame_prebuf` (`EVENT_PRE_FRAMES`=30) + кадры нарушения + post-кадры (`EVENT_POST_FRAMES`=30 после спада), максимум `EVENT_MAX_FRAMES`=300.
+- `_finalize_recording`: cv2 пишет raw mp4 → **ffmpeg перекодирует в H.264** (`libx264 ultrafast yuv420p`) → загрузка в storage + снапшот из середины клипа.
+- `backend/storage/minio_client.py::EventStorage` — S3-клиент (boto3) к MinIO (bucket `events`, ключи `clips/<cam>/<id>.mp4`, `snapshots/...`). **Локальный fallback** в `violation_logs/<cam>/`: при недоступности MinIO ИЛИ при сбое загрузки в середине сессии клип не теряется, пишется на диск; чтение пробует MinIO, затем локально. Синглтон через `get_storage()`.
+- Метаданные событий → SQLite (`backend/api/events.py::create_event_record`).
+
+### 2.8. БД (`backend/db/`)
+- SQLAlchemy + SQLite `data/ppe.db`, `check_same_thread=False`, `scoped_session`. `get_session()` на каждый запрос, закрывать вручную.
+- Модели (`db/models.py`): `User` (роли admin/operator/viewer/api), `ApiKey`, `Camera`, `Event`. Enum'ы `EventLabel`, `SubLabel`, `UserRole`.
+- ⚠️ **Камеры реально хранятся в JSON, не в БД.** Таблица `Camera` существует и `Event.camera_id` — FK на `cameras.id`, но рантайм-источник камер — `data/cameras.json` (+ `data/cameras_config.json`). SQLite FK по умолчанию не enforced, рассинхрон возможен. Не считать таблицу `Camera` источником истины.
+
+### 2.9. API (Flask blueprints, регистрируются в `backend/app.py`)
+- **`api/detection.py`** (`configure_detection_routes`): `POST /start`, `POST /stop`, `/video_frame/<cam>`, `/video_feed[/<cam>]`, `GET|PUT /api/detect-modes`, `GET /api/status`, `/detection_log`, `/export_logs` (CSV с BOM), `POST /upload` (детекция на загруженном фото/видео).
+- **`api/cameras.py`**: `GET /cameras`, `POST /api/cameras`, `PUT|DELETE /api/cameras/<id>`, `POST /api/cameras/<id>/rename`, `PUT /api/cameras/<id>/analytics` (вкл/выкл детекцию на камере). CRUD идёт через функции `main.py` (`add_camera`/`remove_camera`/`rename_camera`) — они синхронно правят буферы, воркеры и `cameras.json`.
+- **`api/reid.py`**: `GET /api/reid/persons`, `POST .../rename`, `DELETE .../<id>`, `POST /api/reid/clear`, `GET /api/reid/stats` — управление галереей лиц.
+- **`api/events.py`** (Blueprint `events_bp`): `GET /api/events` (фильтры camera/label, пагинация), `GET /api/events/<id>`, `.../clip`, `.../snapshot`.
+- **`auth/routes.py`** (`/api/auth`): `register`, `login`, `refresh`, `me`, `POST /api-keys` (admin).
+- CORS открыт (`*`) на все ответы (`add_cors` в `app.py`).
+
+### 2.10. Авторизация (`backend/auth/`)
+- JWT (`PyJWT`, HS256). Access 15 мин, refresh 7 дней. Секрет: env `JWT_SECRET` → иначе `data/jwt_secret.txt` → иначе генерируется и сохраняется.
+- `service.py`: `login_user`/`refresh_token`/`register_user`/`create_api_key`/`verify_api_key`. Пароли — `werkzeug.security`.
+- `middleware.py`: декораторы `@login_required` (Bearer JWT или API-ключ), `@admin_required`, `@api_key_required`. Кладут юзера в `flask.g`.
+- ⚠️ Большинство детекшен/камера-роутов **не защищены** декораторами — авторизация в основном на фронте. Не считать API закрытым.
+
+### 2.11. Режимы детекции
+`DETECT_MODES = {people, ppe, faces}` (`backend/config.py`), персистятся в `data/detect_modes.json`, меняются через `PUT /api/detect-modes` / UI. Если все три выключены — YOLO пропускается целиком. Выключение `people` каскадно гасит `ppe` и `faces`. Переключение `faces` стартует/глушит face-воркеры на лету.
+
+### 2.12. Фронтенд (`frontend/`)
+- React 19 + TypeScript + Vite 6, роутинг `react-router-dom` v7 (`App.tsx`: Dashboard, EventsPage, SettingsPage, Login/Register).
+- `src/api/client.ts` — HTTP-клиент с авто-refresh JWT. `src/contexts/` — Auth, Camera. `src/hooks/` — useBreakpoint, useOrientation, useClock, useCameras, useLogs.
+- Адаптив 3 брейкпоинта (моб <768 / планшет 768–1199 / десктоп ≥1200): дизайн-токены `src/design/tokens.ts`, UI-примитивы `src/components/ui/` (Box, Flex, Grid, Responsive, BottomSheet).
+- Дев-сервер проксирует список префиксов API на удалённый бэк (`vite.config.ts`, env `VITE_API_TARGET`).
+
+---
+
+## 3. Конфигурация
+- Основные константы — `backend/config.py` (пороги, тайминги, цвета, `CLASS_NAMES`, Re-ID/Event/MinIO-параметры). `CLASS_NAMES` переопределяет имена классов модели **только для `.pt`** (не для `.engine`).
+- Рантайм-состояние в `data/`: `cameras.json`, `cameras_config.json`, `detect_modes.json`, `face_gallery.pkl`, `ppe.db`, `jwt_secret.txt`.
+- Env: `JWT_SECRET`, `ADMIN_USERNAME`/`ADMIN_PASSWORD`/`ADMIN_EMAIL`, `INSIGHTFACE_ROOT`, `VITE_API_TARGET` (фронт), `BACKEND_URL` (nginx-фронт).
+
+---
+
+## 4. Известные ловушки
+- **Слабые security-дефолты:** `admin/admin123`, MinIO `minioadmin/minioadmin` (в `config.py` и compose), пустой `JWT_SECRET` → автогенерация. Переопределять через env. Бизнес-API в основном не закрыты авторизацией.
+- **Фейковые метрики во фронте:** часть статусов парсится из текста лог-строк; метрики CPU/RAM/FPS местами не настоящие. Не источник истины.
+- **Tesla P4 (Pascal, sm_61)** несовместима с torch cu124/cu130 → нужен torch 2.4.1 cu121 (см. `Dockerfile.gpu`, `DEPLOY_FRONTEND_CHECKLIST.md`). `requirements.txt` фиксирует torch 2.12.0 — это для CPU/современных GPU.
+- **`detection_worker` — мёртвый код** (см. 2.2). **`FaceDetector`/`yolov8n-face.pt` — не задействованы** (см. 2.5).
+- **Камеры не в БД, а в JSON** (см. 2.8). Таблица `Camera` рассинхронизирована с рантаймом.
+- **`stop_live` / `CameraCapture.stop`** — порядок важен: сначала рвём источник (terminate ffmpeg / release), потом join, иначе `/stop` висит на полном таймауте (по 5с/камеру). Исторический баг зависания.
+- **RTSP ffmpeg:** клиентский таймаут — `-stimeout` (мкс), НЕ `-timeout` (тот трактуется как listen-режим → ошибка).
+- **`cv2.INTER_NEAREST_EXACT`** шиммится в `app.py`/`main.py` для совместимости версий OpenCV.
