@@ -16,11 +16,10 @@ import { breakpoints } from "../design/tokens"
 import type { LogEntry } from "../types"
 
 export default function DashboardPage() {
-  const { cameras, dispatcher, openDispatcher, closeDispatcher, isRunning, setDetectionRunning } = useCamerasContext()
+  const { cameras, dispatcher, openDispatcher, closeDispatcher, isRunning, setDetectionRunning, logs } = useCamerasContext()
   const bp = useBreakpoint()
   const orientation = useOrientation()
   const [fullscreenCam, setFullscreenCam] = useState<string | null>(null)
-  const [logs, setLogs] = useState<LogEntry[]>([])
   const [notifications, setNotifications] = useState<
     { id: string; type: string; title: string; sub?: string; duration: number }[]
   >([])
@@ -80,7 +79,7 @@ export default function DashboardPage() {
     // соединения/потоки, иначе POST /stop встаёт в очередь за стримами и
     // первый клик «не срабатывает» (нужно было жать дважды).
     setDetectionRunning(false)
-    setLogs([])
+    // логи очистятся в контексте при isRunning=false
     try {
       await api.stop()
     } catch {
@@ -91,25 +90,6 @@ export default function DashboardPage() {
   const selectedCam = dispatcher.open ? dispatcher.cameraName : fullscreenCam
 
   const filteredLogs = selectedCam ? logs.filter((l) => l.cam_id === selectedCam) : logs
-
-  // Poll logs
-  useEffect(() => {
-    if (!isRunning) return
-    const fetchLogs = async () => {
-      try {
-        const data = await api.getLogs()
-        setLogs(data.logs)
-      } catch {
-        // ignore
-      }
-    }
-    fetchLogs()
-    pollRef.current = setInterval(fetchLogs, 1500)
-    return () => {
-      if (pollRef.current) clearInterval(pollRef.current)
-    }
-  }, [isRunning])
-
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

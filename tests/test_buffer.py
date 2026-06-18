@@ -42,6 +42,19 @@ class TestFrameBuffer:
         buf.clear()
         assert buf.read() is None
 
+    def test_age_huge_before_write(self, buf):
+        # Кадров ещё не было → возраст «бесконечный».
+        assert buf.age() > 1e6
+
+    def test_age_small_after_write(self, buf):
+        buf.write(np.zeros((5, 5, 3), dtype=np.uint8))
+        assert buf.age() < 1.0
+
+    def test_clear_resets_age(self, buf):
+        buf.write(np.zeros((5, 5, 3), dtype=np.uint8))
+        buf.clear()
+        assert buf.age() > 1e6
+
     def test_wait_is_unblocked_by_write(self, buf):
         frame = np.zeros((5, 5, 3), dtype=np.uint8)
         result_holder = []

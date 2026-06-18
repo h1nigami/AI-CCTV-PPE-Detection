@@ -22,7 +22,7 @@ from backend.config import (
     VIOLATION_LOGS_DIR, get_camera_config, VOICE_ALERT_COOLDOWN,
     MOTION_DETECTION_ENABLED, MOTION_THRESHOLD, MOTION_MIN_AREA,
     MOTION_COOLDOWN_FRAMES, MQTT_HEARTBEAT_INTERVAL,
-    RECORD_ENABLED, RECORD_MODE, PPE_REQUIRED_DEFAULT,
+    RECORD_ENABLED, RECORD_MODE, PPE_REQUIRED_DEFAULT, STREAM_STALE_SEC,
 )
 from backend.core.metrics import get_metrics
 from backend.detection.motion import MotionDetector
@@ -503,9 +503,13 @@ def process_frame(frame, cam_id: str, face_worker=None, det_model=None, det_pose
             ppe = " ".join(f"{_letters[i]}" if _present[i] else f"!{_letters[i]}"
                            for i in ("helmet", "mask", "vest") if i in required)
             person_name = state.get_person_name(global_id, cam_id, face_emb is not None and detect_faces_mode) if detect_faces_mode else ""
+            # Pose-инференс жеста дорогой — запускаем только для неодобренных,
+            # вне кулдауна И не чаще GESTURE_CHECK_INTERVAL на личность (троттлинг
+            # должен идти ПОСЛЕДНИМ в конъюнкции — у него побочный эффект).
             gesture_ok = (
                 detect_ok_gesture(frame, pbox, det_pose)
-                if not approved and state.can_gesture(global_id)
+                if (not approved and state.can_gesture(global_id)
+                    and state.should_run_gesture(global_id))
                 else False
             )
             if gesture_ok:
@@ -618,6 +622,7 @@ def start_live():
         time.sleep(0.5)
     state.clear_log()
     state.clear_tracks()
+    state.clear_notifications()
     _motion_detectors.clear()
     for buf in annotated_buffers.values():
         buf.clear()
@@ -699,6 +704,12 @@ def _camera_detection_worker(cam_id: str):
         raw_buf.wait(timeout=1.0)
         frame = raw_buf.read()
         if frame is None:
+            continue
+
+        # Камера «отвалилась» (capture не пишет новые кадры) — не гоняем YOLO по
+        # застывшему кадру: пропускаем, annotated_buffer устаревает, /video_frame
+        # отдаст 204 → фронт покажет «NO SIGNAL» вместо замороженного кадра.
+        if raw_buf.age() > STREAM_STALE_SEC:
             continue
 
         if cam_id not in _frame_prebuf:

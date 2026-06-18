@@ -1,10 +1,9 @@
-import { useState, useEffect, useMemo, useRef } from "react"
+import { useMemo } from "react"
 import { useCamerasContext } from "../contexts/CameraContext"
-import { api } from "../api/client"
-import type { LogEntry, PpeStatus, PersonSummary } from "../types"
+import type { PpeStatus, PersonSummary } from "../types"
 
 export function DispatcherPanel() {
-  const { dispatcher, closeDispatcher, cameras } = useCamerasContext()
+  const { dispatcher, closeDispatcher, cameras, logs: allLogs } = useCamerasContext()
   const { cameraName } = dispatcher
 
   const camera = useMemo(
@@ -12,31 +11,11 @@ export function DispatcherPanel() {
     [cameras, cameraName],
   )
 
-  const [logs, setLogs] = useState<LogEntry[]>([])
-  const [loading, setLoading] = useState(false)
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
-
-  useEffect(() => {
-    if (!cameraName) return
-
-    const fetchLogs = async () => {
-      try {
-        const data = await api.getLogs(cameraName)
-        setLogs(data.logs)
-      } catch {
-        // ignore
-      }
-    }
-
-    setLoading(true)
-    fetchLogs().finally(() => setLoading(false))
-
-    pollRef.current = setInterval(fetchLogs, 1000)
-
-    return () => {
-      if (pollRef.current) clearInterval(pollRef.current)
-    }
-  }, [cameraName])
+  // Единый источник логов — из контекста (поллинг там), фильтруем по камере.
+  const logs = useMemo(
+    () => (cameraName ? allLogs.filter((l) => l.cam_id === cameraName) : []),
+    [allLogs, cameraName],
+  )
 
   const { ppe, persons } = useMemo(() => {
     const result: {
@@ -188,12 +167,10 @@ export function DispatcherPanel() {
           <span style={styles.sectionCount}>{logs.length}</span>
         </div>
         <div style={styles.eventList}>
-          {loading && <div style={styles.empty}>Загрузка...</div>}
-          {!loading && logs.length === 0 && (
+          {logs.length === 0 && (
             <div style={styles.empty}>Ожидание событий</div>
           )}
-          {!loading &&
-            logs
+          {logs
               .slice(-20)
               .reverse()
               .map((log) => {

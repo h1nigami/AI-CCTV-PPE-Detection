@@ -86,6 +86,7 @@ alembic upgrade head
    - `add_camera`/`remove_camera`/`rename_camera` поднимают/снимают поток камеры на лету; воркер сам завершается по условию `cam_id in CAMERAS`.
 3. **`process_frame`** (`main.py`, ядро бизнес-логики): `run_detection` → построение опасной зоны → сопоставление СИЗ с людьми → Re-ID → жесты/пропуск → отрисовка → возвращает `(frame, message, category, global_ids, statuses)`. `category` ∈ {`норма`, `внимание`, `нарушение`}.
 4. **Раздача** — `backend/api/detection.py`: `/video_frame/<cam_id>` (одиночный JPEG, фронт поллит ~100мс, quality=85), `/video_feed[/<cam_id>]` (MJPEG `multipart/x-mixed-replace`).
+   - **Детект потери камеры**: `FrameBuffer.age()` (время с последней записи capture). Если raw-буфер старше `STREAM_STALE_SEC`(6с) — воркер не гоняет YOLO по застывшему кадру (continue), а `/video_frame` отдаёт 204 → фронт показывает «NO SIGNAL» вместо замороженного «живого» кадра. capture при этом сам переподключается с backoff.
 
 > ⚠️ Состояние `DetectionState` хитят параллельно N потоков детекции + N face-воркеров — все мутации под локами (`_lock`/`_reid_lock`). `get_global_id` под `_reid_lock` сериализует Re-ID между камерами (нужно для консистентности кросс-камерной личности; быстро относительно YOLO).
 
@@ -124,6 +125,7 @@ alembic upgrade head
 ### 2.6. Жесты (`backend/gestures/detector.py`)
 - `detect_ok_gesture` — YOLOv8-pose находит поднятую руку (запястье выше плеча) → кроп кисти → OpenCV-контурный анализ (`convexityDefects`) считает «дырки» жеста ОК (`DEFECT_MIN..MAX`). Это эвристика на классическом CV, не ML-классификатор.
 - `detect_raised_hand` — запястье выше носа. Кулдаун жестов `GESTURE_COOLDOWN`(3с) на личность (`can_gesture`).
+- **Троттлинг pose-инференса**: `detect_ok_gesture` дорогой (отдельный YOLO-pose проход на кроп человека), поэтому в `process_frame` запускается только если `not approved and can_gesture(gid) and should_run_gesture(gid)` — последний ограничивает запуск до раза в `GESTURE_CHECK_INTERVAL`(0.5с) на личность. Без этого толпа из N человек = N pose-инференсов на каждый кадр → просадка FPS.
 
 ### 2.7. События и хранение
 - В `detection_loop` при `category == "нарушение"` стартует запись клипа: pre-буфер `_frame_prebuf` (`EVENT_PRE_FRAMES`=30) + кадры нарушения + post-кадры (`EVENT_POST_FRAMES`=30 после спада), максимум `EVENT_MAX_FRAMES`=300.
@@ -168,6 +170,7 @@ alembic upgrade head
 - React 19 + TypeScript + Vite 6, роутинг `react-router-dom` v7 (`App.tsx`: Dashboard, EventsPage, ArchivePage `/archive`, ZonesPage `/zones`, SettingsPage, Login/Register).
 - **`ZonesPage`** (`/zones`) — редактор зон: SVG (`viewBox 0 0 1 1`, нормализованные координаты) поверх кадра камеры (`/video_frame`); клик = добавить вершину активной зоне, перетаскивание вершин (pointer events), выбор типа/названия/требуемых СИЗ; сохранение через `api.saveZones` (PUT всех зон).
 - **`ArchivePage`** (`/archive`) — просмотр NVR-архива: выбор камеры+даты → `api.getRecordings({camId, from, to})` + `api.getEvents` → 24-часовой таймлайн сегментов (цвет = есть движение) с **метками событий** поверх (цвет по label); клик по метке → открывает покрывающий сегмент и перематывает к моменту события (`onLoadedMetadata` → `currentTime`), при отсутствии сегмента — fallback на event-клип. Плеер с перемоткой (Range через `/api/recordings/<id>/play`) и **непрерывным воспроизведением** (тумблер «Непрерывно»: по `onEnded` автозапуск следующего сегмента, пропуская gaps motion-режима). Появляется при `RECORD_ENABLED` на бэке.
+- **Логи — единый источник**: поллинг `/detection_log` живёт в `CameraContext` (один интервал 1.5с при `isRunning`), `logs` отдаётся через контекст; Dashboard и DispatcherPanel читают их оттуда (фильтруют по камере локально), не плодя параллельных интервалов.
 - `src/api/client.ts` — HTTP-клиент с авто-refresh JWT. `src/contexts/` — Auth, Camera. `src/hooks/` — useBreakpoint, useOrientation, useClock, useCameras, useLogs, useVoiceAlerts, **useServerNotifications** (поллит `/api/notifications`, шлёт в верхнюю панель `Notifications`).
 - Адаптив 3 брейкпоинта (моб <768 / планшет 768–1199 / десктоп ≥1200): дизайн-токены `src/design/tokens.ts`, UI-примитивы `src/components/ui/` (Box, Flex, Grid, Responsive, BottomSheet).
 - Дев-сервер проксирует список префиксов API на удалённый бэк (`vite.config.ts`, env `VITE_API_TARGET`).

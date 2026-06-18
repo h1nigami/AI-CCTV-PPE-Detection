@@ -74,6 +74,10 @@ def set_camera_config(cam_id: str, **kwargs):
 
 CONF_THRESH = 0.75
 MAX_LOG_SIZE = 100
+# Если capture не пишет новых кадров дольше этого (сек) — камера считается
+# «потерянной»: детекция перестаёт жечь GPU на застывшем кадре, а /video_frame
+# отдаёт 204 → фронт показывает «NO SIGNAL» вместо замороженного кадра.
+STREAM_STALE_SEC = 6.0
 
 # Какие СИЗ обязательны ПО УМОЛЧАНИЮ (вне пользовательских зон и в зоне по
 # конусам). Пер-зонные требования (`require_ppe` зоны) переопределяют это для
@@ -98,6 +102,11 @@ APPROVAL_DURATION = 300
 PERSON_ID_GRID = 50
 GESTURE_DISPLAY_DURATION = 3
 GESTURE_COOLDOWN = 3.0
+# Троттлинг ДОРОГОГО pose-инференса жеста: на одну личность запускаем
+# detect_ok_gesture не чаще раза в GESTURE_CHECK_INTERVAL сек (жест держится
+# секундами, чаще проверять незачем). Без этого при толпе N людей = N pose-
+# инференсов на КАЖДЫЙ кадр → просадка FPS.
+GESTURE_CHECK_INTERVAL = 0.5
 
 FONT_PATHS = [
     Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),

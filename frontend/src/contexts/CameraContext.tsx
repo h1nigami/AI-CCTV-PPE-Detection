@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useCallback, useRef, useEffect, type ReactNode } from "react"
 import { api } from "../api/client"
-import type { CameraInfo, CameraGroup, DispatcherState, TimelineEvent, CameraStatus, CameraCardInfo, StreamMode } from "../types"
+import type { CameraInfo, CameraGroup, DispatcherState, TimelineEvent, CameraStatus, CameraCardInfo, StreamMode, LogEntry } from "../types"
 
 // ============================================================
 // Контекст управления камерами, группами и диспетчерской панелью
@@ -47,6 +47,10 @@ interface CameraContextType {
   isRunning: boolean
   /** Установить флаг детекции (вызывается после api.start/api.stop) */
   setDetectionRunning: (running: boolean) => void
+
+  // ---- Логи (единый источник поллинга на всё приложение) ----
+  /** Последние логи детекции (по всем камерам) */
+  logs: LogEntry[]
 }
 
 const CameraContext = createContext<CameraContextType | null>(null)
@@ -66,9 +70,34 @@ export function CameraProvider({ children }: { children: ReactNode }) {
   const [dispatcher, setDispatcher] = useState<DispatcherState>({ open: false, cameraName: null })
   const [groups] = useState<CameraGroup[]>(DEFAULT_GROUPS)
   const [isRunning, setDetectionRunning] = useState(false)
+  const [logs, setLogs] = useState<LogEntry[]>([])
 
   // Храним последние события для каждой камеры (симуляция)
   const eventsByCamera = useRef<Record<string, TimelineEvent[]>>({})
+
+  // Единый поллинг логов на всё приложение (Dashboard и DispatcherPanel читают
+  // их отсюда, чтобы не плодить параллельные интервалы на /detection_log).
+  useEffect(() => {
+    if (!isRunning) {
+      setLogs([])
+      return
+    }
+    let alive = true
+    const fetchLogs = async () => {
+      try {
+        const data = await api.getLogs()
+        if (alive) setLogs(data.logs)
+      } catch {
+        // ignore
+      }
+    }
+    fetchLogs()
+    const id = setInterval(fetchLogs, 1500)
+    return () => {
+      alive = false
+      clearInterval(id)
+    }
+  }, [isRunning])
 
   // Получаем камеры с бэка
   const refresh = useCallback(async () => {
@@ -159,6 +188,7 @@ export function CameraProvider({ children }: { children: ReactNode }) {
         getCardInfo,
         isRunning,
         setDetectionRunning,
+        logs,
       }}
     >
       {children}
