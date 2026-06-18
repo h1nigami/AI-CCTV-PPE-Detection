@@ -42,6 +42,19 @@ docker compose --profile cpu logs -f app-cpu
 - Dockerfile'ы: `Dockerfile` (CPU multi-stage), `Dockerfile.gpu` (CUDA), `Dockerfile.jetson` (ARM/Jetson), `Dockerfile.frontend` (nginx как reverse-proxy для отдельного фронт-сервера, `docker-compose.frontend.yml`, env `BACKEND_URL`).
 - Полный чеклист деплоя бэка на GPU-сервер + фронта отдельным контейнером — `DEPLOY_FRONTEND_CHECKLIST.md`.
 
+### Деплой на серверы (бэк + фронт раздельно)
+```bash
+./deploy.sh backend            # код бэка → бэк-сервер + restart app-gpu (bind-mount, быстро)
+./deploy.sh backend --build    # то же + пересборка образа (после правок зависимостей/Dockerfile)
+./deploy.sh frontend           # фронт → фронт-сервер + пересборка nginx-образа
+./deploy.sh all                # оба
+.\deploy.ps1 all               # то же из Windows PowerShell (обёртка ищет Git Bash, НЕ WSL)
+```
+- **Источник истины — локальный рабочий каталог** (то, что закоммичено). `deploy.sh` переносит код по ssh (tar-туннель), НЕ зависит от git на серверах. **Модели/`data` не переносятся** — на новый бэк-сервер `models/buffalo_l/` и `data/` доставить вручную один раз.
+- **Все адреса серверов — в `deploy.env`** (`BACKEND_HOST`, `FRONTEND_HOST`, каталоги, `BACKEND_URL`). Правится в ОДНОМ месте; читается и `deploy.sh` (source), и `docker-compose.frontend.yml` (`env_file` → `BACKEND_URL` внутрь nginx-контейнера).
+- **Авто-деплой**: git-хук `scripts/git-hooks/pre-push` запускает `deploy.sh all` при `git push` в `main`. Подключение (один раз): `git config core.hooksPath scripts/git-hooks`. Пропуск: `SKIP_DEPLOY=1 git push` или `git push --no-verify`. Хук не блокирует push при недоступности серверов.
+- Связь фронт↔бэк: nginx на фронт-сервере раздаёт собранный фронт и `proxy_pass` на `${BACKEND_URL}` для `/api`, `/video_frame`, `/video_feed`, `/start`, `/stop`, `/cameras`, `/detection_log`, `/export_logs`, `/upload`. Браузер видит один origin → CORS/MJPEG-проблем нет, код фронта (`client.ts` `BASE=""`) не меняется.
+
 ### Миграции БД (Alembic)
 ```bash
 alembic revision --autogenerate -m "описание"   # конфиг в migrations/alembic.ini, env в migrations/env.py
@@ -92,11 +105,12 @@ alembic upgrade head
 - `match_faces_to_persons` — сопоставляет лица людям по overlap/центру bbox.
 - `FaceGallery` (`gallery.py`) — pickle-хранилище `data/face_gallery.pkl`. Ключевое:
   - **Адаптивный порог** `_adaptive_threshold(quality)`: 0.45 (отл) … 0.60 (плох). Чем лучше лицо — тем строже не нужно. Дополнительно порог снижается для записей с ≥2 и ≥5 эмбеддингами.
-  - **Защита якоря** `_append_embedding`: при переполнении (`max_embeddings`=5) выбрасывается индекс 1, а не 0 — первый (эталонный) эмбеддинг неприкосновенен.
-  - `match_or_register` / `add_observation` / `merge_entries` (auto-merge дубликатов) / `cleanup_old` (старше `REID_MAX_AGE_DAYS`=30).
+  - **Защита якоря** `_append_embedding`: при переполнении (`max_embeddings`=`REID_MAX_EMBEDDINGS`=30) выбрасывается индекс 1, а не 0 — первый (эталонный) эмбеддинг неприкосновенен. «Запоминание со всех сторон»: до 30 ракурсов на личность.
+  - **Diversity-гейт** (`diverse=True` в «липком» пути `add_observation`): новый эмбеддинг добавляется, только если max косинус к уже сохранённым < `REID_DIVERSITY_MAX_SIM`(0.92) — копим разные ракурсы, а не почти-дубли одного кадра.
+  - `match_or_register` / `add_observation` / `merge_entries` (auto-merge дубликатов) / `cleanup_old`: при `REID_MAX_AGE_DAYS`=0 авто-удаление **отключено** (личности хранятся «навсегда»).
 - **`get_global_id`** в `state.py` — сердце стабильности имён (исторический баг «всё слетало на Гость_N»):
   - **Троттлинг хранения**: эмбеддинг добавляется в галерею не чаще `REID_STORE_INTERVAL`(1.5с) с одного трека и только при `quality ≥ REID_MIN_STORE_QUALITY`(0.55). Иначе кэш детектора вытеснял эталоны.
-  - **«Липкость»**: если у трека уже есть личность и новое лицо её подтверждает по мягкому порогу (`threshold_for(q) - REID_STICKY_MARGIN`(0.10), но не ниже 0.35) — не пересматчиваем. Один плохой кадр не сбрасывает имя.
+  - **«Липкость»**: если у трека уже есть личность и новое лицо её подтверждает по мягкому порогу (`threshold_for(q) - REID_STICKY_MARGIN`(0.25), но не ниже `REID_STICKY_MIN`(0.28)) — не пересматчиваем. Усиленный margin удерживает личность даже на слабо похожем ракурсе одного человека (sim 0.3-0.5), а разные люди (~0) переключаются. Лечит «постоянную перезапись» имён на стриме.
   - Перенос fallback-имён и merge при смене global_id.
 - `worker.py::FaceDetector` (YOLO `yolov8n-face.pt`) — **по сути не задействован** в основном пайплайне (лица детектит InsightFace). Файла `models/yolov8n-face.pt` в репо нет — `FaceDetector` тихо не загрузится. Не опираться на него.
 

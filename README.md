@@ -8,10 +8,10 @@
 
 ### Детекция & аналитика
 - **Режимы детекции** — выбор «Люди / СИЗ / Лица» через UI; выключение всех режимов пропускает YOLO полностью
-- **Живой стрим** — RTSP/IP камеры, MJPEG poll 100мс
+- **Живой стрим** — RTSP/IP камеры, JPEG load-driven поллинг (следующий кадр запрашивается после загрузки предыдущего — не забивает соединения)
 - **СИЗ** — каски, маски, жилеты с цветовыми статусами рамок
-- **Опасные зоны** — автоматическое построение по расположению конусов безопасности
-- **Re-ID лиц** — InsightFace (buffalo_l), адаптивный порог (качество лица), auto-merge дубликатов
+- **Опасные зоны** — автоматическое построение по расположению конусов безопасности; на `/upload` (фото/видео) помечается, находится ли человек в зоне
+- **Re-ID лиц** — InsightFace (buffalo_l), адаптивный порог (качество лица), auto-merge дубликатов, усиленная «липкость» личности к треку, до 30 ракурсов на человека («со всех сторон»), бессрочное хранение
 - **ByteTrack** — стабильные track_id между кадрами, `track_buffer: 90`
 - **Жест ОК** — распознавание жеста для пропуска в зону
 - **Динамические face workers** — запуск/остановка потока распознавания лиц по чекбоксу
@@ -51,15 +51,16 @@
 |-----------|-----------|
 | Backend | Python 3.11+, Flask, OpenCV, Ultralytics YOLOv8 |
 | Frontend | Vite 6 + React 19 + TypeScript |
-| Re-ID | InsightFace (buffalo_l) + ONNX Runtime CPU |
+| Re-ID | InsightFace (buffalo_l) + ONNX Runtime (CPU / GPU) |
 | Позы | YOLOv8n-pose (жесты) |
 | Визуализация | PIL/Pillow (кириллица) |
 | Трекинг | ByteTrack (ultralytics) |
 | Хранилище | MinIO (S3) + local fallback |
 | БД | SQLAlchemy + SQLite |
 | Сервер | Waitress (production WSGI) |
-| Контейнеры | Docker multi-stage (CPU / GPU / Jetson) + docker compose |
-| Тесты | pytest + pytest-cov (87 тестов) |
+| Контейнеры | Docker multi-stage (CPU / GPU / Jetson / nginx-фронт) + docker compose |
+| Деплой | `deploy.sh` / `deploy.ps1` + git-хук pre-push (авто-деплой на серверы) |
+| Тесты | pytest + pytest-cov (расширенное покрытие, CI на GitHub Actions) |
 
 ---
 
@@ -89,7 +90,11 @@ models/
     └── w600k_r50.onnx
 ```
 
-InsightFace buffalo_l (~190 MB):
+InsightFace buffalo_l (~190 MB) — `models/buffalo_l/` в `.gitignore`, после клона докачивается:
+```bash
+python download_models.py            # идемпотентно: качает, только если модели нет
+```
+В Docker модель докачивается в рантайме (`entrypoint.sh`), т.к. `./models` монтируется volume'ом. Ручная альтернатива:
 ```bash
 mkdir -p models/buffalo_l
 wget -qO /tmp/buffalo_l.zip \
@@ -127,9 +132,12 @@ python app.py
 ```python
 CAMERAS = {"cam1": "rtsp://admin:pass@192.168.1.100:554/stream1"}
 CONF_THRESH = 0.75
-REID_SIM_THRESHOLD = 0.55          # базовый порог (адаптивный 0.50–0.80)
-REID_MAX_EMBEDDINGS = 5
-REID_MAX_AGE_DAYS = 30
+REID_SIM_THRESHOLD = 0.55          # базовый порог (адаптивный 0.45–0.60)
+REID_MAX_EMBEDDINGS = 30           # ракурсов на личность («со всех сторон»)
+REID_MAX_AGE_DAYS = 0              # 0 = хранить бессрочно (авто-удаление выкл.)
+REID_DIVERSITY_MAX_SIM = 0.92      # копим разные ракурсы, не дубли кадра
+REID_STICKY_MARGIN = 0.25          # удержание личности за треком (анти-перезапись)
+REID_STICKY_MIN = 0.28
 EVENT_CLIP_FPS = 10                # FPS видео-клипов
 EVENT_PRE_FRAMES = 30              # кадров до нарушения
 EVENT_POST_FRAMES = 30             # кадров после разрешения
@@ -189,7 +197,7 @@ frontend/
 │   ├── App.tsx            # Роутинг (Dashboard, Events, Settings, Login)
 │   ├── components/
 │   │   ├── Header.tsx     # Навигация, режимы детекции, mobile drawer
-│   │   ├── CameraCard.tsx # Карточка камеры с MJPEG
+│   │   ├── CameraCard.tsx # Карточка камеры (JPEG load-driven поллинг)
 │   │   ├── CameraGrid.tsx # Адаптивная сетка камер
 │   │   ├── Dashboard.tsx  # Главная: 3 breakpoint layout
 │   │   ├── LeftPanel.tsx  # Информационная панель
@@ -214,8 +222,8 @@ frontend/
 ## 🔧 Производительность
 
 - **Последовательная детекция** — камеры обрабатываются по одной в цикле (CPU ~50-60% на 3-4 камерах)
-- **MJPEG polling** — `/video_frame/<cam_id>` каждые 100мс (10 FPS)
-- **Re-ID** — распознавание каждый `REID_FRAME_SKIP` (3) кадр; порог матчинга адаптивный 0.50–0.80
+- **JPEG load-driven поллинг** — `/video_frame/<cam_id>`: следующий кадр запрашивается из `onload` предыдущего (без `setInterval`, не забивает пулы соединений/Waitress)
+- **Re-ID** — распознавание каждый `REID_FRAME_SKIP` (3) кадр; порог матчинга адаптивный 0.45–0.60
 - **ByteTrack** — `persist=True` + `track_buffer: 90` для стабильных ID
 - **FFmpeg subprocess** — чтение RTSP через ffmpeg, корректный PID cleanup
 - **GPU (CUDA)** — Jetson через `--runtime nvidia`; CPU ~1-2 FPS без GPU
@@ -303,6 +311,29 @@ docker compose --profile cpu restart app-cpu
 
 ---
 
+## 🚢 Деплой на серверы
+
+Бэкенд и фронтенд можно разнести на разные машины: бэк (GPU, Docker) на одном сервере, фронт (nginx reverse-proxy, раздаёт собранный React и проксирует API) — на другом. Браузер общается только с фронт-сервером (один origin → без CORS).
+
+```bash
+./deploy.sh backend            # код бэка → бэк-сервер + restart
+./deploy.sh backend --build    # + пересборка образа (после правок зависимостей/Dockerfile)
+./deploy.sh frontend           # фронт → фронт-сервер + пересборка nginx
+./deploy.sh all                # оба
+.\deploy.ps1 all               # из Windows PowerShell (обёртка ищет Git Bash)
+```
+
+- **Все адреса серверов — в `deploy.env`** (`BACKEND_HOST`, `FRONTEND_HOST`, каталоги, `BACKEND_URL`). При смене серверов правится **только этот файл**.
+- `deploy.sh` переносит код по ssh (tar-туннель), не зависит от git на серверах. Модели/`data` не переносит — на новый бэк доставить вручную (`python download_models.py` + `data/`).
+- **Авто-деплой при `git push` в `main`** через git-хук. Подключить один раз:
+  ```bash
+  git config core.hooksPath scripts/git-hooks
+  ```
+  Пропустить разово: `SKIP_DEPLOY=1 git push`.
+- Фронт-сервер: `Dockerfile.frontend` + `docker-compose.frontend.yml` (nginx, `BACKEND_URL` из `deploy.env`). Подробности — `DEPLOY_FRONTEND_CHECKLIST.md`.
+
+---
+
 ## 🧪 Тестирование
 
 ```bash
@@ -314,7 +345,7 @@ pip install -r requirements.txt
 python3 -m pytest tests/ -v --cov=backend
 ```
 
-87 тестов: галерея (50), состояние (19), движок (5), конфиг (11).
+Расширенный набор тестов: галерея, состояние, движок, конфиг, API (камеры/Re-ID), auth, БД, хранилище, буфер, жесты, распознавание. CI прогоняет их на GitHub Actions; в dev-контейнере pytest идёт перед стартом приложения.
 
 ---
 
