@@ -143,6 +143,10 @@ EVENT_POST_FRAMES = 30
 EVENT_MAX_FRAMES = 300
 VIOLATION_LOGS_DIR = BASE_DIR / "violation_logs"
 
+# ── Голосовые предупреждения ──────────────────────────────
+# Минимальный интервал между предупреждениями на одну камеру (секунды).
+VOICE_ALERT_COOLDOWN = 15.0
+
 # ── Глобальные режимы детекции ────────────────────────────
 DETECT_MODES: dict[str, bool] = {
     "people": True,

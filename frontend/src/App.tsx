@@ -7,6 +7,7 @@ import RegisterPage from "./pages/RegisterPage"
 import DashboardPage from "./pages/Dashboard"
 import EventsPage from "./pages/EventsPage"
 import SettingsPage from "./pages/SettingsPage"
+import { useVoiceAlerts } from "./hooks/useVoiceAlerts"
 
 // ============================================================
 // Корневой компонент приложения.
@@ -21,6 +22,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 }
 
 function ProtectedLayout() {
+  useVoiceAlerts(true)
   return (
     <ProtectedRoute>
       <CameraProvider>

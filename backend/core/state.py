@@ -1,5 +1,6 @@
 import time
 import threading
+from collections import deque
 from pathlib import Path
 from typing import List, Dict, Tuple, Optional
 import numpy as np
@@ -9,7 +10,7 @@ from backend.config import (
     GESTURE_DISPLAY_DURATION, GESTURE_COOLDOWN,
     REID_SIM_THRESHOLD, REID_MAX_EMBEDDINGS, REID_GALLERY_PATH, REID_MAX_AGE_DAYS,
     REID_MIN_STORE_QUALITY, REID_STORE_INTERVAL, REID_STICKY_MARGIN, REID_STICKY_MIN,
-    REID_DIVERSITY_MAX_SIM,
+    REID_DIVERSITY_MAX_SIM, VOICE_ALERT_COOLDOWN,
 )
 
 TRACK_EXPIRY = 60.0
@@ -34,6 +35,10 @@ class DetectionState:
 
         # Статусы последнего залогированного события (cam_id+track_id → compact_status)
         self._last_logged_status: Dict[Tuple[str, int], str] = {}
+
+        # Очередь голосовых предупреждений (max 50) + кулдаун по камере
+        self._voice_alerts: deque = deque(maxlen=50)
+        self._voice_alert_last: Dict[str, float] = {}
 
     def init_gallery(self, gallery_path: Optional[Path] = None):
         from backend.reid.gallery import FaceGallery
@@ -230,3 +235,24 @@ class DetectionState:
     def clear_tracked_statuses(self):
         with self._lock:
             self._last_logged_status.clear()
+
+    def push_voice_alert(self, cam_id: str, text: str) -> bool:
+        """Добавить голосовое предупреждение в очередь с соблюдением кулдауна.
+        Возвращает True, если предупреждение добавлено."""
+        now = time.time()
+        with self._lock:
+            if now - self._voice_alert_last.get(cam_id, 0.0) < VOICE_ALERT_COOLDOWN:
+                return False
+            self._voice_alert_last[cam_id] = now
+            self._voice_alerts.append({
+                "id": f"{cam_id}_{now}",
+                "cam_id": cam_id,
+                "text": text,
+                "timestamp": now,
+            })
+            return True
+
+    def pop_voice_alert(self) -> Optional[dict]:
+        """Извлечь и вернуть старейшее ожидающее предупреждение (или None)."""
+        with self._lock:
+            return self._voice_alerts.popleft() if self._voice_alerts else None

@@ -133,6 +133,11 @@ def configure_detection_routes(app, state, annotated_buffers, generate_live_feed
     def api_status():
         return jsonify({"running": state.live_active})
 
+    @app.route("/api/voice_alert")
+    def api_voice_alert():
+        alert = state.pop_voice_alert()
+        return jsonify(alert or {})
+
     @app.route("/detection_log")
     def detection_log():
         cam_id = request.args.get("cam_id")
