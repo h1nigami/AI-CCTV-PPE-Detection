@@ -35,7 +35,7 @@ from backend.detection.engine import run_detection, get_danger_zone, has_item_on
 from backend.gestures.detector import detect_ok_gesture
 from backend.visualization.renderer import (
     draw_danger_zone, draw_person, draw_hint,
-    draw_legend, put_text, FONT_LARGE
+    draw_legend, put_text
 )
 from backend.core.state import DetectionState, LogEntry
 from backend.api.events import create_event_record, update_event_clip, update_event_snapshot
@@ -427,14 +427,18 @@ def process_frame(frame, cam_id: str, face_worker=None, det_model=None, det_pose
             )
             if gesture_ok:
                 state.set_gesture_time(global_id)
+                _who = person_name or "Работник"
                 if fully_equipped:
                     state.approve(pbox, cam_id, global_id=global_id)
                     approved = True
                     state.set_gesture_detected()
+                    # Уведомление сверху (вместо текста на кадре).
+                    state.push_notification("granted", "ЖЕСТ «ОК» РАСПОЗНАН",
+                                            f"{_who} — доступ разрешён")
                 else:
-                    frame = put_text(frame, "ОДЕНЬТЕ СИЗ",
-                                     (frame.shape[1] // 2 - 150, frame.shape[0] // 2),
-                                     color=(0, 215, 255), font=FONT_LARGE)
+                    # Не рисуем «ОДЕНЬТЕ СИЗ» на стриме — показываем уведомление сверху.
+                    state.push_notification("missing", "НЕ ХВАТАЕТ СИЗ",
+                                            f"{_who}: {', '.join(missing) if missing else 'нужны СИЗ'}")
             if approved:
                 approved_count += 1
             elif not fully_equipped and DETECT_MODES.get("ppe", True):

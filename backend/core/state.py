@@ -43,6 +43,11 @@ class DetectionState:
         self._voice_alerts: deque = deque(maxlen=50)
         self._voice_alert_last: Dict[str, float] = {}
 
+        # Очередь UI-уведомлений (жест ОК / нехватка СИЗ и т.п.) — фронт поллит
+        # /api/notifications и показывает их сверху. Структурированные (type/title/
+        # sub), не парсятся из текста лога → корректны и не зависят от дедупа логов.
+        self._notifications: deque = deque(maxlen=50)
+
     def init_gallery(self, gallery_path: Optional[Path] = None):
         from backend.reid.gallery import FaceGallery
         path = gallery_path or REID_GALLERY_PATH
@@ -309,3 +314,21 @@ class DetectionState:
         """Извлечь и вернуть старейшее ожидающее предупреждение (или None)."""
         with self._lock:
             return self._voice_alerts.popleft() if self._voice_alerts else None
+
+    def push_notification(self, ntype: str, title: str, sub: str = ""):
+        """Добавить UI-уведомление (показывается сверху на фронте)."""
+        with self._lock:
+            self._notifications.append({
+                "id": f"{ntype}_{time.time()}",
+                "type": ntype,
+                "title": title,
+                "sub": sub,
+                "timestamp": time.time(),
+            })
+
+    def pop_notifications(self) -> List[dict]:
+        """Забрать все ожидающие уведомления (очередь очищается)."""
+        with self._lock:
+            items = list(self._notifications)
+            self._notifications.clear()
+            return items

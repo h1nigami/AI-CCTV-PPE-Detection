@@ -10,6 +10,7 @@ import type {
   TimelineEvent,
   RecordingSegment,
   Zone,
+  ServerNotification,
 } from "../types"
 
 // ============================================================
@@ -207,6 +208,10 @@ export const api = {
     request<{ id?: string; cam_id?: string; text?: string; timestamp?: number }>(
       "/api/voice_alert"
     ),
+
+  // ---- UI-уведомления (жест ОК / нехватка СИЗ) ----
+  getNotifications: () =>
+    request<{ notifications: ServerNotification[] }>("/api/notifications"),
 
   // ---- Вспомогательные URL ----
   /** URL одиночного JPEG-кадра для load-driven поллинга (см. CameraCard).

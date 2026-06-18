@@ -116,6 +116,15 @@ export interface TimelineEvent {
   boxH: number | null
 }
 
+/** Серверное UI-уведомление (показывается сверху) */
+export interface ServerNotification {
+  id: string
+  type: string
+  title: string
+  sub?: string
+  timestamp: number
+}
+
 /** Пользовательская полигональная зона (редактор зон) */
 export type ZoneType = "danger" | "restricted" | "mask"
 export interface Zone {

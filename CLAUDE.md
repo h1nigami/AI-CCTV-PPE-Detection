@@ -102,6 +102,7 @@ alembic upgrade head
 - **Пропуска** (`_approved`) — `global_id → expiry`, TTL `APPROVAL_DURATION`(300с). Выдаются по жесту ОК при полном комплекте СИЗ.
 - **Маппинг трек→личность** (`_track_to_global`), `get_global_id()` — связывает ByteTrack `track_id` с устойчивым `global_id` из галереи. Логика «липкости» и троттлинга — см. 2.5.
 - **Дедуп логов** — `is_status_changed()` логирует только при смене компактного статуса СИЗ (`КМЖЗ`), чтобы не спамить.
+- **UI-уведомления** — `push_notification(type,title,sub)`/`pop_notifications()` — структурированная очередь (жест ОК «granted» / нехватка СИЗ «missing»), пушится в `process_frame` в момент жеста. Фронт поллит `/api/notifications` (`useServerNotifications`) и показывает сверху. НЕ парсится из текста логов (точнее, не зависит от дедупа). На стрим текст «ОДЕНЬТЕ СИЗ» больше не рисуется.
 - `cleanup_stale_tracks()` чистит треки старше `TRACK_EXPIRY`(60с); `clear_tracks()` — при `start_live`.
 
 ### 2.5. Re-ID лиц (`backend/reid/`) — самая хрупкая часть
@@ -145,7 +146,7 @@ alembic upgrade head
 - ⚠️ **Камеры реально хранятся в JSON, не в БД.** Таблица `Camera` существует и `Event.camera_id` — FK на `cameras.id`, но рантайм-источник камер — `data/cameras.json` (+ `data/cameras_config.json`). SQLite FK по умолчанию не enforced, рассинхрон возможен. Не считать таблицу `Camera` источником истины.
 
 ### 2.9. API (Flask blueprints, регистрируются в `backend/app.py`)
-- **`api/detection.py`** (`configure_detection_routes`): `POST /start`, `POST /stop`, `/video_frame/<cam>`, `/video_feed[/<cam>]`, `GET|PUT /api/detect-modes`, `GET /api/status`, `/detection_log`, `/export_logs` (CSV с BOM), `POST /upload` (детекция на загруженном фото/видео).
+- **`api/detection.py`** (`configure_detection_routes`): `POST /start`, `POST /stop`, `/video_frame/<cam>`, `/video_feed[/<cam>]`, `GET|PUT /api/detect-modes`, `GET /api/status`, `GET /api/voice_alert`, `GET /api/notifications` (очередь UI-уведомлений), `/detection_log`, `/export_logs` (CSV с BOM), `POST /upload` (детекция на загруженном фото/видео).
 - **`api/cameras.py`**: `GET /cameras`, `POST /api/cameras`, `PUT|DELETE /api/cameras/<id>`, `POST /api/cameras/<id>/rename`, `PUT /api/cameras/<id>/analytics` (вкл/выкл детекцию на камере), `GET|PUT|POST /api/cameras/<id>/zones` + `PUT|DELETE /api/cameras/<id>/zones/<zone_id>` (зоны редактора). CRUD камер идёт через функции `main.py` (`add_camera`/`remove_camera`/`rename_camera`) — они синхронно правят буферы, воркеры и `cameras.json`.
 - **`api/reid.py`**: `GET /api/reid/persons`, `POST .../rename`, `DELETE .../<id>`, `POST /api/reid/clear`, `GET /api/reid/stats` — управление галереей лиц.
 - **`api/events.py`** (Blueprint `events_bp`): `GET /api/events` (фильтры camera/label, пагинация), `GET /api/events/<id>`, `.../clip`, `.../snapshot`.
@@ -167,7 +168,7 @@ alembic upgrade head
 - React 19 + TypeScript + Vite 6, роутинг `react-router-dom` v7 (`App.tsx`: Dashboard, EventsPage, ArchivePage `/archive`, ZonesPage `/zones`, SettingsPage, Login/Register).
 - **`ZonesPage`** (`/zones`) — редактор зон: SVG (`viewBox 0 0 1 1`, нормализованные координаты) поверх кадра камеры (`/video_frame`); клик = добавить вершину активной зоне, перетаскивание вершин (pointer events), выбор типа/названия/требуемых СИЗ; сохранение через `api.saveZones` (PUT всех зон).
 - **`ArchivePage`** (`/archive`) — просмотр NVR-архива: выбор камеры+даты → `api.getRecordings({camId, from, to})` + `api.getEvents` → 24-часовой таймлайн сегментов (цвет = есть движение) с **метками событий** поверх (цвет по label); клик по метке → открывает покрывающий сегмент и перематывает к моменту события (`onLoadedMetadata` → `currentTime`), при отсутствии сегмента — fallback на event-клип. Плеер с перемоткой (Range через `/api/recordings/<id>/play`) и **непрерывным воспроизведением** (тумблер «Непрерывно»: по `onEnded` автозапуск следующего сегмента, пропуская gaps motion-режима). Появляется при `RECORD_ENABLED` на бэке.
-- `src/api/client.ts` — HTTP-клиент с авто-refresh JWT. `src/contexts/` — Auth, Camera. `src/hooks/` — useBreakpoint, useOrientation, useClock, useCameras, useLogs.
+- `src/api/client.ts` — HTTP-клиент с авто-refresh JWT. `src/contexts/` — Auth, Camera. `src/hooks/` — useBreakpoint, useOrientation, useClock, useCameras, useLogs, useVoiceAlerts, **useServerNotifications** (поллит `/api/notifications`, шлёт в верхнюю панель `Notifications`).
 - Адаптив 3 брейкпоинта (моб <768 / планшет 768–1199 / десктоп ≥1200): дизайн-токены `src/design/tokens.ts`, UI-примитивы `src/components/ui/` (Box, Flex, Grid, Responsive, BottomSheet).
 - Дев-сервер проксирует список префиксов API на удалённый бэк (`vite.config.ts`, env `VITE_API_TARGET`).
 

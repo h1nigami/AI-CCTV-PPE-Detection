@@ -10,6 +10,7 @@ import { BottomSheet } from "../components/ui/BottomSheet"
 import { useCamerasContext } from "../contexts/CameraContext"
 import { useBreakpoint } from "../hooks/useBreakpoint"
 import { useOrientation } from "../hooks/useOrientation"
+import { useServerNotifications } from "../hooks/useServerNotifications"
 import { api } from "../api/client"
 import { breakpoints } from "../design/tokens"
 import type { LogEntry } from "../types"
@@ -41,6 +42,9 @@ export default function DashboardPage() {
   const removeNotification = useCallback((id: string) => {
     setNotifications((prev) => prev.filter((n) => n.id !== id))
   }, [])
+
+  // Серверные уведомления (жест ОК / нехватка СИЗ) — поллинг /api/notifications.
+  useServerNotifications(addNotification, isRunning)
 
   const handleCamClick = useCallback(
     (camName: string) => {
