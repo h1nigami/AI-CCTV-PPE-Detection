@@ -26,6 +26,11 @@ class FaceRecognizer:
             raise RuntimeError("insightface не установлен (pip install insightface)")
         root = _get_insightface_root()
         providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
+        # Один экземпляр FaceRecognizer делят ВСЕ FaceRecognitionWorker (по одному
+        # на камеру), поэтому self.app.get() может вызываться из нескольких потоков
+        # одновременно. Сериализуем доступ к сессии — дешёво при одной камере (нет
+        # конкуренции) и безопасно при нескольких.
+        self._infer_lock = threading.Lock()
 
         last_exc = None
         for attempt in range(3):
@@ -66,7 +71,8 @@ class FaceRecognizer:
         )
 
     def detect_faces(self, frame: np.ndarray) -> List[Tuple[np.ndarray, np.ndarray, float]]:
-        faces = self.app.get(frame)
+        with self._infer_lock:
+            faces = self.app.get(frame)
         result = []
         h, w = frame.shape[:2]
         for face in faces:
