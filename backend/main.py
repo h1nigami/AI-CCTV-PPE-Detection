@@ -19,7 +19,7 @@ from backend.config import (
     MODEL_PATH, POSE_MODEL_PATH, CLASS_NAMES, CAMERAS, CONF_THRESH,
     REID_GALLERY_PATH, REID_DET_SIZE, REID_FRAME_SKIP, REID_MAX_AGE_DAYS,
     EVENT_PRE_FRAMES, EVENT_POST_FRAMES, EVENT_MAX_FRAMES, EVENT_CLIP_FPS,
-    VIOLATION_LOGS_DIR, get_camera_config,
+    VIOLATION_LOGS_DIR, get_camera_config, VOICE_ALERT_COOLDOWN,
 )
 from backend.capture.buffer import FrameBuffer
 from backend.capture.camera import CameraCapture
@@ -108,6 +108,25 @@ def stop_face_workers():
         fw.stop()
     face_workers.clear()
     print("[ReID] Face workers остановлены")
+
+
+def _build_voice_text(statuses: dict, person_name: str) -> str:
+    """Сформировать текст голосового предупреждения по статусам СИЗ.
+    Статус-строка: 'КМЖз' — позиции 0=каска, 1=маска, 2=жилет, 3=зона;
+    заглавная = есть, строчная = нет."""
+    missing = []
+    for status in statuses.values():
+        if len(status) >= 4 and status[3] == 'З':
+            if status[0] == 'к' and 'каска' not in missing:
+                missing.append('каска')
+            if status[1] == 'м' and 'маска' not in missing:
+                missing.append('маска')
+            if status[2] == 'ж' and 'жилет' not in missing:
+                missing.append('жилет')
+    who = person_name if person_name else "Человек"
+    if missing:
+        return f"Внимание! {who} в опасной зоне. Нет СИЗ: {', '.join(missing)}"
+    return f"Внимание! {who} вошёл в опасную зону без необходимых средств защиты"
 
 
 def add_camera(cam_id: str, source: str | int):
@@ -444,6 +463,8 @@ def detection_loop():
                     if rec is None or not rec.get('active'):
                         gid = global_ids[0] if global_ids else 0
                         person_name = state.get_person_name(gid, cam_id, has_face=True) if gid else ""
+                        state.push_voice_alert(
+                            cam_id, _build_voice_text(statuses, person_name))
                         event_id = create_event_record(
                             cam_id=cam_id,
                             label=EventLabel.VIOLATION,

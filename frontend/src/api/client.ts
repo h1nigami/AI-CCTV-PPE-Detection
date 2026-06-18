@@ -176,6 +176,12 @@ export const api = {
       body: JSON.stringify(modes),
     }),
 
+  // ---- Голосовые предупреждения ----
+  getVoiceAlert: () =>
+    request<{ id?: string; cam_id?: string; text?: string; timestamp?: number }>(
+      "/api/voice_alert"
+    ),
+
   // ---- Вспомогательные URL ----
   /** URL одиночного JPEG-кадра для load-driven поллинга (см. CameraCard).
    *  Постоянный MJPEG (/video_feed) намеренно НЕ используем: он держит
