@@ -27,7 +27,6 @@ export function ControlPanel({
   onShowGallery,
   onShowCameraManager,
 }: ControlPanelProps) {
-  const prevLogIdsRef = useRef<Record<string, string>>({})
   const isSidebar = variant === "sidebar"
 
   const { ppe, counters, persons } = useMemo(() => {
@@ -121,43 +120,9 @@ export function ControlPanel({
     return result
   }, [logs, selectedCam])
 
-  useEffect(() => {
-    if (logs.length === 0) return
-    const latestByCam: Record<string, LogEntry> = {}
-    logs.forEach((l) => {
-      if (!latestByCam[l.cam_id]) latestByCam[l.cam_id] = l
-    })
-
-    Object.values(latestByCam).forEach((log) => {
-      const camId = log.cam_id
-      if (log.id === prevLogIdsRef.current[camId]) return
-      prevLogIdsRef.current[camId] = log.id
-
-      const m = log.message
-      if (!m.includes("ЖЕСТ-ОК")) return
-
-      const hasPass = m.includes("ПРОПУСК")
-      const parts = m.split(" | ")
-      let pName = "Работник"
-      for (const part of parts) {
-        const match = part.match(/^([^[]+?)\s*(?:\[.*?\])?\s*:\s*(ПРОПУСК|ОПАСНАЯ ЗОНА|Вне зоны|ЖЕСТ-ОК)/)
-        if (match) {
-          pName = match[1].trim()
-          break
-        }
-      }
-
-      if (hasPass) {
-        addNotification("granted", "✅ ЖЕСТ «ОК» РАСПОЗНАН", `${pName} — доступ разрешён!`, 5000)
-      } else {
-        const missing: string[] = []
-        if (!m.includes("К ") || m.includes("!К")) missing.push("Каска")
-        if (!m.includes("М ") || m.includes("!М")) missing.push("Маска")
-        if (!m.includes("Ж") || m.includes("!Ж")) missing.push("Жилет")
-        addNotification("missing", "⚠️ НЕ ХВАТАЕТ СИЗ", `${pName}: ${missing.join(" · ")}`, 4000)
-      }
-    })
-  }, [logs, addNotification])
+  // Уведомления о жесте ОК / нехватке СИЗ теперь приходят с сервера
+  // (useServerNotifications в Dashboard, источник — /api/notifications),
+  // а не парсятся из текста логов — это точнее и не зависит от дедупа логов.
 
   const personColor = (p: PersonSummary): string => {
     if (p.approved) return "#00e676"

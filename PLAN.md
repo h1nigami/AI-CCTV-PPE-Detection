@@ -598,35 +598,38 @@ frigate_disk_usage_percent{mount="/media"} 45
   - 🔶 Частично: детекция распараллелена **по потоку на камеру** (`_camera_detection_worker`, свой экземпляр YOLO на камеру) вместо последовательного round-robin — даёт параллелизм на CPU-ядрах без накладных multiprocessing/shared_memory и без дублирования галереи Re-ID. Полное разделение на процессы — позже (упор. при росте числа камер на CPU).
 - [x] Motion detection (MOG2) перед YOLO (`backend/detection/motion.py`, гейт в потоке детекции, конфиг `MOTION_*`)
 - [ ] Shared memory для кадров (zero-copy)
-- [ ] Базовая запись (24/7 segmented MP4)
+- [x] Базовая запись (24/7 segmented MP4) — `backend/recorder.py`: ffmpeg `-c copy` сегментами, индекс в БД, конфиг `RECORD_*`
 
 ### Фаза 2: NVR Core
 **Срок: 2-3 недели** — 🔴 Приоритет 1
 
-- [ ] Event-based запись (по триггеру)
-- [ ] Retention policy cleaner
-- [ ] Snapshot capture
+- [x] Event-based запись (по триггеру) — было ранее (`_finalize_recording` + клипы нарушений в MinIO)
+- [x] Retention policy cleaner — `RetentionCleaner`/`plan_deletions` (срок + motion-режим + лимит диска)
+- [x] Snapshot capture — было ранее (снапшот из середины event-клипа)
 - [ ] RTSP restream
 - [ ] WebRTC live view (aiortc)
-- [ ] API для медиафайлов
+- [x] API для медиафайлов — `backend/api/recordings.py` (`/api/recordings`, `/at`, `/<id>/play` с Range)
+  - 🔶 NVR-архив (непрерывная запись) сделан: сегменты, индекс `Recording`, retention, API. Не хватает: timeline-UI (Фаза 3), RTSP restream, WebRTC.
 
 ### Фаза 3: События и Review
 **Срок: 2 недели** — 🟡 Приоритет 2
 
-- [ ] SQLite/PostgreSQL events DB
+- [x] SQLite/PostgreSQL events DB — SQLite (`Event`, `Recording`)
 - [ ] Миграция state.py → DB
-- [ ] API эндпоинты для событий
-- [ ] Timeline скраббер в UI
-- [ ] Фильтры и поиск по событиям
+- [x] API эндпоинты для событий — `api/events.py`
+- [x] Timeline скраббер в UI — `ArchivePage` (24ч-полоса сегментов + метки событий поверх; клик по событию → переход к моменту в записи с перемоткой, fallback на event-клип)
+- [x] Фильтры и поиск по событиям — `EventsPage` (камера/тип)
 - [ ] Экспорт клипов/снимков
 
 ### Фаза 4: Зоны и маски
 **Срок: 1-2 недели** — 🟡 Приоритет 2
 
-- [ ] Полигональные зоны (shapely)
-- [ ] Маски детекции/motion
-- [ ] Визуальный редактор в UI (Canvas)
-- [ ] Hot-reload конфигурации
+- [x] Полигональные зоны — `backend/zones.py` (ray-casting, без shapely; типы danger/restricted/mask, нормализованные координаты, хранение в конфиге камеры). API `GET/POST/PUT/DELETE /api/cameras/<id>/zones`
+- [x] Пер-зонные требования СИЗ — `require_ppe` зоны реально определяет, какие СИЗ обязательны внутри (`zones.required_ppe`); глобальный дефолт `PPE_REQUIRED_DEFAULT` (env). Демо без каски/жилета: `PPE_REQUIRED_DEFAULT=mask` или пустой
+- [x] Маски детекции — `apply_masks` исключает объекты в зонах-масках из детекции
+- [x] Визуальный редактор в UI — `frontend/src/pages/ZonesPage.tsx` (SVG поверх кадра, клик = вершина, перетаскивание точек, тип/название/требуемые СИЗ, сохранение)
+- [x] Hot-reload конфигурации — зоны читаются из конфига камеры на каждом кадре (`get_zones` в `process_frame`), правка применяется сразу
+  - 🔶 motion-маски (исключение из MOG2) и shapely-бэкенд для сложной геометрии — при необходимости позже
 
 ### Фаза 5: Multi-backend детекторы
 **Срок: 1 неделя** — 🟢 Приоритет 3
@@ -673,10 +676,10 @@ frigate_disk_usage_percent{mount="/media"} 45
 | Архитектура | Один процесс + threading (детекция — поток на камеру 🔶) | Multiprocess + MQTT |
 | Детекция | YOLO (каждый кадр) | Motion-triggered YOLO ✅ (MOG2-гейт, опц.) |
 | Конфиг | Python `.py` + JSON | YAML + hot-reload |
-| Запись видео | ❌ Нет | 24/7 + event + retention |
+| Запись видео | event-клипы + 24/7 NVR ✅ (сегменты+retention) | 24/7 + event + retention |
 | Live view | Polling JPEG (100ms) | WebRTC (<500ms) |
-| Зоны | Только конусы | Полигоны + редактор + маски |
-| События | LogEntry в памяти | SQLite/DB + поиск + timeline |
+| Зоны | Конусы + полигоны ✅ + редактор ✅ + маски ✅ | Полигоны + редактор + маски |
+| События | SQLite (events) + лента ✅ + архив-timeline ✅ | SQLite/DB + поиск + timeline |
 | Лица | InsightFace | InsightFace + gallery управление |
 | Детекторы | Только CPU/CUDA | CPU + Coral + TensorRT + OpenVINO |
 | БД | Data classes | SQLite / PostgreSQL |
@@ -942,12 +945,12 @@ branding:
 - [ ] Экспорт событий (CSV/JSON)
 
 ### Фаза 2: NVR + Запись (3-4 недели)
-- [ ] 24/7 сегментированная запись (MP4 сегменты по 1 мин)
-- [ ] Event-triggered запись (пребуфер 10 сек)
-- [ ] Snapshot capture при событиях
-- [ ] API для просмотра записей
-- [ ] Timeline в UI (просмотр архива)
-- [ ] Retention policy (очистка старых записей)
+- [x] 24/7 сегментированная запись (MP4 сегменты по 1 мин) — `backend/recorder.py`
+- [x] Event-triggered запись (пребуфер 10 сек) — `_finalize_recording` (ранее)
+- [x] Snapshot capture при событиях — снапшот из середины клипа (ранее)
+- [x] API для просмотра записей — `backend/api/recordings.py`
+- [x] Timeline в UI (просмотр архива) — `frontend/src/pages/ArchivePage.tsx` (выбор камеры/даты, 24ч-таймлайн сегментов с пометкой движения, плеер с перемоткой)
+- [x] Retention policy (очистка старых записей) — `RetentionCleaner` (срок/motion/диск)
 
 ### Фаза 3: Брендинг и упаковка (2 недели)
 - [ ] White-label: логотип, цвета, домен

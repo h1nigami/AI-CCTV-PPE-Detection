@@ -22,17 +22,20 @@ from backend.config import (
     VIOLATION_LOGS_DIR, get_camera_config, VOICE_ALERT_COOLDOWN,
     MOTION_DETECTION_ENABLED, MOTION_THRESHOLD, MOTION_MIN_AREA,
     MOTION_COOLDOWN_FRAMES, MQTT_HEARTBEAT_INTERVAL,
+    RECORD_ENABLED, RECORD_MODE, PPE_REQUIRED_DEFAULT,
 )
 from backend.core.metrics import get_metrics
 from backend.detection.motion import MotionDetector
 from backend.mqtt.publisher import get_publisher
+from backend.recorder import get_recording_manager
+from backend.zones import get_zones, apply_masks, in_any_danger_zone, required_ppe, to_pixels
 from backend.capture.buffer import FrameBuffer
 from backend.capture.camera import CameraCapture
 from backend.detection.engine import run_detection, get_danger_zone, has_item_on_person, is_in_danger_zone
 from backend.gestures.detector import detect_ok_gesture
 from backend.visualization.renderer import (
     draw_danger_zone, draw_person, draw_hint,
-    draw_legend, put_text, FONT_LARGE
+    draw_legend, put_text
 )
 from backend.core.state import DetectionState, LogEntry
 from backend.api.events import create_event_record, update_event_clip, update_event_snapshot
@@ -177,6 +180,8 @@ def add_camera(cam_id: str, source: str | int):
             t = threading.Thread(target=_camera_detection_worker, args=(cam_id,), daemon=True)
             detection_threads[cam_id] = t
             t.start()
+        if RECORD_ENABLED:
+            get_recording_manager().add_camera(cam_id, source)
     print(f"[Камера] Добавлена: {cam_id} -> {source}")
 
 
@@ -198,6 +203,8 @@ def remove_camera(cam_id: str):
     with _cam_models_lock:
         _cam_models.pop(cam_id, None)
     _motion_detectors.pop(cam_id, None)
+    if RECORD_ENABLED:
+        get_recording_manager().remove_camera(cam_id)
     save_cameras()
     print(f"[Камера] Удалена: {cam_id}")
 
@@ -224,6 +231,10 @@ def rename_camera(old_id: str, new_id: str) -> bool:
         t = threading.Thread(target=_camera_detection_worker, args=(new_id,), daemon=True)
         detection_threads[new_id] = t
         t.start()
+        if RECORD_ENABLED:
+            mgr = get_recording_manager()
+            mgr.remove_camera(old_id)
+            mgr.add_camera(new_id, source)
     from backend.config import save_cameras
     save_cameras()
     print(f"[Камера] Переименована: {old_id} -> {new_id}")
@@ -274,6 +285,30 @@ def _get_motion_detector(cam_id: str) -> MotionDetector:
     return det
 
 
+_ZONE_COLORS = {  # BGR
+    "danger": (0, 0, 255),
+    "restricted": (0, 165, 255),
+    "mask": (128, 128, 128),
+}
+
+
+def _draw_user_zones(frame, zones: list, w: int, h: int):
+    """Отрисовать пользовательские полигональные зоны (контур + лёгкая заливка)."""
+    import numpy as _np
+    for z in zones:
+        pts = to_pixels(z, w, h)
+        if len(pts) < 3:
+            continue
+        color = _ZONE_COLORS.get(z.get("type"), (0, 0, 255))
+        arr = _np.array(pts, dtype=_np.int32).reshape((-1, 1, 2))
+        overlay = frame.copy()
+        cv2.fillPoly(overlay, [arr], color)
+        cv2.addWeighted(overlay, 0.18, frame, 0.82, 0, frame)
+        cv2.polylines(frame, [arr], isClosed=True, color=color, thickness=2)
+        label = z.get("name") or z.get("type", "зона")
+        frame[:] = put_text(frame, label, (pts[0][0], max(0, pts[0][1] - 18)), color=color)
+
+
 def process_frame(frame, cam_id: str, face_worker=None, det_model=None, det_pose=None):
     from backend.config import DETECT_MODES
     # Модели на камеру (для параллельных потоков детекции); по умолчанию —
@@ -285,12 +320,34 @@ def process_frame(frame, cam_id: str, face_worker=None, det_model=None, det_pose
         return frame, f"{datetime.now().strftime('%H:%M:%S')} [{cam_id}] Детекция отключена", "норма", [], {}
     state.cleanup_stale_tracks()
     detected = run_detection(frame, det_model)
+    # Пользовательские зоны (нарисованы в редакторе): сперва маски — исключаем
+    # объекты в замаскированных областях ДО любой логики/отрисовки.
+    fh, fw = frame.shape[:2]
+    ppe_on = DETECT_MODES.get("ppe", True)
+    cam_zones = get_zones(cam_id)
+    if cam_zones:
+        detected = apply_masks(detected, cam_zones, fw, fh)
+    # Опасные/ограниченные пользовательские зоны учитываются вместе с зоной по
+    # конусам (только когда включена детекция СИЗ — как и зона по конусам).
+    danger_user = [z for z in cam_zones if z.get("type") in ("danger", "restricted")] if ppe_on else []
     # Чистый кадр ДО любой отрисовки — для body Re-ID (рамки/заливка зоны исказили
     # бы цвета одежды). Берём копию только когда body Re-ID реально нужен.
     clean_frame = frame.copy() if (body_recognizer is not None
                                    and DETECT_MODES.get("faces", True)
                                    and detected["persons"]) else None
-    danger_zone = get_danger_zone(detected["cones"]) if DETECT_MODES.get("ppe", True) else None
+    danger_zone = get_danger_zone(detected["cones"]) if ppe_on else None
+
+    def _in_danger(pbox) -> bool:
+        """Человек в любой опасной зоне: по конусам ИЛИ в пользовательской зоне."""
+        if danger_zone is not None and is_in_danger_zone(pbox, danger_zone):
+            return True
+        return in_any_danger_zone(pbox, danger_user, fw, fh) if danger_user else False
+
+    def _required_ppe(pbox) -> set:
+        """Обязательные СИЗ для точки: пер-зонные (require_ppe) или дефолт."""
+        if not ppe_on:
+            return set()
+        return required_ppe(pbox, danger_user, fw, fh, PPE_REQUIRED_DEFAULT)
     if DETECT_MODES.get("ppe", True):
         for box in detected["helmets"]:
             x1, y1, x2, y2 = map(int, box)
@@ -310,6 +367,7 @@ def process_frame(frame, cam_id: str, face_worker=None, det_model=None, det_pose
             frame = put_text(frame, "Конус", (x1, max(0, y1 - 20)), color=(0, 128, 255))
     if danger_zone is not None:
         frame = draw_danger_zone(frame, danger_zone)
+    _draw_user_zones(frame, cam_zones, fw, fh)
     persons_count = len(detected["persons"])
     # Извлекаем до любых веток: используется и в цикле отрисовки, и в цикле statuses.
     # Раньше присваивалось внутри `if detected["persons"] and detect_people` →
@@ -347,11 +405,20 @@ def process_frame(frame, cam_id: str, face_worker=None, det_model=None, det_pose
             has_helmet = any(has_item_on_person(pbox, h) for h in detected["helmets"]) if DETECT_MODES.get("ppe", True) else False
             has_mask = any(has_item_on_person(pbox, m) for m in detected["masks"]) if DETECT_MODES.get("ppe", True) else False
             has_vest = any(has_item_on_person(pbox, v) for v in detected["vests"]) if DETECT_MODES.get("ppe", True) else False
-            in_danger = is_in_danger_zone(pbox, danger_zone) if danger_zone is not None else False
+            in_danger = _in_danger(pbox)
             approved = state.is_approved(pbox, cam_id, global_id=global_id)
-            fully_equipped = has_helmet and has_mask and has_vest
-            missing = [n for f, n in [(has_helmet, "каска"), (has_mask, "маска"), (has_vest, "жилет")] if not f] if DETECT_MODES.get("ppe", True) else []
-            ppe = f"{'К' if has_helmet else '!К'} {'М' if has_mask else '!М'} {'Ж' if has_vest else '!Ж'}" if DETECT_MODES.get("ppe", True) else ""
+            # Обязательность СИЗ — пер-зонная (require_ppe) или дефолтная.
+            required = _required_ppe(pbox)
+            _present = {"helmet": has_helmet, "mask": has_mask, "vest": has_vest}
+            _ru = {"helmet": "каска", "mask": "маска", "vest": "жилет"}
+            missing = [_ru[i] for i in ("helmet", "mask", "vest")
+                       if i in required and not _present[i]]
+            fully_equipped = not missing  # все требуемые СИЗ на месте
+            # В метке показываем только ТРЕБУЕМЫЕ предметы (демо без каски/жилета
+            # не показывает «!К/!Ж», если они не обязательны).
+            _letters = {"helmet": "К", "mask": "М", "vest": "Ж"}
+            ppe = " ".join(f"{_letters[i]}" if _present[i] else f"!{_letters[i]}"
+                           for i in ("helmet", "mask", "vest") if i in required)
             person_name = state.get_person_name(global_id, cam_id, face_emb is not None and detect_faces_mode) if detect_faces_mode else ""
             gesture_ok = (
                 detect_ok_gesture(frame, pbox, det_pose)
@@ -360,14 +427,18 @@ def process_frame(frame, cam_id: str, face_worker=None, det_model=None, det_pose
             )
             if gesture_ok:
                 state.set_gesture_time(global_id)
+                _who = person_name or "Работник"
                 if fully_equipped:
                     state.approve(pbox, cam_id, global_id=global_id)
                     approved = True
                     state.set_gesture_detected()
+                    # Уведомление сверху (вместо текста на кадре).
+                    state.push_notification("granted", "ЖЕСТ «ОК» РАСПОЗНАН",
+                                            f"{_who} — доступ разрешён")
                 else:
-                    frame = put_text(frame, "ОДЕНЬТЕ СИЗ",
-                                     (frame.shape[1] // 2 - 150, frame.shape[0] // 2),
-                                     color=(0, 215, 255), font=FONT_LARGE)
+                    # Не рисуем «ОДЕНЬТЕ СИЗ» на стриме — показываем уведомление сверху.
+                    state.push_notification("missing", "НЕ ХВАТАЕТ СИЗ",
+                                            f"{_who}: {', '.join(missing) if missing else 'нужны СИЗ'}")
             if approved:
                 approved_count += 1
             elif not fully_equipped and DETECT_MODES.get("ppe", True):
@@ -411,7 +482,7 @@ def process_frame(frame, cam_id: str, face_worker=None, det_model=None, det_pose
     frame = draw_legend(frame)
     message = " | ".join(msg_parts)
     category = "нарушение" if has_any_violation else \
-        "внимание" if danger_zone is not None and detected["persons"] else "норма"
+        "внимание" if (danger_zone is not None or danger_user) and detected["persons"] else "норма"
     statuses: dict[str, str] = {}
     for idx, pbox in enumerate(detected["persons"]):
         track_id = person_track_ids[idx] if idx < len(person_track_ids) else -1
@@ -420,9 +491,15 @@ def process_frame(frame, cam_id: str, face_worker=None, det_model=None, det_pose
         helmet = any(has_item_on_person(pbox, h) for h in detected["helmets"]) if DETECT_MODES.get("ppe", True) else False
         mask = any(has_item_on_person(pbox, m) for m in detected["masks"]) if DETECT_MODES.get("ppe", True) else False
         vest = any(has_item_on_person(pbox, v) for v in detected["vests"]) if DETECT_MODES.get("ppe", True) else False
-        dz = is_in_danger_zone(pbox, danger_zone) if danger_zone is not None else False
+        dz = _in_danger(pbox)
+        # Необязательный СИЗ считаем «в норме» (заглавная), чтобы дедуп-лог и
+        # голосовое предупреждение не сообщали об отсутствии того, что не требуется.
+        req = _required_ppe(pbox)
+        ok_h = helmet or "helmet" not in req
+        ok_m = mask or "mask" not in req
+        ok_v = vest or "vest" not in req
         key = f"{cam_id}:{track_id}"
-        statuses[key] = f"{'К' if helmet else 'к'}{'М' if mask else 'м'}{'Ж' if vest else 'ж'}{'З' if dz else 'з'}"
+        statuses[key] = f"{'К' if ok_h else 'к'}{'М' if ok_m else 'м'}{'Ж' if ok_v else 'ж'}{'З' if dz else 'з'}"
     return frame, message, category, global_ids, statuses
 
 
@@ -475,6 +552,8 @@ def start_live():
     hb = threading.Thread(target=_heartbeat_loop, daemon=True)
     detection_threads["_heartbeat"] = hb
     hb.start()
+    if RECORD_ENABLED:
+        get_recording_manager().start_all(dict(CAMERAS))
     print(f"Детекция запущена на {len(CAMERAS)} камерах ({len(CAMERAS)} потоков)")
 
 
@@ -489,6 +568,8 @@ def stop_live():
         t.join(timeout=2)
     detection_threads.clear()
     stop_face_workers()
+    if RECORD_ENABLED:
+        get_recording_manager().stop_all()
     for cam_id, rec in list(_event_recordings.items()):
         if rec.get('active'):
             rec['active'] = False
@@ -545,15 +626,19 @@ def _camera_detection_worker(cam_id: str):
             out_buf.write(frame)
             continue
 
-        # «Motion First»: пропускаем тяжёлую YOLO-детекцию на статичной сцене.
-        # Не пропускаем, если идёт запись события (нужны кадры пост-буфера).
-        if MOTION_DETECTION_ENABLED:
+        # Движение считаем, если оно нужно либо для «Motion First» (пропуск YOLO),
+        # либо для NVR-режима "motion" (пометка сегментов has_motion).
+        nvr_motion = RECORD_ENABLED and RECORD_MODE == "motion"
+        if MOTION_DETECTION_ENABLED or nvr_motion:
             rec = _event_recordings.get(cam_id)
             recording = rec is not None and rec.get('active')
             motion = _get_motion_detector(cam_id).detect(frame)
+            if motion and nvr_motion:
+                get_recording_manager().note_motion(cam_id)
             if publisher is not None:
                 publisher.publish_motion(cam_id, bool(motion), motion.area_ratio)
-            if not motion and not recording:
+            # Пропуск YOLO на статике — только если включён «Motion First».
+            if MOTION_DETECTION_ENABLED and not motion and not recording:
                 out_buf.write(frame)
                 metrics.record_skipped(cam_id)
                 continue

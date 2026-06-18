@@ -116,6 +116,38 @@ export interface TimelineEvent {
   boxH: number | null
 }
 
+/** Серверное UI-уведомление (показывается сверху) */
+export interface ServerNotification {
+  id: string
+  type: string
+  title: string
+  sub?: string
+  timestamp: number
+}
+
+/** Пользовательская полигональная зона (редактор зон) */
+export type ZoneType = "danger" | "restricted" | "mask"
+export interface Zone {
+  id?: string
+  name: string
+  type: ZoneType
+  /** Вершины в нормализованных координатах [0..1] относительно кадра */
+  points: [number, number][]
+  require_ppe: string[]
+}
+
+/** Сегмент непрерывной записи (NVR-архив) */
+export interface RecordingSegment {
+  id: string
+  cameraId: string
+  startTime: number
+  endTime: number
+  duration: number
+  sizeBytes: number
+  hasMotion: boolean
+  playUrl: string
+}
+
 /** Состояние диспетчерской панели */
 export interface DispatcherState {
   /** Открыта ли панель */

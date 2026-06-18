@@ -11,6 +11,7 @@
 - **Живой стрим** — RTSP/IP камеры, JPEG load-driven поллинг (следующий кадр запрашивается после загрузки предыдущего — не забивает соединения)
 - **СИЗ** — каски, маски, жилеты с цветовыми статусами рамок
 - **Опасные зоны** — автоматическое построение по расположению конусов безопасности; на `/upload` (фото/видео) помечается, находится ли человек в зоне
+- **Редактор зон** — рисование полигональных зон мышью поверх кадра (страница «Зоны»): опасные/ограниченные зоны и маски (исключение области из детекции); координаты нормализованные, hot-reload
 - **Re-ID лиц** — InsightFace (buffalo_l), адаптивный порог (качество лица), auto-merge дубликатов, усиленная «липкость» личности к треку, до 30 ракурсов на человека («со всех сторон»), бессрочное хранение
 - **ByteTrack** — стабильные track_id между кадрами, `track_buffer: 90`
 - **Жест ОК** — распознавание жеста для пропуска в зону
@@ -31,8 +32,10 @@
 
 ### События & хранение
 - **Лента событий** — отдельная страница с фильтрами (камера, тип), превью, плеером
+- **Архив (NVR)** — страница «Архив»: выбор камеры/даты, 24-часовой таймлайн сегментов записи (пометка движения) с метками событий; клик по событию → переход к моменту в записи; плеер с перемоткой и непрерывным воспроизведением (авто-переход к следующему сегменту)
 - **Видеоклипы** — запись MP4 (H.264) при нарушениях с пост-кадрами
 - **Снэпшоты** — кадр из середины клипа
+- **NVR (непрерывная запись)** — круглосуточный архив: ffmpeg режет RTSP на сегменты (`-c copy`, ~0% CPU), индекс в БД, retention по сроку/движению/диску. Режим `motion` экономит 80-90% диска. Опционально (`RECORD_ENABLED`)
 - **MinIO** — S3-совместимое хранилище для клипов и снимков
 - **Локальный fallback** — `violation_logs/` при недоступности MinIO
 - **Логирование** — история событий с временными метками, категориями, именем человека
@@ -139,6 +142,7 @@ python app.py
 ```python
 CAMERAS = {"cam1": "rtsp://admin:pass@192.168.1.100:554/stream1"}
 CONF_THRESH = 0.75
+PPE_REQUIRED_DEFAULT = ["helmet","mask","vest"]  # обязательные СИЗ вне зон (env)
 REID_SIM_THRESHOLD = 0.55          # базовый порог (адаптивный 0.45–0.60)
 REID_MAX_EMBEDDINGS = 30           # ракурсов на личность («со всех сторон»)
 REID_MAX_AGE_DAYS = 0              # 0 = хранить бессрочно (авто-удаление выкл.)
@@ -157,6 +161,14 @@ MOTION_DETECTION_ENABLED = False   # MOG2-гейт перед YOLO (эконом
 MOTION_MIN_AREA = 1500             # мин. площадь контура движения (px²)
 MQTT_ENABLED = False               # публикация событий в MQTT-брокер
 MQTT_HA_DISCOVERY = False          # Home Assistant MQTT discovery
+
+# NVR — непрерывная запись архива (по умолчанию выключена)
+RECORD_ENABLED = False             # включить запись
+RECORD_MODE = "motion"             # "motion" (только с движением) | "continuous" (24/7)
+RECORD_DIR = "media"               # каталог архива (локальный диск)
+RECORD_SEGMENT_SEC = 60            # длина сегмента, сек
+RECORD_RETAIN_DAYS = 7             # хранить N дней
+RECORD_MAX_DISK_PERCENT = 80       # чистить старейшее при занятости диска выше %
 ```
 
 Окружение (`.env`):
@@ -171,7 +183,18 @@ MQTT_HOST=mqtt
 MQTT_PORT=1883
 MQTT_TOPIC_PREFIX=frigate
 MQTT_HA_DISCOVERY=true
+# NVR (опционально)
+RECORD_ENABLED=true
+RECORD_MODE=motion
+RECORD_DIR=/media
+RECORD_RETAIN_DAYS=7
+# Требуемые СИЗ по умолчанию (вне зон). Для демо без каски/жилета:
+PPE_REQUIRED_DEFAULT=mask        # нужна только маска (или пусто — СИЗ не нужны)
 ```
+
+> 💡 **Демо/выставка:** чтобы не нести каску и жилет, задайте `PPE_REQUIRED_DEFAULT=mask`
+> (или пустую строку — СИЗ не требуются нигде), либо в редакторе зон нарисуйте
+> зону с нужным набором `require_ppe`. Внутри зоны действуют её требования.
 
 ---
 
@@ -181,7 +204,8 @@ MQTT_HA_DISCOVERY=true
 backend/
 ├── app.py                 # Flask entrypoint
 ├── config.py              # Константы
-├── main.py                # Оркестратор (start/stop, detection_loop, recording)
+├── main.py                # Оркестратор (start/stop, потоки детекции, event-клипы)
+├── recorder.py            # NVR: сегментная запись, индекс, retention
 ├── core/
 │   ├── state.py           # DetectionState (треки, пропуска, логи, жесты)
 │   ├── metrics.py         # MetricsRegistry (FPS, латентность, события)
@@ -191,6 +215,7 @@ backend/
 ├── capture/
 │   ├── buffer.py          # FrameBuffer
 │   └── camera.py          # CameraCapture (RTSP/ffmpeg/local)
+├── zones.py               # Полигональные зоны (danger/restricted/mask)
 ├── detection/
 │   ├── engine.py          # run_detection, danger_zone
 │   └── motion.py          # MotionDetector (MOG2 «Motion First»)
@@ -206,7 +231,7 @@ backend/
 │   └── minio_client.py    # EventStorage (MinIO + local fallback)
 ├── db/
 │   ├── engine.py          # SQLAlchemy engine
-│   └── models.py          # Event, User, Camera, ApiKey
+│   └── models.py          # Event, User, Camera, ApiKey, Recording
 ├── auth/
 │   ├── routes.py          # login/refresh/me
 │   └── service.py         # JWT, init_admin
@@ -215,7 +240,8 @@ backend/
     ├── cameras.py         # CRUD камер + группы
     ├── reid.py            # Управление галереей лиц
     ├── events.py          # События: GET, clip, snapshot
-    └── monitoring.py      # /health, /metrics, /api/stats
+    ├── monitoring.py      # /health, /metrics, /api/stats
+    └── recordings.py      # NVR-архив: список/отдача сегментов
 
 frontend/
 ├── src/
@@ -230,6 +256,8 @@ frontend/
 │   │   └── ui/            # Box, Flex, Grid, Responsive, BottomSheet
 │   ├── pages/
 │   │   ├── EventsPage.tsx # Лента событий с фильтрами и плеером
+│   │   ├── ArchivePage.tsx # NVR-архив: таймлайн сегментов + плеер
+│   │   ├── ZonesPage.tsx   # Редактор зон (SVG поверх кадра)
 │   │   └── SettingsPage.tsx
 │   ├── contexts/
 │   │   ├── CameraContext.tsx
@@ -299,6 +327,8 @@ frontend/
 | `POST` | `/api/cameras` | Добавить камеру |
 | `PUT` | `/api/cameras/<id>` | Обновить камеру |
 | `DELETE` | `/api/cameras/<id>` | Удалить камеру |
+| `GET/PUT/POST` | `/api/cameras/<id>/zones` | Зоны камеры (получить/заменить/добавить) |
+| `PUT/DELETE` | `/api/cameras/<id>/zones/<zid>` | Изменить/удалить зону |
 
 ### Авторизация
 | Метод | Эндпоинт | Описание |
@@ -313,6 +343,14 @@ frontend/
 | `GET` | `/health` | Healthcheck (status, uptime) |
 | `GET` | `/metrics` | Метрики в формате Prometheus |
 | `GET` | `/api/stats` | Метрики в JSON (FPS, латентность, события, система) |
+
+### NVR / Архив
+| Метод | Эндпоинт | Описание |
+|-------|----------|----------|
+| `GET` | `/api/recordings` | Список сегментов (cam_id, from, to, пагинация) |
+| `GET` | `/api/recordings/at?cam_id=&ts=` | Сегмент, покрывающий момент времени |
+| `GET` | `/api/recordings/<id>` | Детали сегмента |
+| `GET` | `/api/recordings/<id>/play` | Отдача mp4-сегмента (Range/перемотка) |
 
 ---
 

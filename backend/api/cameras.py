@@ -95,4 +95,63 @@ def configure_camera_routes(app, state, camera_captures):
         cfg = get_camera_config(cam_id)
         return jsonify({"status": "updated", "name": cam_id, "detect_enabled": cfg.get("detect_enabled")})
 
+    # ── Зоны (полигоны редактора) ───────────────────────────────
+    @app.route("/api/cameras/<cam_id>/zones", methods=["GET"])
+    def api_get_zones(cam_id):
+        from backend.config import CAMERAS
+        from backend.zones import get_zones
+        if cam_id not in CAMERAS:
+            return jsonify({"error": "Камера не найдена"}), 404
+        return jsonify({"zones": get_zones(cam_id)})
+
+    @app.route("/api/cameras/<cam_id>/zones", methods=["PUT"])
+    def api_set_zones(cam_id):
+        """Полная замена набора зон камеры (как сохраняет редактор)."""
+        from backend.config import CAMERAS
+        from backend.zones import set_zones
+        if cam_id not in CAMERAS:
+            return jsonify({"error": "Камера не найдена"}), 404
+        data = request.get_json() or {}
+        try:
+            zones = set_zones(cam_id, data.get("zones", []))
+        except (ValueError, TypeError) as exc:
+            return jsonify({"error": f"Некорректная зона: {exc}"}), 400
+        return jsonify({"status": "updated", "zones": zones})
+
+    @app.route("/api/cameras/<cam_id>/zones", methods=["POST"])
+    def api_add_zone(cam_id):
+        from backend.config import CAMERAS
+        from backend.zones import add_zone
+        if cam_id not in CAMERAS:
+            return jsonify({"error": "Камера не найдена"}), 404
+        try:
+            zone = add_zone(cam_id, request.get_json() or {})
+        except (ValueError, TypeError) as exc:
+            return jsonify({"error": f"Некорректная зона: {exc}"}), 400
+        return jsonify({"status": "added", "zone": zone}), 201
+
+    @app.route("/api/cameras/<cam_id>/zones/<zone_id>", methods=["PUT"])
+    def api_update_zone(cam_id, zone_id):
+        from backend.config import CAMERAS
+        from backend.zones import update_zone
+        if cam_id not in CAMERAS:
+            return jsonify({"error": "Камера не найдена"}), 404
+        try:
+            zone = update_zone(cam_id, zone_id, request.get_json() or {})
+        except (ValueError, TypeError) as exc:
+            return jsonify({"error": f"Некорректная зона: {exc}"}), 400
+        if zone is None:
+            return jsonify({"error": "Зона не найдена"}), 404
+        return jsonify({"status": "updated", "zone": zone})
+
+    @app.route("/api/cameras/<cam_id>/zones/<zone_id>", methods=["DELETE"])
+    def api_delete_zone(cam_id, zone_id):
+        from backend.config import CAMERAS
+        from backend.zones import delete_zone
+        if cam_id not in CAMERAS:
+            return jsonify({"error": "Камера не найдена"}), 404
+        if not delete_zone(cam_id, zone_id):
+            return jsonify({"error": "Зона не найдена"}), 404
+        return jsonify({"status": "deleted", "id": zone_id})
+
     return app

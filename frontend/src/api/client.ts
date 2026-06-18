@@ -8,6 +8,9 @@ import type {
   AuthResponse,
   User,
   TimelineEvent,
+  RecordingSegment,
+  Zone,
+  ServerNotification,
 } from "../types"
 
 // ============================================================
@@ -167,6 +170,30 @@ export const api = {
   getEventClipUrl: (eventId: string) => `/api/events/${eventId}/clip`,
   getEventSnapshotUrl: (eventId: string) => `/api/events/${eventId}/snapshot`,
 
+  // ---- NVR-архив (непрерывная запись) ----
+  getRecordings: (opts?: { camId?: string; from?: number; to?: number; limit?: number; offset?: number }) => {
+    const params = new URLSearchParams()
+    if (opts?.camId) params.set("cam_id", opts.camId)
+    if (opts?.from) params.set("from", String(opts.from))
+    if (opts?.to) params.set("to", String(opts.to))
+    if (opts?.limit) params.set("limit", String(opts.limit))
+    if (opts?.offset) params.set("offset", String(opts.offset))
+    const qs = params.toString()
+    return request<{ recordings: RecordingSegment[]; total: number; offset: number; limit: number }>(
+      `/api/recordings${qs ? `?${qs}` : ""}`
+    )
+  },
+  getRecordingPlayUrl: (id: string) => `/api/recordings/${id}/play`,
+
+  // ---- Зоны (редактор зон) ----
+  getZones: (camId: string) =>
+    request<{ zones: Zone[] }>(`/api/cameras/${camId}/zones`),
+  saveZones: (camId: string, zones: Zone[]) =>
+    request<{ status: string; zones: Zone[] }>(`/api/cameras/${camId}/zones`, {
+      method: "PUT",
+      body: JSON.stringify({ zones }),
+    }),
+
   // ---- Режимы детекции ----
   getDetectModes: () =>
     request<{ modes: Record<string, boolean> }>("/api/detect-modes"),
@@ -181,6 +208,10 @@ export const api = {
     request<{ id?: string; cam_id?: string; text?: string; timestamp?: number }>(
       "/api/voice_alert"
     ),
+
+  // ---- UI-уведомления (жест ОК / нехватка СИЗ) ----
+  getNotifications: () =>
+    request<{ notifications: ServerNotification[] }>("/api/notifications"),
 
   // ---- Вспомогательные URL ----
   /** URL одиночного JPEG-кадра для load-driven поллинга (см. CameraCard).
