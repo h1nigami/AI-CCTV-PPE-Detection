@@ -108,21 +108,26 @@
 
 ---
 
-## 3. Мёртвый / рудиментный код (безвредно, на потом)
+## 3. Мёртвый / рудиментный код — ВЫЧИЩЕНО (выборочно)
 
-- `detection_worker(cam_id)` (`backend/main.py`) — не вызывается, активен только
-  `detection_loop`. (Уже отмечено в `CLAUDE.md` §2.2.)
-- `DetectionState._fallback_names` / `_assign_fallback_name`
-  (`backend/core/state.py`) — **никогда не заполняются** и не вызываются, поэтому
-  ветка «переноса fallback-имён» в `get_global_id` (строки ~119–129) фактически
-  мёртвая (всегда уходит в merge-ветку). На именование это не влияет: имена
-  «Гость_N» выдаёт сама галерея (`FaceGallery._assign_name`), а `get_person_name`
-  их возвращает. Можно удалить рудимент при чистке.
-- `FaceDetector` / `models/yolov8n-face.pt` (`backend/reid/worker.py`) — не
-  подключены к пайплайну, файла модели нет. (Уже отмечено в `CLAUDE.md` §2.5.)
-- `draw_stats_panel` (`backend/visualization/renderer.py`) и `detect_raised_hand`
-  (`backend/gestures/detector.py`) — определены, но в живом пайплайне не
-  используются.
+Удалено (полностью мёртвое и без тестов):
+- `detection_worker(cam_id)` (`backend/main.py`) — не вызывался, активен только
+  `detection_loop`.
+- `draw_stats_panel` (`backend/visualization/renderer.py`) — нигде не использовался;
+  убран и неиспользуемый импорт в `main.py`.
+- Неиспользуемый импорт `detect_raised_hand` в `backend/main.py`.
+
+Намеренно ОСТАВЛЕНО (вопреки первому впечатлению — это не мёртвый код, а покрытые
+тестами утилиты/API-поверхность; удаление снесло бы проходящие тесты):
+- `DetectionState._fallback_names` / `get_person_name`-чтение из него — покрыто
+  `tests/test_state.py` (`test_fallback_name_fallback_dict`,
+  `test_clear_tracks_removes_fallback_names`): это рабочий путь ручного fallback-имени
+  (просто живой пайплайн в него не пишет). Ветку чистить нельзя без потери фичи.
+- `detect_raised_hand` (`backend/gestures/detector.py`) — 12 тестов в
+  `tests/test_gesture_detector.py`; готовая утилита жеста, просто не подключена к
+  решающей логике.
+- `FaceDetector` / `backend/reid/worker.py` — покрыт `tests/test_face_detector.py`;
+  YOLO-детектор лиц про запас (в пайплайне лица детектит InsightFace).
 
 ---
 

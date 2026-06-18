@@ -24,10 +24,10 @@ from backend.config import (
 from backend.capture.buffer import FrameBuffer
 from backend.capture.camera import CameraCapture
 from backend.detection.engine import run_detection, get_danger_zone, has_item_on_person, is_in_danger_zone
-from backend.gestures.detector import detect_ok_gesture, detect_raised_hand
+from backend.gestures.detector import detect_ok_gesture
 from backend.visualization.renderer import (
     draw_danger_zone, draw_person, draw_hint,
-    draw_legend, draw_stats_panel, put_text, FONT_LARGE
+    draw_legend, put_text, FONT_LARGE
 )
 from backend.core.state import DetectionState, LogEntry
 from backend.api.events import create_event_record, update_event_clip, update_event_snapshot
@@ -338,43 +338,6 @@ def process_frame(frame, cam_id: str, face_worker=None):
         key = f"{cam_id}:{track_id}"
         statuses[key] = f"{'К' if helmet else 'к'}{'М' if mask else 'м'}{'Ж' if vest else 'ж'}{'З' if dz else 'з'}"
     return frame, message, category, global_ids, statuses
-
-
-def detection_worker(cam_id: str):
-    raw_buf = frame_buffers[cam_id]
-    out_buf = annotated_buffers[cam_id]
-    frame_idx = 0
-    min_interval = 0.05
-    while state.live_active:
-        t0 = time.time()
-        frame = raw_buf.read()
-        if frame is None:
-            time.sleep(0.01)
-            continue
-        try:
-            annotated, message, category, global_ids, statuses = process_frame(
-                frame.copy(), cam_id, face_worker=face_workers.get(cam_id))
-            frame_idx += 1
-            out_buf.write(annotated)
-            any_changed = any(state.is_status_changed(cam_id, int(k.split(":")[1]), v) for k, v in statuses.items())
-            if any_changed or frame_idx % 30 == 0:
-                gid = global_ids[0] if global_ids else 0
-                state.add_log(LogEntry(
-                    id=str(datetime.now().timestamp()),
-                    timestamp=datetime.now().strftime('%H:%M:%S'),
-                    message=message,
-                    category=category,
-                    cam_id=cam_id,
-                    global_id=gid,
-                ))
-            if any_changed:
-                print(message)
-        except Exception as e:
-            print(f"[{cam_id}] Ошибка детекции: {e}")
-            traceback.print_exc()
-        elapsed = time.time() - t0
-        if elapsed < min_interval:
-            time.sleep(min_interval - elapsed)
 
 
 def generate_live_feed(cam_id: str = "cam1"):

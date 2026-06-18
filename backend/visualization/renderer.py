@@ -78,23 +78,3 @@ def draw_legend(frame):
     return put_text(frame, legend,
                     (10, frame.shape[0] - 25),
                     color=COLOR_WHITE, font=FONT_SMALL)
-
-
-def draw_stats_panel(frame, persons_count: int, approved_count: int,
-                     violation_count: int, gesture_detected: bool, x=20, y=20):
-    h, w = frame.shape[:2]
-    overlay = frame.copy()
-    cv2.rectangle(overlay, (0, 0), (x + 320, y + 140), (0, 0, 0), -1)
-    cv2.addWeighted(overlay, 0.6, frame, 0.4, 0, frame)
-    frame = put_text(frame, f"Людей в кадре:  {persons_count}",
-                     (x + 10, y + 10), color=COLOR_WHITE, font=FONT_NORMAL)
-    frame = put_text(frame, f"Пропусков:      {approved_count}",
-                     (x + 10, y + 38), color=COLOR_GOLD, font=FONT_NORMAL)
-    frame = put_text(frame, f"Нарушений:      {violation_count}",
-                     (x + 10, y + 66),
-                     color=COLOR_RED if violation_count > 0 else COLOR_GREEN,
-                     font=FONT_NORMAL)
-    if gesture_detected:
-        frame = put_text(frame, "ЖЕСТ ОК РАСПОЗНАН",
-                         (10, 100), color=COLOR_GOLD, font=FONT_LARGE)
-    return frame
