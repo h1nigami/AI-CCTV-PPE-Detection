@@ -143,7 +143,7 @@ python app.py
 ```python
 CAMERAS = {"cam1": "rtsp://admin:pass@192.168.1.100:554/stream1"}
 CONF_THRESH = 0.75
-PPE_REQUIRED_DEFAULT = ["helmet","mask","vest"]  # обязательные СИЗ вне зон (env)
+PPE_REQUIRED_DEFAULT = ["helmet"]  # обязательные СИЗ вне зон по умолчанию (env)
 REID_SIM_THRESHOLD = 0.55          # базовый порог (адаптивный 0.45–0.60)
 REID_MAX_EMBEDDINGS = 30           # ракурсов на личность («со всех сторон»)
 REID_MAX_AGE_DAYS = 0              # 0 = хранить бессрочно (авто-удаление выкл.)
