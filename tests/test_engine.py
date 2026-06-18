@@ -290,3 +290,108 @@ class TestIsInDangerZone:
         person = [0, 0, 100, 80]    # foot_x=50, foot_y=80
         zone = (0, 80, 100, 150)    # exactly on zy1 boundary
         assert is_in_danger_zone(person, zone) is True
+
+
+class TestDangerZone:
+    @pytest.fixture
+    def two_cones(self):
+        return [np.array([100, 200, 120, 300]), np.array([300, 200, 320, 300])]
+
+    @pytest.fixture
+    def three_cones(self):
+        return [
+            np.array([100, 200, 120, 300]),
+            np.array([300, 200, 320, 300]),
+            np.array([200, 100, 220, 200]),
+        ]
+
+    def test_no_cones_returns_none(self):
+        from backend.detection.engine import get_danger_zone
+        assert get_danger_zone([]) is None
+
+    def test_one_cone_returns_none(self):
+        from backend.detection.engine import get_danger_zone
+        assert get_danger_zone([np.array([100, 200, 120, 300])]) is None
+
+    def test_two_cones_returns_zone(self, two_cones):
+        from backend.detection.engine import get_danger_zone
+        zone = get_danger_zone(two_cones)
+        assert zone is not None
+        x1, y1, x2, y2 = zone
+        assert x1 == 80   # min(100, 300) - 20
+        assert y1 == 180  # min(200, 200) - 20
+        assert x2 == 340  # max(120, 320) + 20
+        assert y2 == 320  # max(300, 300) + 20
+
+    def test_three_cones_returns_zone(self, three_cones):
+        from backend.detection.engine import get_danger_zone
+        zone = get_danger_zone(three_cones)
+        assert zone is not None
+        x1, y1, x2, y2 = zone
+        assert x1 == 80   # min(100, 300, 200) - 20
+        assert y1 == 80   # min(200, 200, 100) - 20
+        assert x2 == 340  # max(120, 320, 220) + 20
+        assert y2 == 320  # max(300, 300, 200) + 20
+
+    def test_is_in_danger_zone_person_inside(self):
+        from backend.detection.engine import is_in_danger_zone
+        zone = (80, 180, 340, 320)
+        person = [150, 250, 200, 350]   # foot at (175, 350) — outside by y
+        assert not is_in_danger_zone(person, zone)
+
+    def test_is_in_danger_zone_person_foot_inside(self):
+        from backend.detection.engine import is_in_danger_zone
+        zone = (80, 180, 340, 320)
+        person = [150, 200, 200, 300]   # foot at (175, 300) — inside
+        assert is_in_danger_zone(person, zone)
+
+    def test_is_in_danger_zone_person_outside_left(self):
+        from backend.detection.engine import is_in_danger_zone
+        zone = (80, 180, 340, 320)
+        person = [10, 200, 50, 300]    # foot at (30, 300) — outside left
+        assert not is_in_danger_zone(person, zone)
+
+    def test_is_in_danger_zone_person_outside_below(self):
+        from backend.detection.engine import is_in_danger_zone
+        zone = (80, 180, 340, 320)
+        person = [150, 400, 200, 500]  # foot at (175, 500) — outside below
+        assert not is_in_danger_zone(person, zone)
+
+    def test_is_in_danger_zone_person_on_boundary(self):
+        from backend.detection.engine import is_in_danger_zone
+        zone = (80, 180, 340, 320)
+        person = [80, 180, 80, 180]    # foot at (80, 180) — on top-left corner
+        assert is_in_danger_zone(person, zone)
+
+    def test_is_in_danger_zone_none_zone_returns_false(self):
+        from backend.detection.engine import is_in_danger_zone
+        person = [150, 200, 200, 300]
+        assert not is_in_danger_zone(person, None)
+
+
+class TestHasItemOnPersonStashed:
+    def test_item_on_person(self):
+        from backend.detection.engine import has_item_on_person
+        person = [100, 100, 200, 300]
+        helmet = [120, 120, 150, 150]
+        assert has_item_on_person(person, helmet)
+
+    def test_item_off_person_left(self):
+        from backend.detection.engine import has_item_on_person
+        person = [100, 100, 200, 300]
+        item = [50, 120, 90, 150]   # center x = 70 < person x1
+        assert not has_item_on_person(person, item)
+
+    def test_item_off_person_right(self):
+        from backend.detection.engine import has_item_on_person
+        person = [100, 100, 200, 300]
+        item = [210, 120, 250, 150]  # center x = 230 > person x2
+        assert not has_item_on_person(person, item)
+
+    def test_item_too_low_on_person(self):
+        from backend.detection.engine import has_item_on_person
+        person = [100, 100, 200, 300]
+        item = [120, 250, 150, 280]
+        upper_y = 100 + (300 - 100) * 0.4   # = 180
+        assert 250 > upper_y   # item center y = 265 > upper_y
+        assert not has_item_on_person(person, item)
