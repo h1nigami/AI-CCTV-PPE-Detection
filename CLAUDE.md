@@ -94,6 +94,7 @@ alembic upgrade head
 - `bytetrack_custom.yaml`: `track_buffer: 90`, пороги 0.25/0.1 — для устойчивых `track_id` между кадрами.
 - `get_danger_zone(cones)` — bbox по ≥`MIN_CONES`(2) конусам + расширение `ZONE_EXPAND_PX`(20). `is_in_danger_zone` проверяет точку ног (центр низа bbox). `has_item_on_person` — СИЗ засчитывается, если центр предмета в верхних `TOP_RATIO`(0.4) человека.
 - **Пользовательские зоны** (`backend/zones.py`) — нарисованные оператором полигоны (редактор зон), в дополнение к авто-зоне по конусам. Хранятся в конфиге камеры (`cameras_config.json`, ключ `zones`), координаты **нормализованные [0..1]**. Типы: `danger`/`restricted` (вход = опасная зона, учитываются вместе с конусной в `_in_danger` внутри `process_frame`), `mask` (объекты в области исключаются из детекции — `apply_masks` до всей логики). Проверка вхождения — тот же ray-casting (`_point_in_polygon`), без shapely. CRUD: `get_zones`/`set_zones`/`add_zone`/`update_zone`/`delete_zone`. Hot-reload: читаются в `process_frame` на каждом кадре.
+- **Пер-зонные требования СИЗ** (`zones.required_ppe`): какие СИЗ обязательны для человека = объединение `require_ppe` danger/restricted-зон, в которых он стоит (пусто → СИЗ не нужны); вне зон и в зоне по конусам — глобальный дефолт `PPE_REQUIRED_DEFAULT` (`config.py`, env). Это управляет `missing`/`fully_equipped`/нарушением и компактным статусом (необязательный СИЗ не считается отсутствующим). Демо/выставка: `PPE_REQUIRED_DEFAULT=mask` (только маска) или `PPE_REQUIRED_DEFAULT=` (СИЗ не нужны нигде), либо нарисовать зону с нужным `require_ppe`.
 
 ### 2.4. Состояние (`backend/core/state.py::DetectionState`)
 Потокобезопасный (два лока: `_lock` общий, `_reid_lock` для Re-ID) синглтон, держит:
@@ -181,7 +182,7 @@ alembic upgrade head
 ## 3. Конфигурация
 - Основные константы — `backend/config.py` (пороги, тайминги, цвета, `CLASS_NAMES`, Re-ID/Event/MinIO-параметры). `CLASS_NAMES` переопределяет имена классов модели **только для `.pt`** (не для `.engine`).
 - Рантайм-состояние в `data/`: `cameras.json`, `cameras_config.json`, `detect_modes.json`, `face_gallery.pkl`, `ppe.db`, `jwt_secret.txt`.
-- Env: `JWT_SECRET`, `ADMIN_USERNAME`/`ADMIN_PASSWORD`/`ADMIN_EMAIL`, `INSIGHTFACE_ROOT`, `VITE_API_TARGET` (фронт), `BACKEND_URL` (nginx-фронт). Frigate-слой (2.13): `MOTION_DETECTION_ENABLED`, `MQTT_ENABLED`/`MQTT_HOST`/`MQTT_PORT`/`MQTT_USER`/`MQTT_PASSWORD`/`MQTT_TOPIC_PREFIX`/`MQTT_HA_DISCOVERY`. NVR (2.7.1): `RECORD_ENABLED`, `RECORD_MODE`(motion/continuous), `RECORD_DIR`, `RECORD_SEGMENT_SEC`, `RECORD_RETAIN_DAYS`, `RECORD_MAX_DISK_PERCENT`, `RECORD_MOTION_GRACE_SEC`, `RECORD_CLEAN_INTERVAL_SEC`.
+- Env: `JWT_SECRET`, `ADMIN_USERNAME`/`ADMIN_PASSWORD`/`ADMIN_EMAIL`, `INSIGHTFACE_ROOT`, `VITE_API_TARGET` (фронт), `BACKEND_URL` (nginx-фронт). Frigate-слой (2.13): `MOTION_DETECTION_ENABLED`, `MQTT_ENABLED`/`MQTT_HOST`/`MQTT_PORT`/`MQTT_USER`/`MQTT_PASSWORD`/`MQTT_TOPIC_PREFIX`/`MQTT_HA_DISCOVERY`. NVR (2.7.1): `RECORD_ENABLED`, `RECORD_MODE`(motion/continuous), `RECORD_DIR`, `RECORD_SEGMENT_SEC`, `RECORD_RETAIN_DAYS`, `RECORD_MAX_DISK_PERCENT`, `RECORD_MOTION_GRACE_SEC`, `RECORD_CLEAN_INTERVAL_SEC`. Зоны: `PPE_REQUIRED_DEFAULT` (список через запятую: helmet,mask,vest; дефолт обязательных СИЗ вне зон).
 
 ---
 

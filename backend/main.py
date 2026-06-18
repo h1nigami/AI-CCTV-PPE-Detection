@@ -22,13 +22,13 @@ from backend.config import (
     VIOLATION_LOGS_DIR, get_camera_config, VOICE_ALERT_COOLDOWN,
     MOTION_DETECTION_ENABLED, MOTION_THRESHOLD, MOTION_MIN_AREA,
     MOTION_COOLDOWN_FRAMES, MQTT_HEARTBEAT_INTERVAL,
-    RECORD_ENABLED, RECORD_MODE,
+    RECORD_ENABLED, RECORD_MODE, PPE_REQUIRED_DEFAULT,
 )
 from backend.core.metrics import get_metrics
 from backend.detection.motion import MotionDetector
 from backend.mqtt.publisher import get_publisher
 from backend.recorder import get_recording_manager
-from backend.zones import get_zones, apply_masks, in_any_danger_zone, to_pixels
+from backend.zones import get_zones, apply_masks, in_any_danger_zone, required_ppe, to_pixels
 from backend.capture.buffer import FrameBuffer
 from backend.capture.camera import CameraCapture
 from backend.detection.engine import run_detection, get_danger_zone, has_item_on_person, is_in_danger_zone
@@ -342,6 +342,12 @@ def process_frame(frame, cam_id: str, face_worker=None, det_model=None, det_pose
         if danger_zone is not None and is_in_danger_zone(pbox, danger_zone):
             return True
         return in_any_danger_zone(pbox, danger_user, fw, fh) if danger_user else False
+
+    def _required_ppe(pbox) -> set:
+        """Обязательные СИЗ для точки: пер-зонные (require_ppe) или дефолт."""
+        if not ppe_on:
+            return set()
+        return required_ppe(pbox, danger_user, fw, fh, PPE_REQUIRED_DEFAULT)
     if DETECT_MODES.get("ppe", True):
         for box in detected["helmets"]:
             x1, y1, x2, y2 = map(int, box)
@@ -401,9 +407,18 @@ def process_frame(frame, cam_id: str, face_worker=None, det_model=None, det_pose
             has_vest = any(has_item_on_person(pbox, v) for v in detected["vests"]) if DETECT_MODES.get("ppe", True) else False
             in_danger = _in_danger(pbox)
             approved = state.is_approved(pbox, cam_id, global_id=global_id)
-            fully_equipped = has_helmet and has_mask and has_vest
-            missing = [n for f, n in [(has_helmet, "каска"), (has_mask, "маска"), (has_vest, "жилет")] if not f] if DETECT_MODES.get("ppe", True) else []
-            ppe = f"{'К' if has_helmet else '!К'} {'М' if has_mask else '!М'} {'Ж' if has_vest else '!Ж'}" if DETECT_MODES.get("ppe", True) else ""
+            # Обязательность СИЗ — пер-зонная (require_ppe) или дефолтная.
+            required = _required_ppe(pbox)
+            _present = {"helmet": has_helmet, "mask": has_mask, "vest": has_vest}
+            _ru = {"helmet": "каска", "mask": "маска", "vest": "жилет"}
+            missing = [_ru[i] for i in ("helmet", "mask", "vest")
+                       if i in required and not _present[i]]
+            fully_equipped = not missing  # все требуемые СИЗ на месте
+            # В метке показываем только ТРЕБУЕМЫЕ предметы (демо без каски/жилета
+            # не показывает «!К/!Ж», если они не обязательны).
+            _letters = {"helmet": "К", "mask": "М", "vest": "Ж"}
+            ppe = " ".join(f"{_letters[i]}" if _present[i] else f"!{_letters[i]}"
+                           for i in ("helmet", "mask", "vest") if i in required)
             person_name = state.get_person_name(global_id, cam_id, face_emb is not None and detect_faces_mode) if detect_faces_mode else ""
             gesture_ok = (
                 detect_ok_gesture(frame, pbox, det_pose)
@@ -473,8 +488,14 @@ def process_frame(frame, cam_id: str, face_worker=None, det_model=None, det_pose
         mask = any(has_item_on_person(pbox, m) for m in detected["masks"]) if DETECT_MODES.get("ppe", True) else False
         vest = any(has_item_on_person(pbox, v) for v in detected["vests"]) if DETECT_MODES.get("ppe", True) else False
         dz = _in_danger(pbox)
+        # Необязательный СИЗ считаем «в норме» (заглавная), чтобы дедуп-лог и
+        # голосовое предупреждение не сообщали об отсутствии того, что не требуется.
+        req = _required_ppe(pbox)
+        ok_h = helmet or "helmet" not in req
+        ok_m = mask or "mask" not in req
+        ok_v = vest or "vest" not in req
         key = f"{cam_id}:{track_id}"
-        statuses[key] = f"{'К' if helmet else 'к'}{'М' if mask else 'м'}{'Ж' if vest else 'ж'}{'З' if dz else 'з'}"
+        statuses[key] = f"{'К' if ok_h else 'к'}{'М' if ok_m else 'м'}{'Ж' if ok_v else 'ж'}{'З' if dz else 'з'}"
     return frame, message, category, global_ids, statuses
 
 

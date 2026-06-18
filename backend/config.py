@@ -10,6 +10,13 @@ def _env_bool(name: str, default: bool) -> bool:
         return default
     return val.strip().lower() in ("1", "true", "yes", "on")
 
+
+def _env_list(name: str, default: list) -> list:
+    val = os.environ.get(name)
+    if val is None:
+        return default
+    return [x.strip() for x in val.split(",") if x.strip()]
+
 BASE_DIR = Path(__file__).parent.parent
 
 MODEL_PATH = BASE_DIR / "models" / "best.pt"
@@ -67,6 +74,14 @@ def set_camera_config(cam_id: str, **kwargs):
 
 CONF_THRESH = 0.75
 MAX_LOG_SIZE = 100
+
+# Какие СИЗ обязательны ПО УМОЛЧАНИЮ (вне пользовательских зон и в зоне по
+# конусам). Пер-зонные требования (`require_ppe` зоны) переопределяют это для
+# людей внутри зоны. Для демо/выставки можно ослабить через env, например
+# PPE_REQUIRED_DEFAULT=mask (нужна только маска) или PPE_REQUIRED_DEFAULT=""
+# (СИЗ не обязательны нигде — не нужно нести каску/жилет).
+PPE_REQUIRED_DEFAULT = [x for x in _env_list("PPE_REQUIRED_DEFAULT", ["helmet", "mask", "vest"])
+                        if x in ("helmet", "mask", "vest")]
 # Минимум 3 конуса: из 2 точек многоугольник вырождается в отрезок (нет площади),
 # зона рисовалась бы линией, в которую невозможно «войти» (is_in_danger_zone
 # всегда False). С 3+ конусами зона имеет площадь и человек по точке ног в ней

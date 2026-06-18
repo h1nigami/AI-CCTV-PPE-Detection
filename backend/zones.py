@@ -119,6 +119,20 @@ def has_danger_zones(zones: list) -> bool:
     return any(z.get("type") in _DANGER_TYPES for z in zones)
 
 
+def required_ppe(person_box, zones: list, w: int, h: int, default) -> set:
+    """Какие СИЗ обязательны для человека в этой точке.
+    Если он внутри danger/restricted-зон(ы) — объединение их `require_ppe`
+    (может быть пустым → СИЗ не нужны). Иначе — `default` (глобальный дефолт)."""
+    here = [z for z in zones
+            if z.get("type") in _DANGER_TYPES and person_in_zone(person_box, z, w, h)]
+    if here:
+        req: set = set()
+        for z in here:
+            req |= set(z.get("require_ppe", []))
+        return req
+    return set(default)
+
+
 def box_in_mask(box, zones: list, w: int, h: int) -> bool:
     """Центр bbox попадает в зону-маску → объект исключается из детекции."""
     if w <= 0 or h <= 0:

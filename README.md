@@ -142,6 +142,7 @@ python app.py
 ```python
 CAMERAS = {"cam1": "rtsp://admin:pass@192.168.1.100:554/stream1"}
 CONF_THRESH = 0.75
+PPE_REQUIRED_DEFAULT = ["helmet","mask","vest"]  # обязательные СИЗ вне зон (env)
 REID_SIM_THRESHOLD = 0.55          # базовый порог (адаптивный 0.45–0.60)
 REID_MAX_EMBEDDINGS = 30           # ракурсов на личность («со всех сторон»)
 REID_MAX_AGE_DAYS = 0              # 0 = хранить бессрочно (авто-удаление выкл.)
@@ -187,7 +188,13 @@ RECORD_ENABLED=true
 RECORD_MODE=motion
 RECORD_DIR=/media
 RECORD_RETAIN_DAYS=7
+# Требуемые СИЗ по умолчанию (вне зон). Для демо без каски/жилета:
+PPE_REQUIRED_DEFAULT=mask        # нужна только маска (или пусто — СИЗ не нужны)
 ```
+
+> 💡 **Демо/выставка:** чтобы не нести каску и жилет, задайте `PPE_REQUIRED_DEFAULT=mask`
+> (или пустую строку — СИЗ не требуются нигде), либо в редакторе зон нарисуйте
+> зону с нужным набором `require_ppe`. Внутри зоны действуют её требования.
 
 ---
 

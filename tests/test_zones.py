@@ -4,7 +4,7 @@ import pytest
 import backend.zones as zones_mod
 from backend.zones import (
     validate_zone, person_in_zone, in_any_danger_zone, box_in_mask,
-    apply_masks, has_danger_zones, to_pixels,
+    apply_masks, has_danger_zones, to_pixels, required_ppe,
     get_zones, set_zones, add_zone, update_zone, delete_zone,
 )
 
@@ -104,6 +104,42 @@ def test_to_pixels():
     px = to_pixels(_zone(), 1000, 1000)
     assert px[0] == (100, 100)
     assert px[2] == (500, 500)
+
+
+# ── Пер-зонные требования СИЗ ───────────────────────────────
+INSIDE = [250, 100, 350, 490]   # foot норм (0.30, 0.49) — внутри SQUARE
+OUTSIDE = [800, 100, 900, 900]  # foot норм (0.85, 0.90) — вне SQUARE
+DEFAULT = ["helmet", "mask", "vest"]
+
+
+def test_required_ppe_default_outside_zones():
+    # Вне любых зон — глобальный дефолт.
+    assert required_ppe(OUTSIDE, [], W, H, DEFAULT) == {"helmet", "mask", "vest"}
+
+
+def test_required_ppe_zone_overrides():
+    z = {**_zone("danger"), "require_ppe": ["mask"]}
+    # Внутри зоны — только её требование (каска/жилет не нужны).
+    assert required_ppe(INSIDE, [z], W, H, DEFAULT) == {"mask"}
+    # Снаружи — дефолт.
+    assert required_ppe(OUTSIDE, [z], W, H, DEFAULT) == {"helmet", "mask", "vest"}
+
+
+def test_required_ppe_empty_zone_means_nothing():
+    # Зона без требований → СИЗ внутри не нужны (демо-кейс выставки).
+    z = {**_zone("danger"), "require_ppe": []}
+    assert required_ppe(INSIDE, [z], W, H, DEFAULT) == set()
+
+
+def test_required_ppe_union_of_overlapping_zones():
+    z1 = {**_zone("danger"), "require_ppe": ["helmet"]}
+    z2 = {**_zone("restricted"), "require_ppe": ["vest"]}
+    assert required_ppe(INSIDE, [z1, z2], W, H, DEFAULT) == {"helmet", "vest"}
+
+
+def test_required_ppe_empty_default_relaxes_everywhere():
+    # PPE_REQUIRED_DEFAULT="" → СИЗ не требуются нигде вне зон.
+    assert required_ppe(OUTSIDE, [], W, H, []) == set()
 
 
 # ── CRUD (конфиг в памяти) ──────────────────────────────────

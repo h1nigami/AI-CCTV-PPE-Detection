@@ -625,6 +625,7 @@ frigate_disk_usage_percent{mount="/media"} 45
 **Срок: 1-2 недели** — 🟡 Приоритет 2
 
 - [x] Полигональные зоны — `backend/zones.py` (ray-casting, без shapely; типы danger/restricted/mask, нормализованные координаты, хранение в конфиге камеры). API `GET/POST/PUT/DELETE /api/cameras/<id>/zones`
+- [x] Пер-зонные требования СИЗ — `require_ppe` зоны реально определяет, какие СИЗ обязательны внутри (`zones.required_ppe`); глобальный дефолт `PPE_REQUIRED_DEFAULT` (env). Демо без каски/жилета: `PPE_REQUIRED_DEFAULT=mask` или пустой
 - [x] Маски детекции — `apply_masks` исключает объекты в зонах-масках из детекции
 - [x] Визуальный редактор в UI — `frontend/src/pages/ZonesPage.tsx` (SVG поверх кадра, клик = вершина, перетаскивание точек, тип/название/требуемые СИЗ, сохранение)
 - [x] Hot-reload конфигурации — зоны читаются из конфига камеры на каждом кадре (`get_zones` в `process_frame`), правка применяется сразу
