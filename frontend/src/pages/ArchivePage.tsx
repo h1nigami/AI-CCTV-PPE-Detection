@@ -64,6 +64,7 @@ export default function ArchivePage() {
   const [segments, setSegments] = useState<RecordingSegment[]>([])
   const [events, setEvents] = useState<TimelineEvent[]>([])
   const [showEvents, setShowEvents] = useState(true)
+  const [autoNext, setAutoNext] = useState(true)
   const [loading, setLoading] = useState(false)
   const [player, setPlayer] = useState<PlayerState | null>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -133,6 +134,15 @@ export default function ArchivePage() {
     }
   }, [player])
 
+  // Непрерывное воспроизведение: по окончании сегмента включаем следующий
+  // (пропуская gaps в motion-режиме). Для event-клипа (без segId) — ничего.
+  const handleEnded = useCallback(() => {
+    if (!autoNext || !player?.segId) return
+    const idx = segments.findIndex((s) => s.id === player.segId)
+    const next = idx >= 0 ? segments[idx + 1] : undefined
+    if (next) openSegment(next)
+  }, [autoNext, player, segments, openSegment])
+
   const totalDuration = segments.reduce((s, r) => s + r.duration, 0)
   const motionCount = segments.filter((r) => r.hasMotion).length
 
@@ -161,6 +171,10 @@ export default function ArchivePage() {
           <input type="checkbox" checked={showEvents} onChange={(e) => setShowEvents(e.target.checked)} />
           События
         </label>
+        <label style={styles.checkLabel}>
+          <input type="checkbox" checked={autoNext} onChange={(e) => setAutoNext(e.target.checked)} />
+          Непрерывно
+        </label>
       </div>
 
       {/* ── Player ── */}
@@ -173,6 +187,7 @@ export default function ArchivePage() {
             style={styles.video}
             controls autoPlay
             onLoadedMetadata={handleLoadedMeta}
+            onEnded={handleEnded}
           />
           <div style={styles.playerMeta}>{player.title}</div>
         </div>
