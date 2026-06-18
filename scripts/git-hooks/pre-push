@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# ─────────────────────────────────────────────────────────────────────────────
+# Авто-деплой на серверы при `git push` в main.
+#
+# Установка (один раз на машине):
+#   git config core.hooksPath scripts/git-hooks
+#
+# Разово пропустить деплой:
+#   SKIP_DEPLOY=1 git push        или      git push --no-verify
+#
+# Деплой берёт ЛОКАЛЬНЫЙ код (тот, что пушится) и не блокирует push при сбое
+# серверов — push проходит в любом случае, ошибка деплоя лишь печатается.
+# ─────────────────────────────────────────────────────────────────────────────
+set -u
+
+[ "${SKIP_DEPLOY:-}" = "1" ] && exit 0
+
+ROOT="$(git rev-parse --show-toplevel)"
+deploy_needed=0
+while read -r local_ref local_sha remote_ref remote_sha; do
+  [ "$remote_ref" = "refs/heads/main" ] && deploy_needed=1
+done
+
+if [ "$deploy_needed" = "1" ]; then
+  echo "[pre-push] Деплой на серверы (main)… (пропустить: SKIP_DEPLOY=1 git push)"
+  if bash "$ROOT/deploy.sh" all; then
+    echo "[pre-push] Деплой ок."
+  else
+    echo "[pre-push] ВНИМАНИЕ: деплой завершился с ошибкой (серверы недоступны?). Push продолжается."
+  fi
+fi
+exit 0
