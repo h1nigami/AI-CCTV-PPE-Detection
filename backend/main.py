@@ -64,6 +64,18 @@ try:
 except Exception as e:
     print(f"[ReID] InsightFace не загружен: {e}. Re-ID отключён.")
 
+# Body Re-ID (опознание «со спины» по одежде) — лёгкий цветовой дескриптор, без
+# тяжёлых зависимостей. Включается флагом REID_BODY_ENABLED.
+body_recognizer = None
+try:
+    from backend.config import REID_BODY_ENABLED
+    if REID_BODY_ENABLED:
+        from backend.reid.body import BodyRecognizer
+        body_recognizer = BodyRecognizer()
+        print("[ReID] Body Re-ID активен (дескриптор одежды)")
+except Exception as e:
+    print(f"[ReID] Body Re-ID не загружен: {e}")
+
 state = DetectionState()
 state.init_gallery(REID_GALLERY_PATH)
 if state.gallery is not None:
@@ -208,6 +220,11 @@ def process_frame(frame, cam_id: str, face_worker=None):
         return frame, f"{datetime.now().strftime('%H:%M:%S')} [{cam_id}] Детекция отключена", "норма", [], {}
     state.cleanup_stale_tracks()
     detected = run_detection(frame, model)
+    # Чистый кадр ДО любой отрисовки — для body Re-ID (рамки/заливка зоны исказили
+    # бы цвета одежды). Берём копию только когда body Re-ID реально нужен.
+    clean_frame = frame.copy() if (body_recognizer is not None
+                                   and DETECT_MODES.get("faces", True)
+                                   and detected["persons"]) else None
     danger_zone = get_danger_zone(detected["cones"]) if DETECT_MODES.get("ppe", True) else None
     if DETECT_MODES.get("ppe", True):
         for box in detected["helmets"]:
@@ -253,10 +270,14 @@ def process_frame(frame, cam_id: str, face_worker=None):
                 track_id = idx
             face_info = (face_embeddings or [(None, 0.0)])[idx] if face_embeddings else (None, 0.0)
             face_emb, face_quality = face_info
+            # Дескриптор тела (одежды) с ЧИСТОГО кадра — для опознания «со спины».
+            body_emb = (body_recognizer.extract(clean_frame, pbox)
+                        if clean_frame is not None else None)
             global_id = state.get_global_id(track_id, cam_id,
                                             face_embedding=face_emb,
                                             quality=face_quality,
-                                            person_box=pbox)
+                                            person_box=pbox,
+                                            body_embedding=body_emb)
             global_ids.append(global_id)
             has_helmet = any(has_item_on_person(pbox, h) for h in detected["helmets"]) if DETECT_MODES.get("ppe", True) else False
             has_mask = any(has_item_on_person(pbox, m) for m in detected["masks"]) if DETECT_MODES.get("ppe", True) else False
