@@ -51,6 +51,12 @@ interface CameraContextType {
   // ---- Логи (единый источник поллинга на всё приложение) ----
   /** Последние логи детекции (по всем камерам) */
   logs: LogEntry[]
+
+  // ---- Режимы детекции ----
+  /** Текущие режимы детекции (people / ppe / faces) */
+  detectModes: Record<string, boolean> | null
+  /** Обновить режимы детекции с бэка */
+  refreshDetectModes: () => Promise<void>
 }
 
 const CameraContext = createContext<CameraContextType | null>(null)
@@ -71,6 +77,7 @@ export function CameraProvider({ children }: { children: ReactNode }) {
   const [groups] = useState<CameraGroup[]>(DEFAULT_GROUPS)
   const [isRunning, setDetectionRunning] = useState(false)
   const [logs, setLogs] = useState<LogEntry[]>([])
+  const [detectModes, setDetectModes] = useState<Record<string, boolean> | null>(null)
 
   // Храним последние события для каждой камеры (симуляция)
   const eventsByCamera = useRef<Record<string, TimelineEvent[]>>({})
@@ -119,6 +126,23 @@ export function CameraProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     refresh()
   }, [refresh])
+
+  const refreshDetectModes = useCallback(async () => {
+    try {
+      const data = await api.getDetectModes()
+      setDetectModes(data.modes)
+    } catch {
+      // ignore
+    }
+  }, [])
+
+  // Первичная загрузка detectModes и фоновый поллинг при isRunning
+  useEffect(() => {
+    refreshDetectModes()
+    if (!isRunning) return
+    const id = setInterval(refreshDetectModes, 10000)
+    return () => clearInterval(id)
+  }, [isRunning, refreshDetectModes])
 
   // Получаем статус детекции при монтировании провайдера (один раз)
   useEffect(() => {
@@ -189,6 +213,8 @@ export function CameraProvider({ children }: { children: ReactNode }) {
         isRunning,
         setDetectionRunning,
         logs,
+        detectModes,
+        refreshDetectModes,
       }}
     >
       {children}

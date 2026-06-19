@@ -3,7 +3,7 @@ import { useCamerasContext } from "../contexts/CameraContext"
 import type { PpeStatus, PersonSummary } from "../types"
 
 export function DispatcherPanel() {
-  const { dispatcher, closeDispatcher, cameras, logs: allLogs } = useCamerasContext()
+  const { dispatcher, closeDispatcher, cameras, logs: allLogs, detectModes } = useCamerasContext()
   const { cameraName } = dispatcher
 
   const camera = useMemo(
@@ -92,6 +92,7 @@ export function DispatcherPanel() {
 
   return (
     <div style={styles.panel}>
+      <style>{`@keyframes ppeFadeIn{from{opacity:0;transform:translateY(-8px) scale(0.97)}to{opacity:1;transform:translateY(0) scale(1)}}`}</style>
       <div style={styles.header}>
         <div style={styles.headerLeft}>
           <div style={styles.camIcon}>
@@ -116,26 +117,39 @@ export function DispatcherPanel() {
       <div style={styles.section}>
         <div style={styles.sectionTitle}>СТАТУС СИЗ</div>
         <div style={styles.ppeGrid}>
-          {([
-            { key: "helmet" as const, icon: "⛑", label: "Каска" },
-            { key: "mask" as const, icon: "😷", label: "Маска" },
-            { key: "vest" as const, icon: "🦺", label: "Жилет" },
-            { key: "zone" as const, icon: "⚠", label: "Зона" },
-            { key: "gesture" as const, icon: "👌", label: "Жест" },
-          ]).map(({ key, icon, label }) => {
-            const val = ppe[key]
-            const ok = val === true
-            const color = val === null ? "#888" : ok ? "#00e676" : "#f44336"
-            return (
-              <div key={key} style={{ ...styles.ppeItem, borderColor: color + "44" }}>
-                <div style={styles.ppeIcon}>{icon}</div>
-                <div style={styles.ppeLabel}>{label}</div>
-                <div style={{ ...styles.ppeValue, color }}>
-                  {val === null ? "—" : ok ? "OK" : "!"}
+          {(() => {
+            const allItems = [
+              { key: "helmet" as const, icon: "⛑", label: "Каска", mode: "ppe" },
+              { key: "mask" as const, icon: "😷", label: "Маска", mode: "ppe" },
+              { key: "vest" as const, icon: "🦺", label: "Жилет", mode: "ppe" },
+              { key: "zone" as const, icon: "⚠", label: "Зона", mode: null },
+              { key: "gesture" as const, icon: "👌", label: "Жест", mode: "faces" },
+            ]
+            const visible = detectModes
+              ? allItems.filter((i) => !i.mode || detectModes[i.mode] !== false)
+              : allItems
+            return visible.map(({ key, icon, label }) => {
+              const val = ppe[key]
+              const ok = val === true
+              const color = val === null ? "#888" : ok ? "#00e676" : "#f44336"
+              return (
+                <div
+                  key={key}
+                  style={{
+                    ...styles.ppeItem,
+                    borderColor: color + "44",
+                    animation: "ppeFadeIn 0.35s cubic-bezier(0.4, 0, 0.2, 1) both",
+                  }}
+                >
+                  <div style={styles.ppeIcon}>{icon}</div>
+                  <div style={styles.ppeLabel}>{label}</div>
+                  <div style={{ ...styles.ppeValue, color }}>
+                    {val === null ? "—" : ok ? "OK" : "!"}
+                  </div>
                 </div>
-              </div>
-            )
-          })}
+              )
+            })
+          })()}
         </div>
       </div>
 

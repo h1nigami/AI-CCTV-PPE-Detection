@@ -136,7 +136,7 @@ export function ControlPanel({
     { key: "helmet", icon: "⛑️", label: "СИЗ Каска" },
     { key: "mask", icon: "😷", label: "СИЗ Маска" },
     { key: "vest", icon: "🦺", label: "СИЗ Жилет" },
-    { key: "gesture", icon: "🤙", label: "Жест ОК" },
+    { key: "gesture", icon: "👌", label: "Жест ОК" },
     { key: "zone", icon: "⚠️", label: "Опасная зона" },
   ]
 
