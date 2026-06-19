@@ -12,9 +12,10 @@ x-common: &common
   environment:
     - TZ=Europe/Moscow
     # Подсеть(и) для скана камер кнопкой «Найти камеры». В bridge-сети local_ip()
-    # видит docker-подсеть, а не LAN — укажите реальную подсеть с камерами.
-    # (Подсети уже добавленных камер подхватываются автоматически.)
-    # - DISCOVERY_SUBNET=192.168.0
+    # видит docker-подсеть, а не LAN — поэтому указываем реальную подсеть с
+    # камерами явно (через запятую можно несколько: 192.168.0,192.168.1).
+    # Подсети уже добавленных сетевых камер подхватываются автоматически.
+    - DISCOVERY_SUBNET=192.168.0
     # Для ONVIF-multicast дополнительно нужен network_mode: host (несовместим с ports).
   healthcheck:
     test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health', timeout=5).status==200 else 1)"]
