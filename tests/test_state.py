@@ -283,6 +283,27 @@ class TestApproval:
         assert state.is_approved([10, 20, 50, 80], "cam01", global_id=1) is False
         assert state.is_approved([100, 200, 150, 250], "cam01", global_id=2) is False
 
+    def test_revoke_approval_drops_pass(self, state):
+        state.approve([0, 0, 10, 10], "cam01", global_id=7)
+        assert state.revoke_approval(7) is True
+        assert state.is_approved([0, 0, 10, 10], "cam01", global_id=7) is False
+
+    def test_revoke_approval_returns_false_when_no_pass(self, state):
+        assert state.revoke_approval(12345) is False
+
+    def test_get_active_approvals_lists_remaining(self, state):
+        state.approve([0, 0, 10, 10], "cam01", global_id=3)
+        active = state.get_active_approvals()
+        assert 3 in active and active[3] > 0
+
+    def test_get_active_approvals_skips_expired(self, state):
+        state.approve([0, 0, 10, 10], "cam01", global_id=4)
+        for key in list(state._approved.keys()):
+            state._approved[key] = time.time() - 1
+        active = state.get_active_approvals()
+        assert 4 not in active
+        assert len(state._approved) == 0  # истёкший попутно удалён
+
 
 # ── Gesture methods ───────────────────────────────────────────────────────────
 

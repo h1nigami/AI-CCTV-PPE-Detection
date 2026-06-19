@@ -7,7 +7,23 @@ def configure_reid_routes(app, state):
     def reid_list():
         if state.gallery is None:
             return jsonify({"error": "Re-ID не активен"}), 400
-        return jsonify({"persons": state.gallery.list_all()})
+        approvals = state.get_active_approvals()
+        persons = state.gallery.list_all()
+        for p in persons:
+            left = approvals.get(p["global_id"], 0)
+            # Остаток пропуска в секундах (0 — пропуска нет). Пока > 0, на человека
+            # не срабатывают голосовые предупреждения о нехватке СИЗ.
+            p["pass_seconds_left"] = int(left)
+        return jsonify({"persons": persons})
+
+    @app.route("/api/reid/persons/<int:global_id>/revoke", methods=["POST"])
+    def reid_revoke(global_id):
+        """Сбросить пропуск личности — снова под контролем СИЗ."""
+        revoked = state.revoke_approval(global_id)
+        return jsonify({
+            "status": "revoked" if revoked else "no_active_pass",
+            "global_id": global_id,
+        })
 
     @app.route("/api/reid/persons/<int:global_id>/rename", methods=["POST"])
     def reid_rename(global_id):

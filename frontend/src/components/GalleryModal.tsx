@@ -14,10 +14,15 @@ export function GalleryModal({ open, onClose }: GalleryModalProps) {
 
   useEffect(() => {
     if (!open) return
-    api
-      .getReidPersons()
-      .then((data) => setPersons(data.persons))
-      .catch(() => setPersons([]))
+    const load = () =>
+      api
+        .getReidPersons()
+        .then((data) => setPersons(data.persons))
+        .catch(() => setPersons([]))
+    load()
+    // Обновляем, пока модалка открыта — чтобы остаток пропуска был актуальным.
+    const timer = setInterval(load, 3000)
+    return () => clearInterval(timer)
   }, [open])
 
   if (!open) return null
@@ -40,6 +45,18 @@ export function GalleryModal({ open, onClose }: GalleryModalProps) {
     try {
       await api.deleteReidPerson(gid)
       setPersons((prev) => prev.filter((p) => p.global_id !== gid))
+    } catch {
+      // ignore
+    }
+  }
+
+  const handleRevoke = async (gid: number) => {
+    if (!confirm("Сбросить пропуск этого человека? Он снова будет под контролем СИЗ.")) return
+    try {
+      await api.revokeReidPass(gid)
+      setPersons((prev) =>
+        prev.map((p) => (p.global_id === gid ? { ...p, pass_seconds_left: 0 } : p)),
+      )
     } catch {
       // ignore
     }
@@ -74,6 +91,9 @@ export function GalleryModal({ open, onClose }: GalleryModalProps) {
               const lastSeen = new Date(p.last_seen * 1000).toLocaleString("ru-RU")
               const cams = (p.cameras || []).join(", ").toUpperCase()
               const isEditing = editingId === p.global_id
+              const passLeft = p.pass_seconds_left ?? 0
+              const hasPass = passLeft > 0
+              const passLabel = `${Math.floor(passLeft / 60)}:${String(passLeft % 60).padStart(2, "0")}`
 
               return (
                 <div key={p.global_id} style={styles.item}>
@@ -94,6 +114,11 @@ export function GalleryModal({ open, onClose }: GalleryModalProps) {
                       ) : (
                         <span style={{ color: "#00e676" }}>{p.name}</span>
                       )}
+                      {hasPass && (
+                        <span style={styles.passBadge} title="Активный пропуск — предупреждения не озвучиваются">
+                          🎫 ПРОПУСК {passLabel}
+                        </span>
+                      )}
                     </div>
                     <div style={styles.meta}>
                       ID={p.global_id} · {lastSeen} · {cams} · эмб:{p.embedding_count}
@@ -113,6 +138,15 @@ export function GalleryModal({ open, onClose }: GalleryModalProps) {
                         }}
                       >
                         ✏️
+                      </button>
+                    )}
+                    {hasPass && (
+                      <button
+                        style={styles.revokeBtn}
+                        title="Сбросить пропуск"
+                        onClick={() => handleRevoke(p.global_id)}
+                      >
+                        🎫✕
                       </button>
                     )}
                     <button style={styles.actionBtn} onClick={() => handleDelete(p.global_id)}>
@@ -255,6 +289,27 @@ const styles: Record<string, React.CSSProperties> = {
     fontFamily: "monospace",
     fontSize: "0.65rem",
     transition: "all .2s",
+  },
+  revokeBtn: {
+    background: "none",
+    border: "1px solid #ffa726",
+    borderRadius: "6px",
+    color: "#ffa726",
+    cursor: "pointer",
+    padding: "2px 8px",
+    fontFamily: "monospace",
+    fontSize: "0.65rem",
+    transition: "all .2s",
+  },
+  passBadge: {
+    background: "#1b5e2033",
+    border: "1px solid #00e67655",
+    borderRadius: "10px",
+    color: "#00e676",
+    fontFamily: "monospace",
+    fontSize: "0.58rem",
+    padding: "1px 6px",
+    letterSpacing: "0.5px",
   },
   footer: {
     padding: "10px 16px",

@@ -30,6 +30,9 @@ export interface ReidPerson {
   last_seen: number
   cameras: string[]
   embedding_count: number
+  // Остаток активного пропуска в секундах (0 — пропуска нет). Пока > 0,
+  // голосовые предупреждения о нехватке СИЗ на человека не срабатывают.
+  pass_seconds_left?: number
 }
 
 export interface ReidStats {

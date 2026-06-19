@@ -156,6 +156,8 @@ export const api = {
     }),
   deleteReidPerson: (id: number) =>
     request<ApiStatus>(`/api/reid/persons/${id}`, { method: "DELETE" }),
+  revokeReidPass: (id: number) =>
+    request<ApiStatus>(`/api/reid/persons/${id}/revoke`, { method: "POST" }),
   clearReid: () =>
     request<ApiStatus>("/api/reid/clear", { method: "POST" }),
   getReidStats: () => request<ReidStats>("/api/reid/stats"),

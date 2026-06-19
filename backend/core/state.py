@@ -276,6 +276,32 @@ class DetectionState:
         with self._lock:
             self._approved.clear()
 
+    def revoke_approval(self, global_id: int) -> bool:
+        """Отозвать (сбросить) пропуск конкретной личности.
+        Возвращает True, если пропуск был активен."""
+        with self._lock:
+            existed = self._approved.pop(global_id, None) is not None
+        if existed:
+            print(f"Пропуск отозван: global_id={global_id}")
+        return existed
+
+    def get_active_approvals(self) -> Dict[int, float]:
+        """{global_id: остаток секунд} для активных пропусков.
+        Истёкшие попутно удаляются."""
+        now = time.time()
+        with self._lock:
+            result: Dict[int, float] = {}
+            expired = []
+            for gid, expire in self._approved.items():
+                left = expire - now
+                if left > 0:
+                    result[gid] = left
+                else:
+                    expired.append(gid)
+            for gid in expired:
+                del self._approved[gid]
+        return result
+
     def set_gesture_detected(self):
         with self._lock:
             self._gesture_until = time.time() + GESTURE_DISPLAY_DURATION
