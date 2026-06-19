@@ -283,6 +283,11 @@ class TestApproval:
         assert state.is_approved([10, 20, 50, 80], "cam01", global_id=1) is False
         assert state.is_approved([100, 200, 150, 250], "cam01", global_id=2) is False
 
+    def test_grant_approval_makes_approved(self, state):
+        state.grant_approval(55)
+        assert state.is_approved([0, 0, 10, 10], "cam01", global_id=55) is True
+        assert state.get_active_approvals().get(55, 0) > 0
+
     def test_revoke_approval_drops_pass(self, state):
         state.approve([0, 0, 10, 10], "cam01", global_id=7)
         assert state.revoke_approval(7) is True

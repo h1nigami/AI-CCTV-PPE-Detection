@@ -50,6 +50,18 @@ export function GalleryModal({ open, onClose }: GalleryModalProps) {
     }
   }
 
+  const handleGrant = async (gid: number) => {
+    try {
+      await api.grantReidPass(gid)
+      // Оптимистично 5 минут; точное значение подтянет поллинг через 3с.
+      setPersons((prev) =>
+        prev.map((p) => (p.global_id === gid ? { ...p, pass_seconds_left: 300 } : p)),
+      )
+    } catch {
+      // ignore
+    }
+  }
+
   const handleRevoke = async (gid: number) => {
     if (!confirm("Сбросить пропуск этого человека? Он снова будет под контролем СИЗ.")) return
     try {
@@ -140,13 +152,21 @@ export function GalleryModal({ open, onClose }: GalleryModalProps) {
                         ✏️
                       </button>
                     )}
-                    {hasPass && (
+                    {hasPass ? (
                       <button
                         style={styles.revokeBtn}
                         title="Сбросить пропуск"
                         onClick={() => handleRevoke(p.global_id)}
                       >
                         🎫✕
+                      </button>
+                    ) : (
+                      <button
+                        style={styles.grantBtn}
+                        title="Выдать пропуск на 5 минут"
+                        onClick={() => handleGrant(p.global_id)}
+                      >
+                        🎫
                       </button>
                     )}
                     <button style={styles.actionBtn} onClick={() => handleDelete(p.global_id)}>
@@ -295,6 +315,17 @@ const styles: Record<string, React.CSSProperties> = {
     border: "1px solid #ffa726",
     borderRadius: "6px",
     color: "#ffa726",
+    cursor: "pointer",
+    padding: "2px 8px",
+    fontFamily: "monospace",
+    fontSize: "0.65rem",
+    transition: "all .2s",
+  },
+  grantBtn: {
+    background: "none",
+    border: "1px solid #00e67655",
+    borderRadius: "6px",
+    color: "#00e676",
     cursor: "pointer",
     padding: "2px 8px",
     fontFamily: "monospace",

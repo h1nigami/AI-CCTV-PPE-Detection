@@ -16,6 +16,14 @@ def configure_reid_routes(app, state):
             p["pass_seconds_left"] = int(left)
         return jsonify({"persons": persons})
 
+    @app.route("/api/reid/persons/<int:global_id>/approve", methods=["POST"])
+    def reid_approve(global_id):
+        """Выдать пропуск личности вручную (на APPROVAL_DURATION секунд)."""
+        state.grant_approval(global_id)
+        left = state.get_active_approvals().get(global_id, 0)
+        return jsonify({"status": "approved", "global_id": global_id,
+                        "pass_seconds_left": int(left)})
+
     @app.route("/api/reid/persons/<int:global_id>/revoke", methods=["POST"])
     def reid_revoke(global_id):
         """Сбросить пропуск личности — снова под контролем СИЗ."""

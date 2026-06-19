@@ -276,6 +276,12 @@ class DetectionState:
         with self._lock:
             self._approved.clear()
 
+    def grant_approval(self, global_id: int) -> None:
+        """Выдать пропуск личности вручную (из UI) на APPROVAL_DURATION секунд."""
+        with self._lock:
+            self._approved[global_id] = time.time() + APPROVAL_DURATION
+        print(f"Пропуск выдан вручную: global_id={global_id} на {APPROVAL_DURATION} сек.")
+
     def revoke_approval(self, global_id: int) -> bool:
         """Отозвать (сбросить) пропуск конкретной личности.
         Возвращает True, если пропуск был активен."""
