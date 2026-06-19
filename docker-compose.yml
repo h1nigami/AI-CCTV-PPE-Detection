@@ -62,6 +62,9 @@ services:
       - TZ=Europe/Moscow
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      # У app-gpu свой блок environment — он перекрывает x-common (YAML merge-key
+      # не делает deep-merge), поэтому DISCOVERY_SUBNET дублируем здесь явно.
+      - DISCOVERY_SUBNET=192.168.0
 
   # ─────────────────────────────────────────────────
   #  MQTT broker (для будущей Frigate-архитектуры)
