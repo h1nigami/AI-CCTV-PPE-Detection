@@ -73,15 +73,15 @@ try:
 except Exception as e:
     print(f"[ReID] InsightFace не загружен: {e}. Re-ID отключён.")
 
-# Body Re-ID (опознание «со спины» по одежде) — лёгкий цветовой дескриптор, без
-# тяжёлых зависимостей. Включается флагом REID_BODY_ENABLED.
+# Body Re-ID (опознание «со спины») — глубокий дескриптор OSNet (ONNX) с мягкой
+# деградацией на цветовой fallback. Включается флагом REID_BODY_ENABLED.
 body_recognizer = None
 try:
     from backend.config import REID_BODY_ENABLED
     if REID_BODY_ENABLED:
         from backend.reid.body import BodyRecognizer
         body_recognizer = BodyRecognizer()
-        print("[ReID] Body Re-ID активен (дескриптор одежды)")
+        print(f"[ReID] Body Re-ID активен (бэкенд: {body_recognizer.backend})")
 except Exception as e:
     print(f"[ReID] Body Re-ID не загружен: {e}")
 
@@ -89,6 +89,10 @@ state = DetectionState()
 state.init_gallery(REID_GALLERY_PATH)
 if state.gallery is not None:
     state.gallery.cleanup_old(REID_MAX_AGE_DAYS)
+# Пороги body Re-ID — под фактический бэкенд (deep OSNet vs цветовой fallback).
+if body_recognizer is not None:
+    state.configure_body(body_recognizer.match_threshold,
+                         body_recognizer.diversity_max_sim)
 
 frame_buffers: dict[str, FrameBuffer] = {}
 annotated_buffers: dict[str, FrameBuffer] = {}
@@ -443,15 +447,17 @@ def process_frame(frame, cam_id: str, face_worker=None, det_model=None, det_pose
         if face_worker is not None and detect_faces_mode:
             face_data = face_worker.get_faces()
             face_embeddings = match_faces_to_persons(detected["persons"], face_data)
+        # Дескрипторы тел (одежда/силуэт) с ЧИСТОГО кадра — для опознания «со спины».
+        # Батчем: для OSNet это один инференс на кадр (а не на человека).
+        body_embs = (body_recognizer.extract_batch(clean_frame, detected["persons"])
+                     if clean_frame is not None else None)
         for idx, pbox in enumerate(detected["persons"]):
             track_id = person_track_ids[idx] if idx < len(person_track_ids) else -1
             if track_id < 0:
                 track_id = idx
             face_info = (face_embeddings or [(None, 0.0)])[idx] if face_embeddings else (None, 0.0)
             face_emb, face_quality = face_info
-            # Дескриптор тела (одежды) с ЧИСТОГО кадра — для опознания «со спины».
-            body_emb = (body_recognizer.extract(clean_frame, pbox)
-                        if clean_frame is not None else None)
+            body_emb = body_embs[idx] if body_embs else None
             global_id = state.get_global_id(track_id, cam_id,
                                             face_embedding=face_emb,
                                             quality=face_quality,

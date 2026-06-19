@@ -21,8 +21,7 @@ MODEL = "buffalo_l"
 REQUIRED = ["det_10g.onnx", "w600k_r50.onnx"]
 
 
-def main() -> int:
-    root = os.environ.get("INSIGHTFACE_ROOT") or str(Path(__file__).resolve().parent)
+def _download_face(root: str) -> int:
     target = Path(root) / "models" / MODEL
 
     if target.is_dir() and all((target / f).exists() for f in REQUIRED):
@@ -47,6 +46,28 @@ def main() -> int:
             file=sys.stderr,
         )
         return 1
+
+
+def _download_body() -> int:
+    """Докачать глубокую Body Re-ID модель (OSNet ONNX). Не критично — при сбое
+    body Re-ID мягко деградирует на цветовой дескриптор, поэтому возвращаем 0."""
+    try:
+        from backend.config import (REID_BODY_MODEL_DIR, REID_BODY_MODEL,
+                                     REID_BODY_MODEL_URL)
+        from backend.reid.body_models import ensure_body_model
+        path = ensure_body_model(REID_BODY_MODEL_DIR, REID_BODY_MODEL, REID_BODY_MODEL_URL)
+        if path is not None:
+            print(f"[Models] OSNet (body Re-ID) готова: {path}")
+    except Exception as e:
+        print(f"[Models] OSNet (body Re-ID) пропущена: {e}", file=sys.stderr)
+    return 0
+
+
+def main() -> int:
+    root = os.environ.get("INSIGHTFACE_ROOT") or str(Path(__file__).resolve().parent)
+    rc = _download_face(root)
+    _download_body()
+    return rc
 
 
 if __name__ == "__main__":

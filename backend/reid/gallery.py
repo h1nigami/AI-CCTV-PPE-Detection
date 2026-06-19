@@ -108,6 +108,14 @@ class FaceGallery:
             data['cameras'].add(cam_id)
             return True
 
+    def _body_sims(self, embedding: np.ndarray, bodies) -> List[float]:
+        """Косинусы к дескрипторам тела ТОЙ ЖЕ размерности. Разные бэкенды дают
+        векторы разной длины (OSNet 512 vs цветовой 256) — смешивать их нельзя,
+        иначе np.dot упадёт; несовпадающие игнорируем (старый бэкенд отомрёт по капу)."""
+        n = int(embedding.shape[0])
+        return [self._cosine_sim(embedding, e) for e in bodies
+                if getattr(e, 'shape', (None,))[0] == n]
+
     def add_body(self, global_id: int, embedding: np.ndarray, diverse: bool = True) -> bool:
         """Добавить дескриптор внешнего вида (тело/одежда) к личности.
         diverse=True — копим только заметно разные ракурсы (max косинус к уже
@@ -121,8 +129,9 @@ class FaceGallery:
             if data is None:
                 return False
             bodies = data.setdefault('body_embeddings', [])
-            if diverse and bodies:
-                if max(self._cosine_sim(embedding, e) for e in bodies) >= self.body_diversity_max_sim:
+            if diverse:
+                sims = self._body_sims(embedding, bodies)
+                if sims and max(sims) >= self.body_diversity_max_sim:
                     return False
             bodies.append(embedding)
             if len(bodies) > self.max_body_embeddings:
@@ -141,7 +150,10 @@ class FaceGallery:
                 bodies = data.get('body_embeddings')
                 if not bodies:
                     continue
-                sim = max(self._cosine_sim(embedding, e) for e in bodies)
+                sims = self._body_sims(embedding, bodies)
+                if not sims:
+                    continue
+                sim = max(sims)
                 if sim >= threshold and sim > best_sim:
                     best_sim = sim
                     best_id = gid
@@ -156,7 +168,8 @@ class FaceGallery:
             bodies = data.get('body_embeddings') if data else None
             if not bodies:
                 return -1.0
-            return max(self._cosine_sim(embedding, e) for e in bodies)
+            sims = self._body_sims(embedding, bodies)
+            return max(sims) if sims else -1.0
 
     def match_or_register(self, embedding: np.ndarray, cam_id: str,
                           quality: float = 0.5, store: bool = True) -> int:

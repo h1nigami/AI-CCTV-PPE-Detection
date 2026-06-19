@@ -1,6 +1,12 @@
+import os
 import pytest
 import numpy as np
 from pathlib import Path
+
+# Тесты не должны ходить в сеть за OSNet-моделью (импорт backend.main создаёт
+# BodyRecognizer на уровне модуля). Флаг переводит ensure_body_model в офлайн:
+# если модели нет локально — deep-бэкенд просто не поднимется (цветовой fallback).
+os.environ.setdefault("REID_BODY_OFFLINE", "1")
 
 
 @pytest.fixture

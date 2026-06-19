@@ -36,6 +36,9 @@ class DetectionState:
         self._track_last_seen: Dict[Tuple[str, int], float] = {}
         self._last_emb_store: Dict[Tuple[str, int], float] = {}
         self._last_body_store: Dict[Tuple[str, int], float] = {}
+        # Порог опознания по телу — зависит от активного бэкенда body Re-ID
+        # (deep OSNet vs цветовой fallback). Переопределяется configure_body().
+        self._body_match_threshold = REID_BODY_MATCH_THRESHOLD
         self._fallback_names: Dict[int, str] = {}
 
         # Статусы последнего залогированного события (cam_id+track_id → compact_status)
@@ -67,6 +70,14 @@ class DetectionState:
     @property
     def gallery(self):
         return self._gallery
+
+    def configure_body(self, match_threshold: float, diversity_max_sim: Optional[float] = None):
+        """Подстроить пороги body Re-ID под фактический бэкенд (deep OSNet или
+        цветовой fallback). Вызывается из main.py после инициализации BodyRecognizer,
+        т.к. дефолты в config рассчитаны на deep, а у fallback другой масштаб косинуса."""
+        self._body_match_threshold = match_threshold
+        if diversity_max_sim is not None and self._gallery is not None:
+            self._gallery.body_diversity_max_sim = diversity_max_sim
 
     def add_log(self, entry: LogEntry):
         with self._lock:
@@ -192,7 +203,7 @@ class DetectionState:
             # это восстанавливает имя для нового/переинициализированного трека.
             if (REID_BODY_ENABLED and body_embedding is not None
                     and self._gallery is not None):
-                gid, sim = self._gallery.match_body(body_embedding, REID_BODY_MATCH_THRESHOLD)
+                gid, sim = self._gallery.match_body(body_embedding, self._body_match_threshold)
                 # Не приписываем личность, уже активную на другом треке (два разных
                 # человека в похожей одежде не должны слиться в одно имя).
                 if gid is not None and not self._gid_active_on_other_track(gid, key, now):

@@ -9,6 +9,7 @@ flask_out.txt
 flask_err.txt
 models/buffalo_l/
 models/piper/
+models/osnet/
 
 # Coverage reports
 .coverage
