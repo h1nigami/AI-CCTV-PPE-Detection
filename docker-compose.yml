@@ -17,6 +17,10 @@ x-common: &common
     # Подсети уже добавленных сетевых камер подхватываются автоматически.
     - DISCOVERY_SUBNET=192.168.0
     # Для ONVIF-multicast дополнительно нужен network_mode: host (несовместим с ports).
+    # Мягкий порог уверенности для детекции СИЗ (каска/маска/жилет): люди/конусы
+    # остаются на CONF_THRESH=0.75. Ниже → охотнее ловится каска (меньше ложных
+    # «нет каски»), но растёт риск ложного «СИЗ есть».
+    - PPE_CONF_THRESH=0.35
   healthcheck:
     test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health', timeout=5).status==200 else 1)"]
     interval: 30s
@@ -63,8 +67,9 @@ services:
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
       # У app-gpu свой блок environment — он перекрывает x-common (YAML merge-key
-      # не делает deep-merge), поэтому DISCOVERY_SUBNET дублируем здесь явно.
+      # не делает deep-merge), поэтому переменные из x-common дублируем здесь явно.
       - DISCOVERY_SUBNET=192.168.0
+      - PPE_CONF_THRESH=0.35
 
   # ─────────────────────────────────────────────────
   #  MQTT broker (для будущей Frigate-архитектуры)
