@@ -757,12 +757,16 @@ def _camera_detection_worker(cam_id: str):
             is_violation = category == "нарушение"
             rec = _event_recordings.get(cam_id)
             if is_violation:
+                gid = global_ids[0] if global_ids else 0
+                person_name = state.get_person_name(gid, cam_id, has_face=True) if gid else ""
+                # Голос пушим НЕЗАВИСИМО от записи — на каждом кадре зонного
+                # нарушения; push_voice_alert троттлит по VOICE_ALERT_COOLDOWN.
+                # Иначе вход в зону без СИЗ не озвучивался, если запись уже
+                # стартовала на кадре «вне зоны» (там _build_voice_text == "").
+                voice_text = _build_voice_text(statuses, person_name)
+                if voice_text:
+                    state.push_voice_alert(cam_id, voice_text)
                 if rec is None or not rec.get('active'):
-                    gid = global_ids[0] if global_ids else 0
-                    person_name = state.get_person_name(gid, cam_id, has_face=True) if gid else ""
-                    voice_text = _build_voice_text(statuses, person_name)
-                    if voice_text:
-                        state.push_voice_alert(cam_id, voice_text)
                     event_id = create_event_record(
                         cam_id=cam_id,
                         label=EventLabel.VIOLATION,
