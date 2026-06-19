@@ -17,6 +17,16 @@ def _env_list(name: str, default: list) -> list:
         return default
     return [x.strip() for x in val.split(",") if x.strip()]
 
+
+def _env_float(name: str, default: float) -> float:
+    val = os.environ.get(name)
+    if val is None:
+        return default
+    try:
+        return float(val)
+    except ValueError:
+        return default
+
 BASE_DIR = Path(__file__).parent.parent
 
 MODEL_PATH = BASE_DIR / "models" / "best.pt"
@@ -73,6 +83,14 @@ def set_camera_config(cam_id: str, **kwargs):
     save_cameras_config()
 
 CONF_THRESH = 0.75
+# Отдельный (более низкий) порог уверенности для ПРЕДМЕТОВ СИЗ — каска/маска/жилет.
+# Они мельче человека и часто детектятся с уверенностью ниже CONF_THRESH(0.75);
+# при едином пороге каска на голове нередко отбрасывалась ДО сопоставления с
+# человеком → ложное «нет каски» (человек в каске получал голосовое предупреждение).
+# Люди и конусы остаются на CONF_THRESH (чтобы не плодить ложные тела/зоны).
+# Переопределяется env PPE_CONF_THRESH (ниже → больше каска ловится, но растёт риск
+# ложного «СИЗ есть»; выше → строже). Не выше CONF_THRESH (иначе смысла нет).
+PPE_CONF_THRESH = min(_env_float("PPE_CONF_THRESH", 0.5), CONF_THRESH)
 MAX_LOG_SIZE = 100
 # Если capture не пишет новых кадров дольше этого (сек) — камера считается
 # «потерянной»: детекция перестаёт жечь GPU на застывшем кадре, а /video_frame

@@ -10,12 +10,18 @@ def mock_model():
     return model
 
 
-def make_mock_track_result(boxes_array, classes_array, track_ids_array=None):
+def make_mock_track_result(boxes_array, classes_array, track_ids_array=None,
+                           confs_array=None):
     result = MagicMock()
     result.boxes.xyxy = MagicMock()
     result.boxes.xyxy.cpu.return_value.numpy.return_value = boxes_array
     result.boxes.cls = MagicMock()
     result.boxes.cls.cpu.return_value.numpy.return_value = classes_array
+    # По умолчанию уверенность высокая (0.9) — все детекции проходят оба порога.
+    if confs_array is None:
+        confs_array = np.full((len(classes_array),), 0.9, dtype=np.float32)
+    result.boxes.conf = MagicMock()
+    result.boxes.conf.cpu.return_value.numpy.return_value = confs_array
     if track_ids_array is not None:
         result.boxes.id = MagicMock()
         result.boxes.id.cpu.return_value.numpy.return_value = track_ids_array
@@ -130,6 +136,42 @@ class TestPPEDetection:
         assert len(result['masks']) == 1
         assert len(result['vests']) == 1
         assert len(result['cones']) == 0
+
+    def test_low_conf_helmet_kept_but_person_filtered(self, mock_model):
+        # Каска с уверенностью 0.6 (< CONF_THRESH 0.75, но ≥ PPE 0.5) должна
+        # ОСТАТЬСЯ — иначе человек в каске ложно считается без каски.
+        # Человек с уверенностью 0.6 (< 0.75) — отфильтровывается (строгий порог).
+        boxes = np.array([
+            [10, 20, 100, 200],   # person, conf 0.6 → отфильтрован
+            [30, 10, 70, 50],     # helmet, conf 0.6 → оставлен (PPE-порог мягче)
+        ], dtype=np.float32)
+        classes = np.array([5, 0], dtype=np.int32)
+        track_ids = np.array([1, 2], dtype=np.int32)
+        confs = np.array([0.6, 0.6], dtype=np.float32)
+        mock_model.track.return_value = [
+            make_mock_track_result(boxes, classes, track_ids, confs)]
+
+        from backend.detection.engine import run_detection
+        frame = np.zeros((480, 640, 3), dtype=np.uint8)
+        result = run_detection(frame, mock_model)
+
+        assert len(result['persons']) == 0   # человек 0.6 < 0.75
+        assert len(result['helmets']) == 1    # каска 0.6 ≥ 0.5 — сохранена
+
+    def test_ppe_below_ppe_threshold_dropped(self, mock_model):
+        # Каска ниже даже PPE-порога (0.3 < 0.5) — отбрасывается.
+        boxes = np.array([[30, 10, 70, 50]], dtype=np.float32)
+        classes = np.array([0], dtype=np.int32)
+        track_ids = np.array([1], dtype=np.int32)
+        confs = np.array([0.3], dtype=np.float32)
+        mock_model.track.return_value = [
+            make_mock_track_result(boxes, classes, track_ids, confs)]
+
+        from backend.detection.engine import run_detection
+        frame = np.zeros((480, 640, 3), dtype=np.uint8)
+        result = run_detection(frame, mock_model)
+
+        assert len(result['helmets']) == 0
 
 
 class TestTrackerConfig:

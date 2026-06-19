@@ -1,7 +1,8 @@
 import numpy as np
 from pathlib import Path
 from typing import List, Optional, Tuple, Dict, Any
-from backend.config import (BASE_DIR, MIN_CONES, ZONE_EXPAND_PX, TOP_RATIO, CONF_THRESH)
+from backend.config import (BASE_DIR, MIN_CONES, ZONE_EXPAND_PX, TOP_RATIO,
+                            CONF_THRESH, PPE_CONF_THRESH)
 
 CLASS_PERSON = 5
 
@@ -69,27 +70,43 @@ def is_in_danger_zone(person_box, danger_zone) -> bool:
 TRACKER_CFG = str(BASE_DIR / "backend" / "detection" / "bytetrack_custom.yaml")
 
 
-def run_detection(frame, model) -> Dict[str, Any]:
-    results = model.track(frame, conf=CONF_THRESH, verbose=False,
+def run_detection(frame, model, person_conf: float = CONF_THRESH,
+                  ppe_conf: float = PPE_CONF_THRESH) -> Dict[str, Any]:
+    # Детекцию гоняем по НИЖНЕМУ из порогов, чтобы из модели вернулись и менее
+    # уверенные предметы СИЗ; затем фильтруем покласово: люди/конусы — по
+    # person_conf, предметы СИЗ — по более мягкому ppe_conf (каска/маска/жилет
+    # мельче и часто детектятся слабее → при едином 0.75 ложно «нет каски»).
+    base_conf = min(person_conf, ppe_conf)
+    results = model.track(frame, conf=base_conf, verbose=False,
                           persist=True, tracker=TRACKER_CFG)[0]
     names = model.names
     boxes = results.boxes.xyxy.cpu().numpy()
     classes = results.boxes.cls.cpu().numpy().astype(int)
+    conf_attr = getattr(results.boxes, "conf", None)
+    if conf_attr is not None:
+        confs = conf_attr.cpu().numpy()
+    else:
+        confs = np.ones(len(classes), dtype=np.float32)
     all_track_ids = None
     if results.boxes.id is not None:
         all_track_ids = results.boxes.id.cpu().numpy().astype(int)
     persons = []
     person_track_ids = []
     for i, c in enumerate(classes):
-        if names[c] == "Человек":
+        if names[c] == "Человек" and confs[i] >= person_conf:
             persons.append(boxes[i])
             tid = int(all_track_ids[i]) if all_track_ids is not None else -1
             person_track_ids.append(tid)
+
+    def _by_class(class_name: str, thr: float) -> List:
+        return [boxes[i] for i, c in enumerate(classes)
+                if names[c] == class_name and confs[i] >= thr]
+
     return {
         "persons": persons,
         "person_track_ids": person_track_ids,
-        "helmets": get_boxes_by_class(boxes, classes, names, "Каска"),
-        "masks": get_boxes_by_class(boxes, classes, names, "Маска"),
-        "vests": get_boxes_by_class(boxes, classes, names, "Защитный жилет"),
-        "cones": get_boxes_by_class(boxes, classes, names, "Конус безопасности"),
+        "helmets": _by_class("Каска", ppe_conf),
+        "masks": _by_class("Маска", ppe_conf),
+        "vests": _by_class("Защитный жилет", ppe_conf),
+        "cones": _by_class("Конус безопасности", person_conf),
     }
