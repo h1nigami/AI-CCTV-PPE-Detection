@@ -222,6 +222,16 @@ RECORD_MOTION_GRACE_SEC = int(os.environ.get("RECORD_MOTION_GRACE_SEC", "120"))
 # Минимальный интервал между предупреждениями на одну камеру (секунды).
 VOICE_ALERT_COOLDOWN = 15.0
 
+# ── Бэкенд-синтез речи (Piper TTS) ─────────────────────────
+# Речь для тревог синтезируется на сервере (Piper) и отдаётся фронту готовым
+# WAV — качество не зависит от TTS-голосов ОС оператора. Мягко деградирует:
+# нет piper/модели → эндпоинт отдаёт 503, фронт откатывается на Web Speech
+# (см. backend/tts/). Модель скачивается в рантайме в TTS_MODEL_DIR.
+TTS_ENABLED = _env_bool("TTS_ENABLED", True)
+TTS_MODEL = os.environ.get("TTS_MODEL", "ru_RU-irina-medium")
+TTS_MODEL_DIR = os.environ.get("TTS_MODEL_DIR", str(BASE_DIR / "models" / "piper"))
+TTS_CACHE_SIZE = int(os.environ.get("TTS_CACHE_SIZE", "64"))
+
 # ── Motion detection (MOG2) перед YOLO ────────────────────
 # «Motion First»: тяжёлая YOLO-детекция прогоняется только по кадрам с движением,
 # на статичной сцене экономится 80-90% CPU/GPU. По умолчанию ВЫКЛЮЧЕНО — включение

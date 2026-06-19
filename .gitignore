@@ -8,6 +8,7 @@ data/
 flask_out.txt
 flask_err.txt
 models/buffalo_l/
+models/piper/
 
 # Coverage reports
 .coverage

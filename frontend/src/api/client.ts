@@ -217,6 +217,10 @@ export const api = {
     request<{ id?: string; cam_id?: string; text?: string; timestamp?: number }>(
       "/api/voice_alert"
     ),
+  /** URL готового WAV с синтезированной на бэке (Piper) речью. 503 → фронт
+   *  откатывается на Web Speech. Тот же origin (nginx/vite-proxy) → без CORS. */
+  getVoiceAlertAudioUrl: (text: string) =>
+    `${BASE}/api/voice_alert_audio?text=${encodeURIComponent(text)}`,
 
   // ---- UI-уведомления (жест ОК / нехватка СИЗ) ----
   getNotifications: () =>

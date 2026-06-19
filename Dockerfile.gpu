@@ -51,9 +51,11 @@ RUN pip install --no-cache-dir --timeout=300 \
     insightface \
     sqlalchemy \
     alembic \
-    pyjwt
+    pyjwt \
+    piper-tts==1.2.0
 
 # ── ReID на GPU: insightface тянет CPU-onnxruntime, заменяем на GPU-сборку ──
+# (piper-tts тоже тянет CPU-onnxruntime — здесь он заменяется на onnxruntime-gpu)
 # (без этого FaceAnalysis молча откатывается на CPUExecutionProvider)
 RUN pip uninstall -y onnxruntime onnxruntime-gpu || true && \
     pip install --no-cache-dir boto3 onnxruntime-gpu

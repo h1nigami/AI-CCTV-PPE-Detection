@@ -44,7 +44,7 @@ RUN pip install --no-cache-dir --timeout=300 \
     alembic \
     pyjwt \
     --extra-index-url https://download.pytorch.org/whl/cpu && \
-    pip install --no-cache-dir boto3
+    pip install --no-cache-dir boto3 piper-tts==1.2.0
 
 # ── Код приложения (backend package) ──────────────────────
 COPY backend/ ./backend/

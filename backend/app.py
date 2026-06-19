@@ -16,6 +16,7 @@ from backend.api.reid import configure_reid_routes
 from backend.api.events import events_bp
 from backend.api.monitoring import monitoring_bp
 from backend.api.recordings import recordings_bp
+from backend.tts.router import tts_bp
 from backend.config import CAMERAS
 from backend.db.engine import init_db
 from backend.auth.routes import auth_bp
@@ -69,13 +70,21 @@ app = configure_reid_routes(app, state)
 app.register_blueprint(events_bp)
 app.register_blueprint(monitoring_bp)
 app.register_blueprint(recordings_bp)
+app.register_blueprint(tts_bp)
 
 # Автообнаружение камер при старте (опционально, в фоне — не блокирует запуск).
-from backend.config import CAMERA_AUTODISCOVER
+from backend.config import CAMERA_AUTODISCOVER, TTS_ENABLED
 if CAMERA_AUTODISCOVER:
     import threading
     from backend.main import autodiscover_and_add
     threading.Thread(target=autodiscover_and_add, daemon=True).start()
+
+# Прогрев TTS в фоне: грузит/докачивает голос Piper заранее, чтобы первый
+# голосовой алерт не блокировался на скачивании модели. Мягко деградирует.
+if TTS_ENABLED:
+    import threading
+    from backend.tts.service import get_tts_service
+    threading.Thread(target=lambda: get_tts_service().available, daemon=True).start()
 
 if __name__ == "__main__":
     from waitress import serve
