@@ -16,7 +16,7 @@ import { breakpoints } from "../design/tokens"
 import type { LogEntry } from "../types"
 
 export default function DashboardPage() {
-  const { cameras, dispatcher, openDispatcher, closeDispatcher, isRunning, setDetectionRunning, logs } = useCamerasContext()
+  const { cameras, dispatcher, openDispatcher, closeDispatcher, isRunning, setDetectionRunning, logs, refresh } = useCamerasContext()
   const bp = useBreakpoint()
   const orientation = useOrientation()
   const [fullscreenCam, setFullscreenCam] = useState<string | null>(null)
@@ -264,7 +264,7 @@ export default function DashboardPage() {
         cameraList={cameras}
         isRunning={isRunning}
         onClose={() => setShowCameraManager(false)}
-        onRefresh={() => {}}
+        onRefresh={refresh}
       />
     </div>
   )
