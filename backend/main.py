@@ -263,13 +263,15 @@ def discover_cameras(add: bool = False) -> dict:
     При add=True добавляет новые (не дублируя уже существующие источники)."""
     from backend.config import (DISCOVERY_USE_ONVIF, DISCOVERY_USE_SCAN,
                                  DISCOVERY_ONVIF_TIMEOUT, DISCOVERY_SUBNET)
-    from backend.discovery import discover_streams, ips_from_sources
+    from backend.discovery import discover_streams, ips_from_sources, paths_from_sources
     extra_subnets = [s for s in DISCOVERY_SUBNET.split(",") if s.strip()]
-    known_ips = ips_from_sources(CAMERAS.values())  # подсеть уже добавленных камер
+    known_ips = ips_from_sources(CAMERAS.values())    # подсеть уже добавленных камер
+    known_paths = paths_from_sources(CAMERAS.values())  # их RTSP-пути (напр. /stream1)
     found = discover_streams(use_onvif=DISCOVERY_USE_ONVIF,
                              use_scan=DISCOVERY_USE_SCAN,
                              onvif_timeout=DISCOVERY_ONVIF_TIMEOUT,
-                             extra_subnets=extra_subnets, known_ips=known_ips)
+                             extra_subnets=extra_subnets, known_ips=known_ips,
+                             known_paths=known_paths)
     existing = {str(v) for v in CAMERAS.values()}
     added = []
     for f in found:

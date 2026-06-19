@@ -27,6 +27,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Типовые RTSP-пути основных вендоров (channel 1 / main или sub-stream).
 COMMON_RTSP_PATHS = [
+    "/stream1",                           # частый OEM (то, что используем мы)
     "/Streaming/Channels/101",            # Hikvision main
     "/Streaming/Channels/102",            # Hikvision sub
     "/cam/realmonitor?channel=1&subtype=0",  # Dahua main
@@ -36,7 +37,6 @@ COMMON_RTSP_PATHS = [
     "/live/main",
     "/live.sdp",
     "/11",
-    "/stream1",
     "/video1",
     "/onvif1",
     "/ch0_0.h264",
@@ -106,6 +106,38 @@ def ips_from_sources(sources) -> set[str]:
         for ip in re.findall(r"(?<![\d.])((?:\d{1,3}\.){3}\d{1,3})(?![\d.])", src):
             ips.add(ip)
     return ips
+
+
+def paths_from_sources(sources) -> list[str]:
+    """RTSP-пути (с query) из источников камер — чтобы пробовать их при скане
+    первыми. 'rtsp://1.2.3.4:554/stream1?x=1' → '/stream1?x=1'. Порядок и
+    уникальность сохраняются (первое вхождение)."""
+    paths: list[str] = []
+    seen: set[str] = set()
+    for src in sources:
+        if not isinstance(src, str):
+            continue
+        host_and_path = re.sub(r"^\w+://", "", src.strip())  # срезать схему (rtsp://)
+        idx = host_and_path.find("/")                        # путь = от первого '/'
+        if idx == -1:
+            continue
+        path = host_and_path[idx:]
+        if path and path not in seen:
+            seen.add(path)
+            paths.append(path)
+    return paths
+
+
+def merge_paths(known: list[str], common: list[str] = None) -> list[str]:
+    """Пути для перебора: сначала пути известных камер, затем типовые (без дублей)."""
+    common = common if common is not None else COMMON_RTSP_PATHS
+    out: list[str] = []
+    seen: set[str] = set()
+    for p in list(known) + list(common):
+        if p and p not in seen:
+            seen.add(p)
+            out.append(p)
+    return out
 
 
 def normalize_subnets(values) -> set[str]:
@@ -185,7 +217,7 @@ def _port_open(ip: str, port: int = 554, timeout: float = 0.4) -> bool:
         return False
 
 
-def probe_rtsp(url: str, timeout_ms: int = 4000) -> bool:
+def probe_rtsp(url: str, timeout_ms: int = 2500) -> bool:
     """Открывается ли поток БЕЗ учётных данных (т.е. камера «непаролёная»)."""
     import cv2
     cap = cv2.VideoCapture(url, cv2.CAP_FFMPEG)
@@ -203,10 +235,10 @@ def probe_rtsp(url: str, timeout_ms: int = 4000) -> bool:
         cap.release()
 
 
-def _first_open_url(ip: str) -> str | None:
+def _first_open_url(ip: str, paths: list[str] = None) -> str | None:
     if not _port_open(ip):
         return None
-    for url in candidate_urls(ip):
+    for url in candidate_urls(ip, paths=paths):
         if probe_rtsp(url):
             return url
     return None
@@ -233,7 +265,7 @@ def scan_prefixes(extra_subnets=None, known_ips=None) -> set[str]:
 
 def discover_streams(use_onvif: bool = True, use_scan: bool = True,
                      onvif_timeout: float = 3.0, max_workers: int = 32,
-                     extra_subnets=None, known_ips=None) -> list[dict]:
+                     extra_subnets=None, known_ips=None, known_paths=None) -> list[dict]:
     """Найти открытые RTSP-потоки в локальной сети.
 
     Возвращает список {ip, rtsp_url, name}. Сначала собирает IP (ONVIF + скан
@@ -241,18 +273,29 @@ def discover_streams(use_onvif: bool = True, use_scan: bool = True,
 
     `extra_subnets` — явные подсети для скана (env DISCOVERY_SUBNET), `known_ips`
     — IP уже добавленных камер (для автоинференса нужной подсети в Docker, где
-    `local_ip()` указывает на docker-bridge, а не на LAN с камерами)."""
+    `local_ip()` указывает на docker-bridge, а не на LAN с камерами). `known_paths`
+    — RTSP-пути уже добавленных камер (например `/stream1`): пробуются первыми,
+    чтобы не перебирать по 4с десяток чужих путей до нужного."""
     ips: set[str] = set()
     if use_onvif:
-        ips |= discover_onvif(onvif_timeout)
+        onvif_ips = discover_onvif(onvif_timeout)
+        ips |= onvif_ips
+        print(f"[Discovery] ONVIF нашёл IP: {len(onvif_ips)}")
     if use_scan:
-        ips |= hosts_for_prefixes(scan_prefixes(extra_subnets, known_ips))
+        prefixes = scan_prefixes(extra_subnets, known_ips)
+        scan_ips = hosts_for_prefixes(prefixes)
+        ips |= scan_ips
+        print(f"[Discovery] Скан подсетей {sorted(prefixes)} → {len(scan_ips)} адресов")
     if not ips:
+        print("[Discovery] Нет адресов для проверки (задайте DISCOVERY_SUBNET).")
         return []
+    paths = merge_paths(known_paths or [])
     found: list[dict] = []
+    probe = lambda ip: _first_open_url(ip, paths)
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
-        for ip, url in zip(ips, pool.map(_first_open_url, ips)):
+        for ip, url in zip(ips, pool.map(probe, ips)):
             if url:
                 found.append({"ip": ip, "rtsp_url": url, "name": name_for_ip(ip)})
     found.sort(key=lambda d: d["ip"])
+    print(f"[Discovery] Открытых RTSP-потоков найдено: {len(found)}")
     return found

@@ -2,6 +2,7 @@
 from backend.discovery import (
     ips_from_ws_responses, candidate_urls, subnet_hosts, name_for_ip,
     prefix_of, ips_from_sources, normalize_subnets, hosts_for_prefixes,
+    paths_from_sources, merge_paths,
     COMMON_RTSP_PATHS,
 )
 
@@ -83,3 +84,25 @@ def test_hosts_for_prefixes():
     assert "192.168.0.1" in hosts and "192.168.0.254" in hosts
     assert "10.0.0.128" in hosts
     assert "192.168.0.0" not in hosts and "192.168.0.255" not in hosts
+
+
+def test_paths_from_sources():
+    sources = [
+        "rtsp://192.168.0.17:554/stream1",
+        "192.168.0.76:554/stream1",          # без схемы, дубль пути
+        "rtsp://admin:pass@10.0.0.7/cam/realmonitor?channel=1&subtype=0",
+        0,                                   # int-камера
+        "rtsp://192.168.0.5:554",            # без пути
+    ]
+    assert paths_from_sources(sources) == [
+        "/stream1", "/cam/realmonitor?channel=1&subtype=0",
+    ]
+
+
+def test_merge_paths_known_first_no_dupes():
+    merged = merge_paths(["/stream1", "/custom"])
+    assert merged[0] == "/stream1"          # известный путь — первым
+    assert merged[1] == "/custom"
+    assert merged.count("/stream1") == 1    # без дублей, хотя /stream1 есть и в common
+    # все типовые тоже присутствуют
+    assert set(COMMON_RTSP_PATHS).issubset(set(merged))
