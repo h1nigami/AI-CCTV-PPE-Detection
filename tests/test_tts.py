@@ -128,7 +128,8 @@ def _make_client(monkeypatch, audio):
 
 
 # ── Формирование текста тревоги (только в опасной зоне) ────
-# Статус: поз.0=каска, 1=маска, 2=жилет, 3=зона; заглавная=ок, строчная=нет/вне.
+# voice_violators: список (имя, [отсутствующие СИЗ]) ТОЛЬКО для реальных
+# нарушителей В зоне. Имя и его missing привязаны к одному человеку.
 class TestBuildVoiceText:
     def _fn(self):
         # Импортируем из лёгкого модуля, а НЕ из backend.main — иначе тест
@@ -137,27 +138,34 @@ class TestBuildVoiceText:
         return build_voice_text
 
     def test_in_zone_missing_helmet(self):
-        text = self._fn()({"c:1": "кМЖЗ"}, "Иван")
+        text = self._fn()([("Иван", ["каска"])])
         assert "Иван" in text and "опасной зоне" in text and "каска" in text
 
-    def test_out_of_zone_is_silent(self):
-        # Нет СИЗ, но человек ВНЕ зоны → озвучка только зонная → пусто.
-        assert self._fn()({"c:1": "кМЖз"}, "Иван") == ""
-
-    def test_in_zone_fully_equipped_is_silent(self):
-        assert self._fn()({"c:1": "КМЖЗ"}, "Иван") == ""
+    def test_empty_is_silent(self):
+        # Нет нарушителей в зоне (все экипированы или нарушители вне зоны) → пусто.
+        assert self._fn()([]) == ""
 
     def test_no_name_defaults_to_human(self):
-        assert self._fn()({"c:1": "кМЖЗ"}, "").startswith("Внимание! Человек")
+        assert self._fn()([("", ["каска"])]).startswith("Внимание! Человек")
 
-    def test_aggregates_multiple_missing(self):
-        text = self._fn()({"c:1": "кмЖЗ"}, "Иван")
+    def test_lists_multiple_missing_of_one_person(self):
+        text = self._fn()([("Иван", ["каска", "маска"])])
         assert "каска" in text and "маска" in text
 
-    def test_only_zone_person_counts_with_mixed(self):
-        # Один вне зоны (без СИЗ), другой в зоне без жилета → озвучиваем второго.
-        text = self._fn()({"c:1": "кМЖз", "c:2": "КМжЗ"}, "")
-        assert "жилет" in text and "каска" not in text
+    def test_names_only_first_violator_with_his_own_ppe(self):
+        # Иван в каске НЕ попадает в список (он не нарушитель). Озвучиваем Петра
+        # без жилета — каску Ивана НЕ приписываем (раньше был именно этот баг).
+        text = self._fn()([("Пётр", ["жилет"])])
+        assert "Пётр" in text and "жилет" in text and "каска" not in text
+
+    def test_multiple_violators_mentions_count(self):
+        text = self._fn()([("Иван", ["каска"]), ("", ["маска"])])
+        assert "Иван" in text and "и ещё 1" in text and "каска" in text
+
+    def test_in_zone_no_missing_uses_generic_phrase(self):
+        # Нарушитель в зоне, но конкретные СИЗ не перечислены (пустой список).
+        text = self._fn()([("Иван", [])])
+        assert "Иван" in text and "опасной зоне" in text and "Нет СИЗ" not in text
 
 
 class TestVoiceAlertAudioRoute:

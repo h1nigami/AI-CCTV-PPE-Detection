@@ -439,6 +439,10 @@ def process_frame(frame, cam_id: str, face_worker=None, det_model=None, det_pose
     has_any_violation = False
     msg_parts = [f"{datetime.now().strftime('%H:%M:%S')} [{cam_id}]"]
     global_ids = []
+    # Нарушители для голосового предупреждения: (имя, [отсутствующие СИЗ]).
+    # Собираем ПОПЕРСОННО (имя и его собственный список missing привязаны к
+    # одному человеку), чтобы не приписывать чужие нарушения первому в кадре.
+    voice_violators: list[tuple[str, list[str]]] = []
     detect_people = DETECT_MODES.get("people", True)
     detect_faces_mode = DETECT_MODES.get("faces", True)
     if detected["persons"] and detect_people:
@@ -519,6 +523,12 @@ def process_frame(frame, cam_id: str, face_worker=None, det_model=None, det_pose
             frame = draw_person(frame, pbox, label, in_danger, not fully_equipped and DETECT_MODES.get("ppe", True), approved)
             if fully_equipped and not approved and in_danger:
                 frame = draw_hint(frame, pbox)
+            # Реальный нарушитель для голосовой озвучки: в опасной зоне, без
+            # пропуска, не хватает именно ЕГО требуемых СИЗ. Имя и missing — одного
+            # человека (иначе озвучка путала людей: «нет каски» на человеке в каске).
+            if (in_danger and not approved and not fully_equipped
+                    and missing and DETECT_MODES.get("ppe", True)):
+                voice_violators.append((person_name, list(missing)))
             part = f"{person_name}" if person_name else "Неизвестный"
             if ppe:
                 part += f" [{ppe}]"
@@ -566,7 +576,7 @@ def process_frame(frame, cam_id: str, face_worker=None, det_model=None, det_pose
         ok_v = vest or "vest" not in req
         key = f"{cam_id}:{track_id}"
         statuses[key] = f"{'К' if ok_h else 'к'}{'М' if ok_m else 'м'}{'Ж' if ok_v else 'ж'}{'З' if dz else 'з'}"
-    return frame, message, category, global_ids, statuses
+    return frame, message, category, global_ids, statuses, voice_violators
 
 
 def generate_live_feed(cam_id: str = "cam1"):
@@ -718,7 +728,7 @@ def _camera_detection_worker(cam_id: str):
 
         try:
             _t0 = time.time()
-            annotated, message, category, global_ids, statuses = process_frame(
+            annotated, message, category, global_ids, statuses, voice_violators = process_frame(
                 frame, cam_id, face_worker=face_workers.get(cam_id),
                 det_model=det_model, det_pose=det_pose)
             metrics.record_frame(cam_id, (time.time() - _t0) * 1000.0)
@@ -741,8 +751,10 @@ def _camera_detection_worker(cam_id: str):
                 # Голос пушим НЕЗАВИСИМО от записи — на каждом кадре зонного
                 # нарушения; push_voice_alert троттлит по VOICE_ALERT_COOLDOWN.
                 # Иначе вход в зону без СИЗ не озвучивался, если запись уже
-                # стартовала на кадре «вне зоны» (там _build_voice_text == "").
-                voice_text = _build_voice_text(statuses, person_name)
+                # стартовала на кадре «вне зоны» (там текст == "").
+                # voice_violators несёт (имя, его СИЗ) попермонно — имя и список
+                # missing одного человека, без агрегации по чужим в кадре.
+                voice_text = _build_voice_text(voice_violators)
                 if voice_text:
                     state.push_voice_alert(cam_id, voice_text)
                 if rec is None or not rec.get('active'):
