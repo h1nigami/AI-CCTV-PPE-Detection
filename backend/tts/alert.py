@@ -18,17 +18,16 @@ def build_voice_text(voice_violators: list[tuple[str, list[str]]]) -> str:
 
     Пусто → ``""`` (ничего не озвучиваем — все в зоне экипированы либо нарушители
     только ВНЕ зоны). При нескольких нарушителях называем первого и добавляем
-    «и ещё N»; перечисляем именно ЕГО отсутствующие СИЗ.
+    «и ещё N». Имя берётся от конкретного нарушителя (по Re-ID, обычно «Гость_N»).
     """
     if not voice_violators:
         return ""
-    name, missing = voice_violators[0]
-    who = name if name else "Человек"
+    name, _missing = voice_violators[0]
+    who = name if name else "Гость"
     more = len(voice_violators) - 1
     tail = f" и ещё {more}" if more > 0 else ""
-    if missing:
-        return f"Внимание! {who}{tail} в опасной зоне. Нет СИЗ: {', '.join(missing)}"
-    return f"Внимание! {who}{tail} в опасной зоне без необходимых средств защиты"
+    return (f"{who}{tail}, обнаружено нарушение. "
+            f"Информация передана отряду ликвидации")
 
 
 def build_approved_voice_text(names: list[str]) -> str:

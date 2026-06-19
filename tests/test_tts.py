@@ -137,35 +137,26 @@ class TestBuildVoiceText:
         from backend.tts.alert import build_voice_text
         return build_voice_text
 
-    def test_in_zone_missing_helmet(self):
+    def test_violation_phrase_names_person(self):
         text = self._fn()([("Иван", ["каска"])])
-        assert "Иван" in text and "опасной зоне" in text and "каска" in text
+        assert "Иван" in text and "нарушение" in text and "ликвидации" in text
 
     def test_empty_is_silent(self):
         # Нет нарушителей в зоне (все экипированы или нарушители вне зоны) → пусто.
         assert self._fn()([]) == ""
 
-    def test_no_name_defaults_to_human(self):
-        assert self._fn()([("", ["каска"])]).startswith("Внимание! Человек")
+    def test_no_name_defaults_to_guest(self):
+        assert self._fn()([("", ["каска"])]).startswith("Гость")
 
-    def test_lists_multiple_missing_of_one_person(self):
-        text = self._fn()([("Иван", ["каска", "маска"])])
-        assert "каска" in text and "маска" in text
-
-    def test_names_only_first_violator_with_his_own_ppe(self):
-        # Иван в каске НЕ попадает в список (он не нарушитель). Озвучиваем Петра
-        # без жилета — каску Ивана НЕ приписываем (раньше был именно этот баг).
+    def test_names_only_first_violator(self):
+        # Иван в каске НЕ попадает в список (он не нарушитель). Озвучиваем Петра —
+        # имя берётся от конкретного нарушителя, а не от первого в кадре.
         text = self._fn()([("Пётр", ["жилет"])])
-        assert "Пётр" in text and "жилет" in text and "каска" not in text
+        assert "Пётр" in text and "нарушение" in text
 
     def test_multiple_violators_mentions_count(self):
         text = self._fn()([("Иван", ["каска"]), ("", ["маска"])])
-        assert "Иван" in text and "и ещё 1" in text and "каска" in text
-
-    def test_in_zone_no_missing_uses_generic_phrase(self):
-        # Нарушитель в зоне, но конкретные СИЗ не перечислены (пустой список).
-        text = self._fn()([("Иван", [])])
-        assert "Иван" in text and "опасной зоне" in text and "Нет СИЗ" not in text
+        assert "Иван" in text and "и ещё 1" in text
 
 
 class TestBuildApprovedVoiceText:
