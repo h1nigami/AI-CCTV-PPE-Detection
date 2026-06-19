@@ -198,6 +198,10 @@ export const api = {
       method: "PUT",
       body: JSON.stringify({ zones }),
     }),
+  deleteZone: (camId: string, zoneId: string) =>
+    request<{ status: string; id: string }>(`/api/cameras/${camId}/zones/${zoneId}`, {
+      method: "DELETE",
+    }),
 
   // ---- Режимы детекции ----
   getDetectModes: () =>
