@@ -168,6 +168,26 @@ class TestBuildVoiceText:
         assert "Иван" in text and "опасной зоне" in text and "Нет СИЗ" not in text
 
 
+class TestBuildApprovedVoiceText:
+    def _fn(self):
+        from backend.tts.alert import build_approved_voice_text
+        return build_approved_voice_text
+
+    def test_empty_is_silent(self):
+        assert self._fn()([]) == ""
+
+    def test_single_calm_announcement(self):
+        text = self._fn()(["Иван"])
+        assert "Иван" in text and "средствах защиты" in text and "Внимание" not in text
+
+    def test_no_name_defaults_to_worker(self):
+        assert self._fn()([""]).startswith("Работник")
+
+    def test_multiple_mentions_count(self):
+        text = self._fn()(["Иван", "Пётр"])
+        assert "Иван" in text and "и ещё 1" in text
+
+
 class TestVoiceAlertAudioRoute:
     def test_empty_text_400(self, monkeypatch):
         client = _make_client(monkeypatch, b"data")

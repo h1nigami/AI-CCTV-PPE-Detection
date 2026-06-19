@@ -29,3 +29,20 @@ def build_voice_text(voice_violators: list[tuple[str, list[str]]]) -> str:
     if missing:
         return f"Внимание! {who}{tail} в опасной зоне. Нет СИЗ: {', '.join(missing)}"
     return f"Внимание! {who}{tail} в опасной зоне без необходимых средств защиты"
+
+
+def build_approved_voice_text(names: list[str]) -> str:
+    """Спокойная голосовая отметка для людей с активным пропуском В зоне.
+
+    `names` — имена людей с пропуском, стоящих в опасной зоне. Это НЕ тревога:
+    проговаривается, что человек в зоне, но в средствах защиты, и причин для
+    внимания нет. Пусто → ``""``. При нескольких — называем первого и «и ещё N».
+    """
+    names = [n for n in names] if names else []
+    if not names:
+        return ""
+    who = names[0] if names[0] else "Работник"
+    more = len(names) - 1
+    tail = f" и ещё {more}" if more > 0 else ""
+    return (f"{who}{tail} в опасной зоне, в средствах защиты. "
+            f"Причин для внимания нет")

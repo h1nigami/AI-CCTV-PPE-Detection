@@ -33,7 +33,8 @@ from backend.capture.buffer import FrameBuffer
 from backend.capture.camera import CameraCapture
 from backend.detection.engine import run_detection, get_danger_zone, has_item_on_person, is_in_danger_zone
 from backend.gestures.detector import detect_ok_gesture
-from backend.tts.alert import build_voice_text as _build_voice_text
+from backend.tts.alert import (build_voice_text as _build_voice_text,
+                               build_approved_voice_text as _build_approved_voice_text)
 from backend.visualization.renderer import (
     draw_danger_zone, draw_person, draw_hint,
     draw_legend, put_text
@@ -307,6 +308,10 @@ face_workers: dict[str, 'FaceRecognitionWorker'] = {}
 # ── Event recording ──
 _event_recordings: dict[str, Optional[dict]] = {}
 _frame_prebuf: dict[str, deque] = {}
+# Состав людей с пропуском в зоне, для которых уже проговорена спокойная отметка
+# (cam_id → set global_id). Чтобы не повторять «причин для внимания нет» каждый
+# кулдаун — озвучиваем только при ВХОДЕ нового человека с пропуском в зону.
+_voice_approved_seen: dict[str, set] = {}
 
 # ── Motion detection (MOG2) — по экземпляру на камеру ──
 _motion_detectors: dict[str, MotionDetector] = {}
@@ -443,6 +448,9 @@ def process_frame(frame, cam_id: str, face_worker=None, det_model=None, det_pose
     # Собираем ПОПЕРСОННО (имя и его собственный список missing привязаны к
     # одному человеку), чтобы не приписывать чужие нарушения первому в кадре.
     voice_violators: list[tuple[str, list[str]]] = []
+    # Люди с активным пропуском, стоящие в зоне: (global_id, имя). Для спокойной
+    # голосовой отметки «в СИЗ, причин для внимания нет» (озвучивается при входе).
+    voice_approved: list[tuple[int, str]] = []
     detect_people = DETECT_MODES.get("people", True)
     detect_faces_mode = DETECT_MODES.get("faces", True)
     if detected["persons"] and detect_people:
@@ -529,6 +537,9 @@ def process_frame(frame, cam_id: str, face_worker=None, det_model=None, det_pose
             if (in_danger and not approved and not fully_equipped
                     and missing and DETECT_MODES.get("ppe", True)):
                 voice_violators.append((person_name, list(missing)))
+            # Человек с активным пропуском в зоне — для спокойной голосовой отметки.
+            if in_danger and approved:
+                voice_approved.append((global_id, person_name))
             part = f"{person_name}" if person_name else "Неизвестный"
             if ppe:
                 part += f" [{ppe}]"
@@ -576,7 +587,7 @@ def process_frame(frame, cam_id: str, face_worker=None, det_model=None, det_pose
         ok_v = vest or "vest" not in req
         key = f"{cam_id}:{track_id}"
         statuses[key] = f"{'К' if ok_h else 'к'}{'М' if ok_m else 'м'}{'Ж' if ok_v else 'ж'}{'З' if dz else 'з'}"
-    return frame, message, category, global_ids, statuses, voice_violators
+    return frame, message, category, global_ids, statuses, voice_violators, voice_approved
 
 
 def generate_live_feed(cam_id: str = "cam1"):
@@ -613,6 +624,7 @@ def start_live():
     state.clear_tracks()
     state.clear_notifications()
     _motion_detectors.clear()
+    _voice_approved_seen.clear()
     for buf in annotated_buffers.values():
         buf.clear()
     state.live_active = True
@@ -728,7 +740,7 @@ def _camera_detection_worker(cam_id: str):
 
         try:
             _t0 = time.time()
-            annotated, message, category, global_ids, statuses, voice_violators = process_frame(
+            annotated, message, category, global_ids, statuses, voice_violators, voice_approved = process_frame(
                 frame, cam_id, face_worker=face_workers.get(cam_id),
                 det_model=det_model, det_pose=det_pose)
             metrics.record_frame(cam_id, (time.time() - _t0) * 1000.0)
@@ -743,20 +755,32 @@ def _camera_detection_worker(cam_id: str):
                 publisher.publish_detection(cam_id, people, violations,
                                             max(0, people - violations), category)
 
+            # ── Голосовое сопровождение зоны (троттлинг по камере в push_voice_alert) ──
+            # Приоритет — нарушению: voice_violators несёт (имя, его СИЗ) попермонно
+            # (имя и missing одного человека, без агрегации по чужим). Пушим на КАЖДОМ
+            # кадре зонного нарушения — иначе вход в зону без СИЗ не озвучивался бы,
+            # если запись уже стартовала на кадре «вне зоны».
+            voice_text = _build_voice_text(voice_violators)
+            if voice_text:
+                state.push_voice_alert(cam_id, voice_text)
+                _voice_approved_seen[cam_id] = set()  # сбрасываем спокойную отметку
+            else:
+                # Нарушителей нет. Если в зоне есть человек с активным пропуском (в
+                # СИЗ) — спокойная отметка «причин для внимания нет», но ТОЛЬКО при
+                # входе нового (смена состава), чтобы не повторять её каждый кулдаун.
+                appr_ids = {gid for gid, _ in voice_approved}
+                prev_ids = _voice_approved_seen.get(cam_id, set())
+                if appr_ids - prev_ids:  # появился новый человек с пропуском в зоне
+                    calm = _build_approved_voice_text([n for _, n in voice_approved])
+                    if calm:
+                        state.push_voice_alert(cam_id, calm)
+                _voice_approved_seen[cam_id] = appr_ids
+
             is_violation = category == "нарушение"
             rec = _event_recordings.get(cam_id)
             if is_violation:
                 gid = global_ids[0] if global_ids else 0
                 person_name = state.get_person_name(gid, cam_id, has_face=True) if gid else ""
-                # Голос пушим НЕЗАВИСИМО от записи — на каждом кадре зонного
-                # нарушения; push_voice_alert троттлит по VOICE_ALERT_COOLDOWN.
-                # Иначе вход в зону без СИЗ не озвучивался, если запись уже
-                # стартовала на кадре «вне зоны» (там текст == "").
-                # voice_violators несёт (имя, его СИЗ) попермонно — имя и список
-                # missing одного человека, без агрегации по чужим в кадре.
-                voice_text = _build_voice_text(voice_violators)
-                if voice_text:
-                    state.push_voice_alert(cam_id, voice_text)
                 if rec is None or not rec.get('active'):
                     event_id = create_event_record(
                         cam_id=cam_id,
