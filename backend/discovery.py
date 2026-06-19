@@ -9,9 +9,12 @@
 «Непаролёность» проверяется фактическим открытием потока без учётных данных
 (`probe_rtsp` через OpenCV/ffmpeg): открылся и отдал кадр → камера открытая.
 
-ВНИМАНИЕ (Docker): WS-Discovery — multicast, в bridge-сети не проходит. Для
-обнаружения в LAN контейнеру бэка нужен `network_mode: host` (или скан подсети
-хоста). Только для СВОЕЙ локальной сети.
+ВНИМАНИЕ (Docker): WS-Discovery — multicast, в bridge-сети не проходит, для
+ONVIF контейнеру бэка нужен `network_mode: host`. А вот СКАН подсети из bridge
+работает (исходящий TCP на LAN проходит через docker SNAT) — нужно лишь
+сканировать правильную подсеть, а не docker-сеть, которую отдаёт `local_ip()`.
+Поэтому подсеть для скана задаётся явно (env DISCOVERY_SUBNET) и/или выводится
+из IP уже добавленных камер (`scan_prefixes`). Только для СВОЕЙ локальной сети.
 
 Сетевые операции изолированы; чистые помощники (parsing/url-building/подсеть)
 тестируются без сети.
@@ -84,6 +87,51 @@ def subnet_hosts(base_ip: str) -> list[str]:
         return []
     prefix = ".".join(parts[:3])
     return [f"{prefix}.{i}" for i in range(1, 255)]
+
+
+def prefix_of(ip: str) -> str | None:
+    """/24-префикс (первые три октета) IPv4-адреса. None для мусора."""
+    parts = ip.split(".")
+    if len(parts) < 3 or not all(p.isdigit() for p in parts[:3]):
+        return None
+    return ".".join(parts[:3])
+
+
+def ips_from_sources(sources) -> set[str]:
+    """IPv4-адреса из источников камер (RTSP-URL и т.п.). int-камеры игнорируются."""
+    ips: set[str] = set()
+    for src in sources:
+        if not isinstance(src, str):
+            continue
+        for ip in re.findall(r"(?<![\d.])((?:\d{1,3}\.){3}\d{1,3})(?![\d.])", src):
+            ips.add(ip)
+    return ips
+
+
+def normalize_subnets(values) -> set[str]:
+    """Нормализовать список подсетей/IP/CIDR в множество /24-префиксов 'a.b.c'.
+
+    Принимает 'a.b.c', 'a.b.c.d', 'a.b.c.d/24', 'a.b.c.0/24' — из всего берёт
+    первые три октета. Мусор тихо отбрасывается."""
+    prefixes: set[str] = set()
+    for v in values:
+        if not isinstance(v, str):
+            continue
+        token = v.strip().split("/", 1)[0]  # отбросить маску CIDR
+        if not token:
+            continue
+        p = prefix_of(token)
+        if p:
+            prefixes.add(p)
+    return prefixes
+
+
+def hosts_for_prefixes(prefixes) -> set[str]:
+    """Все хосты .1..254 для набора /24-префиксов."""
+    hosts: set[str] = set()
+    for prefix in prefixes:
+        hosts |= {f"{prefix}.{i}" for i in range(1, 255)}
+    return hosts
 
 
 def name_for_ip(ip: str) -> str:
@@ -164,19 +212,41 @@ def _first_open_url(ip: str) -> str | None:
     return None
 
 
+def scan_prefixes(extra_subnets=None, known_ips=None) -> set[str]:
+    """/24-префиксы для скана: явные подсети + подсети известных камер + локальная.
+
+    В Docker bridge `local_ip()` возвращает адрес docker-сети (172.x), поэтому
+    одного его мало — отсюда явные `extra_subnets` (env DISCOVERY_SUBNET) и
+    автоинференс подсети по IP уже добавленных камер."""
+    prefixes: set[str] = set()
+    if extra_subnets:
+        prefixes |= normalize_subnets(extra_subnets)
+    if known_ips:
+        prefixes |= {p for p in (prefix_of(ip) for ip in known_ips) if p}
+    base = local_ip()
+    if base:
+        p = prefix_of(base)
+        if p:
+            prefixes.add(p)
+    return prefixes
+
+
 def discover_streams(use_onvif: bool = True, use_scan: bool = True,
-                     onvif_timeout: float = 3.0, max_workers: int = 32) -> list[dict]:
+                     onvif_timeout: float = 3.0, max_workers: int = 32,
+                     extra_subnets=None, known_ips=None) -> list[dict]:
     """Найти открытые RTSP-потоки в локальной сети.
 
     Возвращает список {ip, rtsp_url, name}. Сначала собирает IP (ONVIF + скан
-    подсети), затем параллельно проверяет открытость потока без пароля."""
+    подсетей), затем параллельно проверяет открытость потока без пароля.
+
+    `extra_subnets` — явные подсети для скана (env DISCOVERY_SUBNET), `known_ips`
+    — IP уже добавленных камер (для автоинференса нужной подсети в Docker, где
+    `local_ip()` указывает на docker-bridge, а не на LAN с камерами)."""
     ips: set[str] = set()
     if use_onvif:
         ips |= discover_onvif(onvif_timeout)
     if use_scan:
-        base = local_ip()
-        if base:
-            ips |= set(subnet_hosts(base))
+        ips |= hosts_for_prefixes(scan_prefixes(extra_subnets, known_ips))
     if not ips:
         return []
     found: list[dict] = []

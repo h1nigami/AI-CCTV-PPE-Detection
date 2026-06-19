@@ -262,11 +262,14 @@ def discover_cameras(add: bool = False) -> dict:
     """Найти открытые RTSP-потоки в локальной сети (ONVIF + скан подсети).
     При add=True добавляет новые (не дублируя уже существующие источники)."""
     from backend.config import (DISCOVERY_USE_ONVIF, DISCOVERY_USE_SCAN,
-                                 DISCOVERY_ONVIF_TIMEOUT)
-    from backend.discovery import discover_streams
+                                 DISCOVERY_ONVIF_TIMEOUT, DISCOVERY_SUBNET)
+    from backend.discovery import discover_streams, ips_from_sources
+    extra_subnets = [s for s in DISCOVERY_SUBNET.split(",") if s.strip()]
+    known_ips = ips_from_sources(CAMERAS.values())  # подсеть уже добавленных камер
     found = discover_streams(use_onvif=DISCOVERY_USE_ONVIF,
                              use_scan=DISCOVERY_USE_SCAN,
-                             onvif_timeout=DISCOVERY_ONVIF_TIMEOUT)
+                             onvif_timeout=DISCOVERY_ONVIF_TIMEOUT,
+                             extra_subnets=extra_subnets, known_ips=known_ips)
     existing = {str(v) for v in CAMERAS.values()}
     added = []
     for f in found:

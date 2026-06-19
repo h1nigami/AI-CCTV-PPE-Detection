@@ -265,6 +265,10 @@ CAMERA_AUTODISCOVER = _env_bool("CAMERA_AUTODISCOVER", False)
 DISCOVERY_USE_ONVIF = _env_bool("DISCOVERY_USE_ONVIF", True)
 DISCOVERY_USE_SCAN = _env_bool("DISCOVERY_USE_SCAN", True)
 DISCOVERY_ONVIF_TIMEOUT = float(os.environ.get("DISCOVERY_ONVIF_TIMEOUT", "3"))
+# Подсети для скана (через запятую): 'a.b.c', 'a.b.c.0/24' и т.п. — берутся
+# первые три октета. Нужно в Docker bridge, где local_ip() = docker-адрес, а не
+# LAN с камерами. К ним добавляются подсети уже добавленных камер (автоинференс).
+DISCOVERY_SUBNET = os.environ.get("DISCOVERY_SUBNET", "")
 
 # ── Глобальные режимы детекции ────────────────────────────
 DETECT_MODES: dict[str, bool] = {
