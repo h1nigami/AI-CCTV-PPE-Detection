@@ -72,9 +72,10 @@ deploy_frontend() {
     frontend Dockerfile.frontend docker-compose.frontend.yml deploy.env \
     | ssh $SSH_OPTS "$FRONTEND_HOST" "tar -xf - -C ~/$FRONTEND_DIR"
   log "Код перенесён. Пересборка nginx-образа…"
-  # На Jetson docker-compose v1 (через дефис)
+  # docker compose v2 (поддерживает profiles в compose-файле); поднимаем только
+  # сервис frontend-web (mediamtx — опциональный профиль webcam, не трогаем).
   ssh $SSH_OPTS "$FRONTEND_HOST" \
-    "cd ~/$FRONTEND_DIR && docker-compose -f docker-compose.frontend.yml up -d --build"
+    "cd ~/$FRONTEND_DIR && docker compose -f docker-compose.frontend.yml up -d --build frontend-web"
   log "Проверка фронта (http://<jetson>/api/status через nginx)…"
   ssh $SSH_OPTS "$FRONTEND_HOST" \
     'for i in $(seq 1 15); do curl -sf -m3 http://127.0.0.1/api/status && break; sleep 2; done'
