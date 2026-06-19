@@ -131,8 +131,10 @@ def _make_client(monkeypatch, audio):
 # Статус: поз.0=каска, 1=маска, 2=жилет, 3=зона; заглавная=ок, строчная=нет/вне.
 class TestBuildVoiceText:
     def _fn(self):
-        from backend.main import _build_voice_text
-        return _build_voice_text
+        # Импортируем из лёгкого модуля, а НЕ из backend.main — иначе тест
+        # тянет ultralytics/insightface (тяжёлые) и падает там, где их нет.
+        from backend.tts.alert import build_voice_text
+        return build_voice_text
 
     def test_in_zone_missing_helmet(self):
         text = self._fn()({"c:1": "кМЖЗ"}, "Иван")
