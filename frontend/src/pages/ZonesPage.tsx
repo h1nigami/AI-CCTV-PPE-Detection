@@ -68,9 +68,19 @@ export default function ZonesPage() {
     setStatus("Кликайте по кадру, чтобы поставить вершины (минимум 3)")
   }
 
-  const deleteZone = (idx: number) => {
+  const deleteZone = async (idx: number) => {
+    const z = zones[idx]
     setZones((zs) => zs.filter((_, i) => i !== idx))
     setActiveIdx(-1)
+    // Сохранённую зону удаляем сразу на бэке (иначе после перезагрузки вернётся).
+    if (z?.id) {
+      try {
+        await api.deleteZone(camId, z.id)
+        setStatus("Зона удалена")
+      } catch (e) {
+        setStatus(`Ошибка удаления: ${(e as Error).message}`)
+      }
+    }
   }
 
   // — координаты клика → нормализованные —
@@ -134,7 +144,7 @@ export default function ZonesPage() {
         <button style={styles.btn} onClick={refreshFrame}>Обновить кадр</button>
         <button style={styles.btnPrimary} onClick={addZone}>+ Новая зона</button>
         <button style={styles.btn} onClick={removeLastPoint} disabled={activeIdx < 0}>Удалить точку</button>
-        <button style={styles.btnSave} onClick={save} disabled={!camId || zones.length === 0}>Сохранить</button>
+        <button style={styles.btnSave} onClick={save} disabled={!camId}>Сохранить</button>
         {status && <span style={styles.status}>{status}</span>}
       </div>
 
@@ -236,6 +246,9 @@ export default function ZonesPage() {
                       )
                     })}
                   </div>
+                  {active.require_ppe.length === 0 && (
+                    <span style={styles.hint}>Пусто = требуется набор по умолчанию (PPE_REQUIRED_DEFAULT).</span>
+                  )}
                 </div>
               )}
               <div style={styles.hint}>

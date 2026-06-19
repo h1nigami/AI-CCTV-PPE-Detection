@@ -125,10 +125,12 @@ def test_required_ppe_zone_overrides():
     assert required_ppe(OUTSIDE, [z], W, H, DEFAULT) == {"helmet", "mask", "vest"}
 
 
-def test_required_ppe_empty_zone_means_nothing():
-    # Зона без требований → СИЗ внутри не нужны (демо-кейс выставки).
+def test_required_ppe_empty_zone_inherits_default():
+    # Зона с пустым require_ppe наследует глобальный дефолт (не «беззубая»).
     z = {**_zone("danger"), "require_ppe": []}
-    assert required_ppe(INSIDE, [z], W, H, DEFAULT) == set()
+    assert required_ppe(INSIDE, [z], W, H, DEFAULT) == {"helmet", "mask", "vest"}
+    # Если глобальный дефолт пуст (демо без СИЗ) — внутри тоже ничего не нужно.
+    assert required_ppe(INSIDE, [z], W, H, []) == set()
 
 
 def test_required_ppe_union_of_overlapping_zones():

@@ -121,14 +121,17 @@ def has_danger_zones(zones: list) -> bool:
 
 def required_ppe(person_box, zones: list, w: int, h: int, default) -> set:
     """Какие СИЗ обязательны для человека в этой точке.
-    Если он внутри danger/restricted-зон(ы) — объединение их `require_ppe`
-    (может быть пустым → СИЗ не нужны). Иначе — `default` (глобальный дефолт)."""
+    Если он внутри danger/restricted-зон(ы) — объединение их `require_ppe`;
+    зона с ПУСТЫМ `require_ppe` наследует глобальный `default` (чтобы просто
+    нарисованная зона реально требовала СИЗ, а не была «беззубой»). Вне зон —
+    `default`."""
     here = [z for z in zones
             if z.get("type") in _DANGER_TYPES and person_in_zone(person_box, z, w, h)]
     if here:
         req: set = set()
         for z in here:
-            req |= set(z.get("require_ppe", []))
+            rp = z.get("require_ppe")
+            req |= set(rp) if rp else set(default)
         return req
     return set(default)
 
