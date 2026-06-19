@@ -15,6 +15,12 @@ class TestReidConfig:
     def test_gallery_path_exists(self):
         assert config.REID_GALLERY_PATH is not None
 
+    def test_embedding_ttl_defaults(self):
+        # Затухание памяти по времени включено по умолчанию (положительный TTL),
+        # настраивается через env REID_EMB_MAX_AGE_DAYS.
+        assert config.REID_EMB_MAX_AGE_DAYS > 0
+        assert config.REID_EMB_CLEAN_INTERVAL > 0
+
 
 class TestDetectModes:
     def test_keys_exist(self):
