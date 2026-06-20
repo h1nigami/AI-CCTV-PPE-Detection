@@ -409,3 +409,85 @@ class TestCleanupOld:
     def test_cleanup_no_op_on_empty_gallery(self, gallery):
         gallery.cleanup_old(max_age_days=30)
         assert gallery.count == 0
+
+
+class TestEmbeddingMemoryAging:
+    """Затухание памяти ПО ВРЕМЕНИ: образ (якорь) сохраняется, лишние ракурсы
+    стираются по возрасту, а не вытесняются вслепую при переполнении."""
+
+    def _add(self, gallery, gid, n):
+        for _ in range(n):
+            emb = np.random.randn(512).astype(np.float32)
+            emb = emb / np.linalg.norm(emb)
+            gallery.add_observation(gid, "cam01", emb, quality=0.9, store=True)
+
+    def test_timestamps_parallel_to_embeddings(self, gallery, normalized_embedding):
+        gid = gallery.match_or_register(normalized_embedding, "cam01", quality=0.9)
+        self._add(gallery, gid, 3)
+        with gallery._lock:
+            data = gallery._gallery[gid]
+            assert len(data['embedding_ts']) == len(data['embeddings']) == 4
+
+    def test_prune_removes_old_non_anchor(self, gallery, normalized_embedding):
+        gid = gallery.match_or_register(normalized_embedding, "cam01", quality=0.9)
+        self._add(gallery, gid, 3)
+        with gallery._lock:
+            ts = gallery._gallery[gid]['embedding_ts']
+            for i in range(1, len(ts)):          # все неякорные «постарели»
+                ts[i] = time.time() - 40 * 86400
+        removed = gallery.prune_old_embeddings(max_age_days=30)
+        assert removed == 3
+        with gallery._lock:
+            assert len(gallery._gallery[gid]['embeddings']) == 1   # остался якорь
+
+    def test_prune_protects_anchor(self, gallery, normalized_embedding):
+        gid = gallery.match_or_register(normalized_embedding, "cam01", quality=0.9)
+        with gallery._lock:
+            gallery._gallery[gid]['embedding_ts'][0] = time.time() - 999 * 86400
+        gallery.prune_old_embeddings(max_age_days=30)
+        with gallery._lock:
+            assert len(gallery._gallery[gid]['embeddings']) == 1
+
+    def test_prune_keeps_recent(self, gallery, normalized_embedding):
+        gid = gallery.match_or_register(normalized_embedding, "cam01", quality=0.9)
+        self._add(gallery, gid, 2)
+        assert gallery.prune_old_embeddings(max_age_days=30) == 0
+        with gallery._lock:
+            assert len(gallery._gallery[gid]['embeddings']) == 3
+
+    def test_prune_disabled_with_zero(self, gallery, normalized_embedding):
+        gid = gallery.match_or_register(normalized_embedding, "cam01", quality=0.9)
+        self._add(gallery, gid, 2)
+        with gallery._lock:
+            for i in range(1, len(gallery._gallery[gid]['embedding_ts'])):
+                gallery._gallery[gid]['embedding_ts'][i] = time.time() - 999 * 86400
+        assert gallery.prune_old_embeddings(max_age_days=0) == 0
+        with gallery._lock:
+            assert len(gallery._gallery[gid]['embeddings']) == 3
+
+    def test_overflow_evicts_oldest_keeps_anchor(self, gallery, normalized_embedding):
+        # Кап = 5 (фикстура). Якорь + 6 дописываний → вытеснения, но якорь цел.
+        gid = gallery.match_or_register(normalized_embedding, "cam01", quality=0.9)
+        self._add(gallery, gid, 6)
+        with gallery._lock:
+            data = gallery._gallery[gid]
+            assert len(data['embeddings']) == 5
+            assert len(data['embedding_ts']) == 5
+            assert np.allclose(data['embeddings'][0], normalized_embedding)
+
+    def test_backward_compat_load_without_ts(self, gallery_path, normalized_embedding):
+        import pickle
+        from backend.reid.gallery import FaceGallery
+        old = {
+            'gallery': {
+                1: {'embeddings': [normalized_embedding, normalized_embedding],
+                    'body_embeddings': [], 'last_seen': time.time(),
+                    'cameras': {'cam01'}, 'name': 'Иван'}
+            },
+            'next_id': 2,
+        }
+        with open(gallery_path, 'wb') as f:
+            pickle.dump(old, f)
+        gal = FaceGallery(gallery_path, sim_threshold=0.55, max_embeddings_per_id=5)
+        with gal._lock:
+            assert len(gal._gallery[1]['embedding_ts']) == 2

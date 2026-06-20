@@ -39,6 +39,10 @@ class FaceGallery:
                     data = pickle.load(f)
                 self._gallery = data.get('gallery', {})
                 self._next_id = data.get('next_id', 1)
+                # Обратная совместимость: у старых записей нет таймстампов
+                # эмбеддингов — добиваем их last_seen, чтобы длины совпали.
+                for entry in self._gallery.values():
+                    self._embedding_ts(entry)
                 print(f"[ReID] Загружено {len(self._gallery)} личностей из {self.gallery_path}")
             except Exception as e:
                 print(f"[ReID] Ошибка загрузки галереи: {e}")
@@ -69,6 +73,20 @@ class FaceGallery:
     def _assign_name(self) -> str:
         return f"Гость_{self._next_id}"
 
+    def _embedding_ts(self, data: Dict) -> List[float]:
+        """Список таймстампов (когда добавлен эмбеддинг), параллельный
+        data['embeddings']. Поддерживает обратную совместимость: у старых записей
+        без таймстампов добивает недостающие значения last_seen/now к НАЧАЛУ
+        списка (нетаймстампленные эмбеддинги — самые старые, загруженные с диска)."""
+        ts = data.setdefault('embedding_ts', [])
+        n = len(data.get('embeddings', []))
+        if len(ts) < n:
+            fill = data.get('last_seen', time.time())
+            ts[:0] = [fill] * (n - len(ts))
+        elif len(ts) > n:
+            del ts[:len(ts) - n]
+        return ts
+
     def threshold_for(self, quality: float) -> float:
         """Публичный доступ к адаптивному порогу (для «липкой» верификации в state)."""
         return self._adaptive_threshold(quality)
@@ -81,9 +99,15 @@ class FaceGallery:
         if diverse and data['embeddings']:
             if max(self._cosine_sim(embedding, e) for e in data['embeddings']) >= self.diversity_max_sim:
                 return
+        ts = self._embedding_ts(data)
         data['embeddings'].append(embedding)
+        ts.append(time.time())
         if len(data['embeddings']) > self.max_embeddings:
-            data['embeddings'].pop(1)
+            # Якорь (индекс 0) неприкосновенен; при переполнении вытесняем самый
+            # СТАРЫЙ из остальных по времени добавления, а не вслепую индекс 1.
+            drop = min(range(1, len(ts)), key=ts.__getitem__)
+            data['embeddings'].pop(drop)
+            ts.pop(drop)
 
     def similarity(self, global_id: int, embedding: np.ndarray) -> float:
         """Максимальная косинусная близость эмбеддинга к записи (−1, если записи нет)."""
@@ -199,6 +223,7 @@ class FaceGallery:
             name = self._assign_name()
             self._gallery[new_id] = {
                 'embeddings': [embedding],
+                'embedding_ts': [time.time()],
                 'body_embeddings': [],
                 'last_seen': time.time(),
                 'cameras': {cam_id},
@@ -222,9 +247,13 @@ class FaceGallery:
                 return False
             source = self._gallery[source_id]
             target = self._gallery[target_id]
+            t_ts = self._embedding_ts(target)
+            t_ts.extend(self._embedding_ts(source))
             target['embeddings'].extend(source['embeddings'])
             if len(target['embeddings']) > self.max_embeddings * 2:
+                # Срезаем эмбеддинги и таймстампы одинаково (списки параллельны).
                 target['embeddings'] = target['embeddings'][-self.max_embeddings:]
+                target['embedding_ts'] = t_ts[-self.max_embeddings:]
             tgt_bodies = target.setdefault('body_embeddings', [])
             tgt_bodies.extend(source.get('body_embeddings', []))
             if len(tgt_bodies) > self.max_body_embeddings * 2:
@@ -308,6 +337,38 @@ class FaceGallery:
             if to_del:
                 self._save()
                 print(f"[ReID] Удалено {len(to_del)} старых личностей")
+
+    def prune_old_embeddings(self, max_age_days: float) -> int:
+        """Состарить память: удалить эмбеддинги старше max_age_days (по времени
+        ДОБАВЛЕНИЯ), сохраняя якорь (индекс 0) каждой личности. Образ человека
+        остаётся в памяти, а лишние «постаревшие» ракурсы со временем стираются.
+        0/отрицательное — затухание выключено. Возвращает число удалённых
+        эмбеддингов. Запись на диск — только при реальном удалении."""
+        if max_age_days <= 0:
+            return 0
+        cutoff = time.time() - max_age_days * 86400
+        removed = 0
+        with self._lock:
+            for data in self._gallery.values():
+                embs = data.get('embeddings')
+                if not embs:
+                    continue
+                ts = self._embedding_ts(data)
+                keep_e = [embs[0]]   # якорь неприкосновенен
+                keep_t = [ts[0]]
+                for e, t in zip(embs[1:], ts[1:]):
+                    if t >= cutoff:
+                        keep_e.append(e)
+                        keep_t.append(t)
+                    else:
+                        removed += 1
+                data['embeddings'] = keep_e
+                data['embedding_ts'] = keep_t
+            if removed:
+                self._save()
+                print(f"[ReID] Состарено и удалено {removed} эмбеддингов "
+                      f"(TTL {max_age_days} дн.)")
+        return removed
 
     @property
     def count(self) -> int:

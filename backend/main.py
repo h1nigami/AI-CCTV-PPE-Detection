@@ -18,6 +18,7 @@ cv2.INTER_NEAREST_EXACT = getattr(cv2, 'INTER_NEAREST_EXACT', cv2.INTER_NEAREST)
 from backend.config import (
     MODEL_PATH, POSE_MODEL_PATH, CLASS_NAMES, CAMERAS, CONF_THRESH,
     REID_GALLERY_PATH, REID_DET_SIZE, REID_FRAME_SKIP, REID_MAX_AGE_DAYS,
+    REID_EMB_MAX_AGE_DAYS, REID_EMB_CLEAN_INTERVAL,
     EVENT_PRE_FRAMES, EVENT_POST_FRAMES, EVENT_MAX_FRAMES, EVENT_CLIP_FPS,
     VIOLATION_LOGS_DIR, get_camera_config, VOICE_ALERT_COOLDOWN,
     MOTION_DETECTION_ENABLED, MOTION_THRESHOLD, MOTION_MIN_AREA,
@@ -90,6 +91,9 @@ state = DetectionState()
 state.init_gallery(REID_GALLERY_PATH)
 if state.gallery is not None:
     state.gallery.cleanup_old(REID_MAX_AGE_DAYS)
+    # Затухание памяти по времени: лишние постаревшие ракурсы стираются, образ
+    # (якорь + last_seen) сохраняется. Периодически повторяется в _heartbeat_loop.
+    state.gallery.prune_old_embeddings(REID_EMB_MAX_AGE_DAYS)
 # Пороги body Re-ID — под фактический бэкенд (deep OSNet vs цветовой fallback).
 if body_recognizer is not None:
     state.configure_body(body_recognizer.match_threshold,
@@ -674,6 +678,7 @@ def _heartbeat_loop():
     Вынесен из петли детекции, т.к. петель теперь несколько (по камере)."""
     metrics = get_metrics()
     publisher = get_publisher()
+    last_emb_prune = time.time()
     while state.live_active:
         metrics.heartbeat()
         if publisher is not None:
@@ -681,6 +686,12 @@ def _heartbeat_loop():
                 "ts": time.time(), "uptime_seconds": metrics.uptime_seconds(),
                 "cameras": len(CAMERAS),
             })
+        # Состаривание памяти эмбеддингов по таймеру (на своём интервале, чтобы
+        # не дёргать диск на каждом heartbeat — _save только при удалении).
+        if (state.gallery is not None and REID_EMB_MAX_AGE_DAYS > 0
+                and time.time() - last_emb_prune >= REID_EMB_CLEAN_INTERVAL):
+            state.gallery.prune_old_embeddings(REID_EMB_MAX_AGE_DAYS)
+            last_emb_prune = time.time()
         # Дробный сон, чтобы быстро реагировать на stop_live.
         slept = 0.0
         while state.live_active and slept < MQTT_HEARTBEAT_INTERVAL:
