@@ -216,10 +216,22 @@ export function ControlPanel({
       {facesOn && (
         <div style={{ ...styles.panelCard, animation: "cardReveal 0.35s cubic-bezier(0.4,0,0.2,1) both" }}>
           <div style={styles.cardTitle}>Люди по камерам</div>
-          {personsByCam.length === 0 ? (
-            <div style={styles.empty}>Никого не распознано</div>
-          ) : (
-            personsByCam.map(({ cam, persons: camPersons }) => (
+          {/* Легенда маркеров статуса. */}
+          <div style={styles.legend}>
+            <span style={{ color: "#00e676" }}>✓ Пропуск</span>
+            <span style={{ color: "#ffd600" }}>✗ Нарушение</span>
+            <span style={{ color: "#ff9800" }}>⚠ Зона</span>
+            <span style={{ color: "#00b0ff" }}>• Обычный</span>
+          </div>
+          {(() => {
+            // Если выбрана/открыта камера — показываем только её, иначе все.
+            const visibleByCam = selectedCam
+              ? personsByCam.filter((g) => g.cam === selectedCam)
+              : personsByCam
+            if (visibleByCam.length === 0) {
+              return <div style={styles.empty}>Никого не распознано</div>
+            }
+            return visibleByCam.map(({ cam, persons: camPersons }) => (
               <div key={cam} style={styles.camGroup}>
                 <div style={styles.camHeader}>
                   <span style={styles.camDot} />
@@ -238,7 +250,7 @@ export function ControlPanel({
                 ))}
               </div>
             ))
-          )}
+          })()}
         </div>
       )}
     </div>
@@ -448,6 +460,16 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#888",
     textAlign: "center" as const,
     padding: "12px 0",
+  },
+  legend: {
+    display: "flex",
+    flexWrap: "wrap" as const,
+    gap: "6px 12px",
+    fontFamily: "monospace",
+    fontSize: "0.6rem",
+    marginBottom: "10px",
+    paddingBottom: "8px",
+    borderBottom: "1px solid #333",
   },
   camGroup: {
     marginBottom: "10px",
