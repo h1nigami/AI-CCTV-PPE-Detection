@@ -21,6 +21,11 @@ class TestReidConfig:
         assert config.REID_EMB_MAX_AGE_DAYS > 0
         assert config.REID_EMB_CLEAN_INTERVAL > 0
 
+    def test_body_persistence_defaults(self):
+        # Дескрипторы тела: короткий TTL (одежда устаревает) + периодический флаш.
+        assert config.REID_BODY_MAX_AGE_DAYS > 0
+        assert config.REID_FLUSH_INTERVAL > 0
+
 
 class TestDetectModes:
     def test_keys_exist(self):

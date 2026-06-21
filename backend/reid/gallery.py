@@ -30,6 +30,10 @@ class FaceGallery:
         self._lock = threading.Lock()
         self._gallery: Dict[int, Dict] = {}
         self._next_id = 1
+        # Грязный флаг: «обучающие» пути (липкое дописывание лиц, дескрипторы
+        # тела) не пишут на диск сразу — flush() сбрасывает их по таймеру/при
+        # остановке. Методы со своим _save() сбрасывают флаг сами.
+        self._dirty = False
         self._load()
 
     def _load(self):
@@ -43,6 +47,7 @@ class FaceGallery:
                 # эмбеддингов — добиваем их last_seen, чтобы длины совпали.
                 for entry in self._gallery.values():
                     self._embedding_ts(entry)
+                    self._body_ts(entry)
                 print(f"[ReID] Загружено {len(self._gallery)} личностей из {self.gallery_path}")
             except Exception as e:
                 print(f"[ReID] Ошибка загрузки галереи: {e}")
@@ -54,8 +59,20 @@ class FaceGallery:
             self.gallery_path.parent.mkdir(parents=True, exist_ok=True)
             with open(self.gallery_path, 'wb') as f:
                 pickle.dump({'gallery': self._gallery, 'next_id': self._next_id}, f)
+            self._dirty = False
         except Exception as e:
             print(f"[ReID] Ошибка сохранения галереи: {e}")
+
+    def flush(self) -> bool:
+        """Сбросить на диск накопленные за сессию изменения (тело/липкие лица),
+        только если что-то менялось (грязный флаг). Возвращает True, если
+        реально записали. Вызывается по таймеру из _heartbeat_loop и при
+        stop_live — чтобы выученное переживало перезапуск без записи на каждый кадр."""
+        with self._lock:
+            if not self._dirty:
+                return False
+            self._save()
+            return True
 
     def _cosine_sim(self, a: np.ndarray, b: np.ndarray) -> float:
         return float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b) + 1e-8))
@@ -80,6 +97,19 @@ class FaceGallery:
         списка (нетаймстампленные эмбеддинги — самые старые, загруженные с диска)."""
         ts = data.setdefault('embedding_ts', [])
         n = len(data.get('embeddings', []))
+        if len(ts) < n:
+            fill = data.get('last_seen', time.time())
+            ts[:0] = [fill] * (n - len(ts))
+        elif len(ts) > n:
+            del ts[:len(ts) - n]
+        return ts
+
+    def _body_ts(self, data: Dict) -> List[float]:
+        """Таймстампы дескрипторов тела, параллельные data['body_embeddings'].
+        Обратная совместимость как у _embedding_ts: недостающие добиваются
+        last_seen к началу списка (нетаймстампленные — самые старые)."""
+        ts = data.setdefault('body_ts', [])
+        n = len(data.get('body_embeddings', []))
         if len(ts) < n:
             fill = data.get('last_seen', time.time())
             ts[:0] = [fill] * (n - len(ts))
@@ -130,6 +160,7 @@ class FaceGallery:
                 self._append_embedding(data, embedding, diverse=True)
             data['last_seen'] = time.time()
             data['cameras'].add(cam_id)
+            self._dirty = True   # сбросится на диск через flush() (не на каждый кадр)
             return True
 
     def _body_sims(self, embedding: np.ndarray, bodies) -> List[float]:
@@ -144,8 +175,9 @@ class FaceGallery:
         """Добавить дескриптор внешнего вида (тело/одежда) к личности.
         diverse=True — копим только заметно разные ракурсы (max косинус к уже
         сохранённым < body_diversity_max_sim), иначе почти-дубль кадра. Кап —
-        max_body_embeddings (выбрасываем самый старый, индекс 0). Не пишет на
-        диск (как и «липкое» дописывание лиц) — обучение в рамках сессии."""
+        max_body_embeddings (выбрасываем самый СТАРЫЙ по времени). На диск пишет
+        не сразу: ставит грязный флаг, реальный сброс — flush() по таймеру/при
+        остановке (обучение в рамках сессии, без записи на каждый кадр)."""
         if embedding is None:
             return False
         with self._lock:
@@ -157,9 +189,14 @@ class FaceGallery:
                 sims = self._body_sims(embedding, bodies)
                 if sims and max(sims) >= self.body_diversity_max_sim:
                     return False
+            ts = self._body_ts(data)
             bodies.append(embedding)
+            ts.append(time.time())
             if len(bodies) > self.max_body_embeddings:
-                bodies.pop(0)
+                drop = min(range(len(ts)), key=ts.__getitem__)
+                bodies.pop(drop)
+                ts.pop(drop)
+            self._dirty = True
             return True
 
     def match_body(self, embedding: np.ndarray, threshold: float) -> Tuple[Optional[int], float]:
@@ -217,6 +254,7 @@ class FaceGallery:
                     self._append_embedding(data, embedding)
                 data['last_seen'] = time.time()
                 data['cameras'].add(cam_id)
+                self._dirty = True   # повторный матч известного лица — flush() позже
                 return best_id
             new_id = self._next_id
             self._next_id += 1
@@ -254,10 +292,14 @@ class FaceGallery:
                 # Срезаем эмбеддинги и таймстампы одинаково (списки параллельны).
                 target['embeddings'] = target['embeddings'][-self.max_embeddings:]
                 target['embedding_ts'] = t_ts[-self.max_embeddings:]
+            tb_ts = self._body_ts(target)
+            tb_ts.extend(self._body_ts(source))
             tgt_bodies = target.setdefault('body_embeddings', [])
             tgt_bodies.extend(source.get('body_embeddings', []))
             if len(tgt_bodies) > self.max_body_embeddings * 2:
+                # Дескрипторы тела и их таймстампы режем одинаково (параллельны).
                 target['body_embeddings'] = tgt_bodies[-self.max_body_embeddings:]
+                target['body_ts'] = tb_ts[-self.max_body_embeddings:]
             target['cameras'].update(source['cameras'])
             target['last_seen'] = max(target['last_seen'], source['last_seen'])
             del self._gallery[source_id]
@@ -367,6 +409,37 @@ class FaceGallery:
             if removed:
                 self._save()
                 print(f"[ReID] Состарено и удалено {removed} эмбеддингов "
+                      f"(TTL {max_age_days} дн.)")
+        return removed
+
+    def prune_old_bodies(self, max_age_days: float) -> int:
+        """Состарить дескрипторы тела: удалить все старше max_age_days (по времени
+        добавления). В отличие от лиц — БЕЗ защиты якоря: внешний вид завязан на
+        одежду и устаревает быстро, эталонного «вечного» ракурса тела нет. Если
+        все дескрипторы устарели — личность просто перестаёт опознаваться со
+        спины, пока её снова не увидят в лицо. 0/отрицательное — выключено."""
+        if max_age_days <= 0:
+            return 0
+        cutoff = time.time() - max_age_days * 86400
+        removed = 0
+        with self._lock:
+            for data in self._gallery.values():
+                bodies = data.get('body_embeddings')
+                if not bodies:
+                    continue
+                ts = self._body_ts(data)
+                keep_e, keep_t = [], []
+                for e, t in zip(bodies, ts):
+                    if t >= cutoff:
+                        keep_e.append(e)
+                        keep_t.append(t)
+                    else:
+                        removed += 1
+                data['body_embeddings'] = keep_e
+                data['body_ts'] = keep_t
+            if removed:
+                self._save()
+                print(f"[ReID] Состарено и удалено {removed} дескрипторов тела "
                       f"(TTL {max_age_days} дн.)")
         return removed
 
