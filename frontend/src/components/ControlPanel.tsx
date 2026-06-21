@@ -45,7 +45,10 @@ export function ControlPanel({
       if (!latestByCam[l.cam_id]) latestByCam[l.cam_id] = l
     })
 
-    const src = selectedCam ? latestByCam[selectedCam] : Object.values(latestByCam)[0]
+    // Индикаторы «Статус проверки» — строго по выбранной/полноэкранной камере.
+    // Пока камера не выбрана, статус неоднозначен (несколько камер) → «—»
+    // (ожидание), а не данные случайной первой камеры.
+    const src = selectedCam ? latestByCam[selectedCam] : undefined
     result.ppe = parsePpeFromMessage(src?.message)
 
     // Счётчики — по ТЕКУЩЕМУ кадру каждой камеры (последняя лог-строка), а не по
