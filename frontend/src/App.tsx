@@ -1,6 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate, Outlet } from "react-router-dom"
 import { AuthProvider, useAuth } from "./contexts/AuthContext"
-import { CameraProvider } from "./contexts/CameraContext"
+import { CameraProvider, useCamerasContext } from "./contexts/CameraContext"
 import { Header } from "./components/Header"
 import LoginPage from "./pages/LoginPage"
 import RegisterPage from "./pages/RegisterPage"
@@ -23,11 +23,20 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
+// Озвучка работает только при запущенной детекции. Вынесена в отдельный
+// компонент внутри CameraProvider, чтобы видеть isRunning из контекста
+// (раньше хук вызывался с жёстким true и поллил /api/voice_alert постоянно).
+function VoiceAlertsBridge() {
+  const { isRunning } = useCamerasContext()
+  useVoiceAlerts(isRunning)
+  return null
+}
+
 function ProtectedLayout() {
-  useVoiceAlerts(true)
   return (
     <ProtectedRoute>
       <CameraProvider>
+        <VoiceAlertsBridge />
         <div style={{ height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
           <Header />
           <Outlet />

@@ -119,6 +119,12 @@ export function CameraCard({
     error: "#ff9800",
   }
 
+  // Эффективный статус: при потере сигнала (серия ошибок загрузки кадра)
+  // показываем «нет сигнала», а не зелёный «в сети». Раньше status был жёстко
+  // "online" и индикатор/рамка горели зелёным даже при «NO SIGNAL».
+  const effectiveStatus: CameraStatus =
+    isRunning && streamError ? "offline" : status
+
   const frameSrc = src
 
   return (
@@ -126,10 +132,10 @@ export function CameraCard({
       style={{
         ...styles.card,
         ...(isFullscreen ? styles.cardFullscreen : {}),
-        outlineColor: isFullscreen ? "#00e5ff" : statusColors[status],
+        outlineColor: isFullscreen ? "#00e5ff" : statusColors[effectiveStatus],
       }}
       onClick={onClick}
-      title={`${name} — ${status === "online" ? "в сети" : status === "offline" ? "нет сигнала" : "ошибка"}`}
+      title={`${name} — ${effectiveStatus === "online" ? "в сети" : effectiveStatus === "offline" ? "нет сигнала" : "ошибка"}`}
     >
       {/* Верхняя панель: имя + статус */}
       <div style={styles.topBar}>
@@ -137,8 +143,8 @@ export function CameraCard({
         <div
           style={{
             ...styles.statusDot,
-            background: !isRunning ? "#4a6a8a" : statusColors[status],
-            boxShadow: !isRunning ? "none" : `0 0 6px ${statusColors[status]}`,
+            background: !isRunning ? "#4a6a8a" : statusColors[effectiveStatus],
+            boxShadow: !isRunning ? "none" : `0 0 6px ${statusColors[effectiveStatus]}`,
           }}
         />
       </div>
@@ -179,7 +185,7 @@ export function CameraCard({
             {hasViolation ? "⚠" : "●"} {eventCount}
           </div>
         )}
-        {detectEnabled && isRunning && status === "online" && <div style={styles.liveTag}>LIVE</div>}
+        {detectEnabled && isRunning && effectiveStatus === "online" && <div style={styles.liveTag}>LIVE</div>}
       </div>
     </div>
   )

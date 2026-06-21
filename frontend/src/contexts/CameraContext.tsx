@@ -1,9 +1,10 @@
 import { createContext, useContext, useState, useCallback, useRef, useEffect, type ReactNode } from "react"
 import { api } from "../api/client"
-import type { CameraInfo, CameraGroup, DispatcherState, TimelineEvent, CameraStatus, CameraCardInfo, StreamMode, LogEntry } from "../types"
+import type { CameraInfo, DispatcherState, LogEntry } from "../types"
 
 // ============================================================
-// Контекст управления камерами, группами и диспетчерской панелью
+// Контекст управления камерами, диспетчерской панелью, логами и
+// режимами детекции. Единый источник поллинга логов/режимов на всё приложение.
 // ============================================================
 
 interface CameraContextType {
@@ -14,16 +15,6 @@ interface CameraContextType {
   /** Обновить список камер */
   refresh: () => Promise<void>
 
-  // ---- Группы ----
-  /** Список групп */
-  groups: CameraGroup[]
-  /** Активная группа (null = "Все") */
-  activeGroupId: string | null
-  /** Выбрать группу */
-  setActiveGroup: (id: string | null) => void
-  /** Отфильтрованные по группе камеры */
-  filteredCameras: CameraInfo[]
-
   // ---- Диспетчерская панель ----
   /** Состояние панели */
   dispatcher: DispatcherState
@@ -31,16 +22,6 @@ interface CameraContextType {
   openDispatcher: (cameraName: string) => void
   /** Закрыть диспетчерскую */
   closeDispatcher: () => void
-
-  // ---- События (заглушка для фронта) ----
-  /** События для выбранной камеры */
-  getEventsForCamera: (cameraName: string) => TimelineEvent[]
-  /** Все последние события */
-  recentEvents: TimelineEvent[]
-
-  // ---- Статус камер ----
-  /** Получить расширенную инфу для карточки */
-  getCardInfo: (cam: CameraInfo) => CameraCardInfo
 
   // ---- Детекция ----
   /** Запущена ли детекция на бэке */
@@ -57,30 +38,19 @@ interface CameraContextType {
   detectModes: Record<string, boolean> | null
   /** Обновить режимы детекции с бэка */
   refreshDetectModes: () => Promise<void>
+  /** Сохранить режимы детекции на бэк (оптимистично обновляет состояние) */
+  updateDetectModes: (modes: Record<string, boolean>) => Promise<void>
 }
 
 const CameraContext = createContext<CameraContextType | null>(null)
 
-// Захардкоженные группы — в реальном приложении придут с бэка
-const DEFAULT_GROUPS: CameraGroup[] = [
-  { id: "all", name: "Все камеры", cameraNames: [] },
-  { id: "entrance", name: "Вход", cameraNames: [] },
-  { id: "perimeter", name: "Периметр", cameraNames: [] },
-  { id: "workshop", name: "Цех", cameraNames: [] },
-]
-
 export function CameraProvider({ children }: { children: ReactNode }) {
   const [cameras, setCameras] = useState<CameraInfo[]>([])
   const [loading, setLoading] = useState(true)
-  const [activeGroupId, setActiveGroupId] = useState<string | null>("all")
   const [dispatcher, setDispatcher] = useState<DispatcherState>({ open: false, cameraName: null })
-  const [groups] = useState<CameraGroup[]>(DEFAULT_GROUPS)
   const [isRunning, setDetectionRunning] = useState(false)
   const [logs, setLogs] = useState<LogEntry[]>([])
   const [detectModes, setDetectModes] = useState<Record<string, boolean> | null>(null)
-
-  // Храним последние события для каждой камеры (симуляция)
-  const eventsByCamera = useRef<Record<string, TimelineEvent[]>>({})
 
   // Единый поллинг логов на всё приложение (Dashboard и DispatcherPanel читают
   // их отсюда, чтобы не плодить параллельные интервалы на /detection_log).
@@ -136,6 +106,19 @@ export function CameraProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  // Сохранение режимов на бэк через контекст — единый источник истины, чтобы
+  // все потребители (Header, ControlPanel, DispatcherPanel) обновлялись сразу,
+  // а не ждали фонового поллинга (раньше Header держал своё локальное состояние).
+  const updateDetectModes = useCallback(async (next: Record<string, boolean>) => {
+    setDetectModes(next) // оптимистично
+    try {
+      const data = await api.setDetectModes(next)
+      if (data.modes) setDetectModes(data.modes)
+    } catch {
+      refreshDetectModes() // откат к актуальному состоянию бэка
+    }
+  }, [refreshDetectModes])
+
   // Первичная загрузка detectModes и фоновый поллинг при isRunning
   useEffect(() => {
     refreshDetectModes()
@@ -151,19 +134,6 @@ export function CameraProvider({ children }: { children: ReactNode }) {
     }).catch(() => {})
   }, [])
 
-  // ---- Логика групп ----
-  const setActiveGroup = useCallback((id: string | null) => {
-    setActiveGroupId(id)
-  }, [])
-
-  // Фильтруем камеры по активной группе
-  const filteredCameras = cameras.filter((cam) => {
-    if (!activeGroupId || activeGroupId === "all") return true
-    const group = groups.find((g) => g.id === activeGroupId)
-    if (!group) return true
-    return group.cameraNames.includes(cam.name)
-  })
-
   // ---- Диспетчерская панель ----
   const openDispatcher = useCallback((cameraName: string) => {
     setDispatcher({ open: true, cameraName })
@@ -173,48 +143,21 @@ export function CameraProvider({ children }: { children: ReactNode }) {
     setDispatcher({ open: false, cameraName: null })
   }, [])
 
-  // ---- Генерация тестовых событий (заглушка) ----
-  const getEventsForCamera = useCallback((cameraName: string): TimelineEvent[] => {
-    return eventsByCamera.current[cameraName] || []
-  }, [])
-
-  const recentEvents = Object.values(eventsByCamera.current).flat().slice(0, 50)
-
-  // ---- Расширенная информация для карточки ----
-  const getCardInfo = useCallback(
-    (cam: CameraInfo): CameraCardInfo => {
-      return {
-        name: cam.name,
-        source: cam.source,
-        detectEnabled: cam.detect_enabled,
-        status: "online",
-        streamMode: "live",
-      }
-    },
-    [],
-  )
-
   return (
     <CameraContext.Provider
       value={{
         cameras,
         loading,
         refresh,
-        groups,
-        activeGroupId,
-        setActiveGroup,
-        filteredCameras,
         dispatcher,
         openDispatcher,
         closeDispatcher,
-        getEventsForCamera,
-        recentEvents,
-        getCardInfo,
         isRunning,
         setDetectionRunning,
         logs,
         detectModes,
         refreshDetectModes,
+        updateDetectModes,
       }}
     >
       {children}

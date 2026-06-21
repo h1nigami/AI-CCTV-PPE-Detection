@@ -107,6 +107,14 @@ export const api = {
   // ---- Статус системы ----
   getStatus: () => request<{ running: boolean }>("/api/status"),
 
+  // ---- Реальные метрики (CPU/RAM/FPS) ----
+  getStats: () =>
+    request<{
+      uptime_seconds: number
+      cameras: Record<string, { fps: number; latency_ms: number; frames_processed: number; frames_skipped: number }>
+      system: { cpu_percent?: number; memory_percent?: number; memory_used_mb?: number }
+    }>("/api/stats"),
+
   // ---- Управление детекцией ----
   start: () => request<ApiStatus>("/start", { method: "POST" }),
   stop: () => request<ApiStatus>("/stop", { method: "POST" }),

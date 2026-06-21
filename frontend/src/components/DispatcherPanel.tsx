@@ -1,6 +1,7 @@
 import { useMemo } from "react"
 import { useCamerasContext } from "../contexts/CameraContext"
 import type { PpeStatus, PersonSummary } from "../types"
+import { parsePpeFromMessage, parsePersonsFromMessage } from "../utils/ppeParse"
 
 export function DispatcherPanel() {
   const { dispatcher, closeDispatcher, cameras, logs: allLogs, detectModes } = useCamerasContext()
@@ -17,75 +18,12 @@ export function DispatcherPanel() {
     [allLogs, cameraName],
   )
 
-  const { ppe, persons } = useMemo(() => {
-    const result: {
-      ppe: PpeStatus
-      persons: PersonSummary[]
-    } = {
-      ppe: { helmet: null, mask: null, vest: null, zone: null, gesture: null },
-      persons: [],
+  const { ppe, persons } = useMemo((): { ppe: PpeStatus; persons: PersonSummary[] } => {
+    const message = logs[0]?.message
+    return {
+      ppe: parsePpeFromMessage(message),
+      persons: parsePersonsFromMessage(message),
     }
-
-    if (logs.length === 0) return result
-
-    const latest = logs[0]
-    if (!latest?.message) return result
-
-    const m = latest.message
-    if (!m.includes("Людей:")) return result
-
-    const personParts = m.split(" | ").filter((p) => {
-      if (p.startsWith("Людей:") || p.startsWith("Нет СИЗ")) return false
-      return /^[^\[\:]+(?:\[.*?\])?\s*:\s/.test(p)
-    })
-
-    const hasPpeBrackets = personParts.some((p) => /\[.*?\]/.test(p))
-    if (!hasPpeBrackets) {
-      result.ppe = { helmet: null, mask: null, vest: null, zone: null, gesture: null }
-    } else {
-      let helmetOk = true
-      let maskOk = true
-      let vestOk = true
-      let inDanger = false
-      let hasPass = false
-
-      for (const part of personParts) {
-        const ppeMatch = part.match(/\[(.*?)\]/)
-        if (ppeMatch) {
-          const ppeStr = ppeMatch[1]
-          if (ppeStr.includes("!К")) helmetOk = false
-          if (ppeStr.includes("!М")) maskOk = false
-          if (ppeStr.includes("!Ж")) vestOk = false
-        }
-        if (part.includes("ОПАСНАЯ ЗОНА")) inDanger = true
-        if (part.includes("ПРОПУСК")) hasPass = true
-      }
-
-      result.ppe = {
-        helmet: helmetOk,
-        mask: maskOk,
-        vest: vestOk,
-        zone: !inDanger,
-        gesture: hasPass,
-      }
-    }
-
-    personParts.forEach((part, idx) => {
-      const ppeMatch = part.match(/\[(.*?)\]/)
-      const ppeStr = ppeMatch ? ppeMatch[1] + " " : ""
-      const nameMatch = part.match(/^([^[]+?)\s*\[/)
-      const name = nameMatch ? nameMatch[1].trim() : part.split(":")[0].trim()
-      result.persons.push({
-        name,
-        ppe: ppeStr,
-        approved: part.includes("ПРОПУСК"),
-        danger: part.includes("ОПАСНАЯ"),
-        violation: ppeStr.includes("!К") || ppeStr.includes("!М") || ppeStr.includes("!Ж"),
-        index: idx,
-      })
-    })
-
-    return result
   }, [logs])
 
   if (!dispatcher.open || !cameraName) return null

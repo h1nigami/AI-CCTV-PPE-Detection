@@ -12,6 +12,8 @@ const MODE_LABELS: Record<string, string> = {
   faces: "Лица",
 }
 
+const DEFAULT_MODES: Record<string, boolean> = { people: true, ppe: true, faces: true }
+
 export function Header() {
   const now = useClock()
   const { user, logout } = useAuth()
@@ -19,22 +21,14 @@ export function Header() {
   const location = useLocation()
   const bp = useBreakpoint()
   const isMobile = bp === 'mobile'
-  const { isRunning, setDetectionRunning } = useCamerasContext()
+  const { isRunning, setDetectionRunning, detectModes, updateDetectModes } = useCamerasContext()
+  // Единый источник режимов — контекст (загружается там при монтировании).
+  // null до первой загрузки → показываем дефолт, чтобы тумблеры не «прыгали».
+  const modes = detectModes ?? DEFAULT_MODES
 
   const [modesOpen, setModesOpen] = useState(false)
-  const [modes, setModes] = useState<Record<string, boolean>>({
-    people: true,
-    ppe: true,
-    faces: true,
-  })
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const modesRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    api.getDetectModes().then((data) => {
-      if (data.modes) setModes(data.modes)
-    }).catch(() => {})
-  }, [])
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -48,22 +42,15 @@ export function Header() {
 
   const isPeopleDisabled = !modes.people
 
-  const toggleMode = useCallback(async (key: string) => {
+  const toggleMode = useCallback((key: string) => {
     if (key !== "people" && !modes.people) return
     const next = { ...modes, [key]: !modes[key] }
     if (key === "people" && !next.people) {
       next.ppe = false
       next.faces = false
     }
-    setModes(next)
-    try {
-      const res = await api.setDetectModes(next)
-      if (res.modes) setModes(res.modes)
-    } catch (e) {
-      console.error("[Header] toggleMode failed:", e)
-      setModes(modes)
-    }
-  }, [modes])
+    updateDetectModes(next) // оптимистично + сохранение через контекст
+  }, [modes, updateDetectModes])
 
   const timeStr = now.toLocaleTimeString("ru-RU")
   const dateStr = now.toLocaleDateString("ru-RU", {

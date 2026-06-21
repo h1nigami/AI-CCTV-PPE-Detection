@@ -27,8 +27,6 @@ export default function DashboardPage() {
   const [showCameraManager, setShowCameraManager] = useState(false)
   const [mobilePanel, setMobilePanel] = useState<'left' | 'right' | null>(null)
   const notifIdRef = useRef(0)
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const lastLogIdsRef = useRef<Record<string, string>>({})
 
   const addNotification = useCallback(
     (type: string, title: string, sub?: string, duration = 4500) => {
@@ -122,8 +120,6 @@ export default function DashboardPage() {
             isRunning={isRunning}
             selectedCam={selectedCam}
             logs={logs}
-            lastLogIdsRef={lastLogIdsRef}
-            addNotification={addNotification}
             onStart={handleStart}
             onStop={handleStop}
             onShowGallery={() => setShowGallery(true)}
@@ -233,8 +229,6 @@ export default function DashboardPage() {
               isRunning={isRunning}
               selectedCam={selectedCam}
               logs={logs}
-              lastLogIdsRef={lastLogIdsRef}
-              addNotification={addNotification}
               onStart={handleStart}
               onStop={handleStop}
               onShowGallery={() => { setShowGallery(true); setMobilePanel(null) }}
