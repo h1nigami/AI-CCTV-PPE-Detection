@@ -27,15 +27,17 @@ export function ControlPanel({
   const isSidebar = variant === "sidebar"
   const { detectModes } = useCamerasContext()
 
-  const { ppe, counters, persons } = useMemo(() => {
+  const { ppe, counters, persons, personsByCam } = useMemo(() => {
     const result: {
       ppe: PpeStatus
       counters: { total: number; approved: number; violations: number; logCount: number }
       persons: PersonSummary[]
+      personsByCam: { cam: string; persons: PersonSummary[] }[]
     } = {
       ppe: { helmet: null, mask: null, vest: null, zone: null, gesture: null },
       counters: { total: 0, approved: 0, violations: 0, logCount: logs.length },
       persons: [],
+      personsByCam: [],
     }
 
     if (logs.length === 0) return result
@@ -51,10 +53,9 @@ export function ControlPanel({
     const src = selectedCam ? latestByCam[selectedCam] : undefined
     result.ppe = parsePpeFromMessage(src?.message)
 
-    // Счётчики — по ТЕКУЩЕМУ кадру каждой камеры (последняя лог-строка), а не по
-    // всему кольцевому буферу: «человек в кадре» и «нарушений» должны совпадать
-    // с тем, что видно сейчас. Раньше «Нарушений» считалось по всему буферу логов.
-    Object.values(latestByCam).forEach((log) => {
+    // Счётчики и покамерный список — по ТЕКУЩЕМУ кадру каждой камеры (последняя
+    // лог-строка), а не по всему кольцевому буферу.
+    Object.entries(latestByCam).forEach(([cam, log]) => {
       result.counters.total += parsePeopleCount(log.message)
       const ps = parsePersonsFromMessage(log.message)
       ps.forEach((p) => {
@@ -62,6 +63,7 @@ export function ControlPanel({
         if (p.violation) result.counters.violations += 1
       })
       result.persons.push(...ps)
+      if (ps.length) result.personsByCam.push({ cam, persons: ps })
     })
 
     return result
@@ -79,19 +81,21 @@ export function ControlPanel({
     return "#00b0ff"
   }
 
-  // mode — режим детекции, к которому привязана строка (null = показывать всегда).
-  // Отображаем только то, что реально запрошено детектить (как в DispatcherPanel):
-  // при выключенном «СИЗ» скрываем каску/маску/жилет, при выключенных «Лицах» — жест.
-  const ppeConfigAll: { key: keyof PpeStatus; icon: string; label: string; mode: string | null }[] = [
-    { key: "helmet", icon: "⛑️", label: "СИЗ Каска", mode: "ppe" },
-    { key: "mask", icon: "😷", label: "СИЗ Маска", mode: "ppe" },
-    { key: "vest", icon: "🦺", label: "СИЗ Жилет", mode: "ppe" },
-    { key: "gesture", icon: "👌", label: "Жест ОК", mode: "faces" },
-    { key: "zone", icon: "⚠️", label: "Опасная зона", mode: null },
+  // Панель адаптируется под выбранные режимы детекции:
+  //  • только «Люди» → лишь счётчик людей;
+  //  • + «СИЗ» → плавно появляется блок проверки СИЗ (каска/маска/жилет/зона);
+  //  • + «Лица» → плавно появляется покамерный список «кто на какой камере».
+  // detectModes === null (ещё не загружено) → считаем всё включённым.
+  const peopleOn = detectModes ? detectModes.people !== false : true
+  const ppeOn = detectModes ? detectModes.ppe !== false : true
+  const facesOn = detectModes ? detectModes.faces !== false : true
+
+  const ppeRows: { key: keyof PpeStatus; icon: string; label: string }[] = [
+    { key: "helmet", icon: "⛑️", label: "СИЗ Каска" },
+    { key: "mask", icon: "😷", label: "СИЗ Маска" },
+    { key: "vest", icon: "🦺", label: "СИЗ Жилет" },
+    { key: "zone", icon: "⚠️", label: "Опасная зона" },
   ]
-  const ppeConfig = detectModes
-    ? ppeConfigAll.filter((i) => !i.mode || detectModes[i.mode] !== false)
-    : ppeConfigAll
 
   const ppeSubs: Record<string, (val: boolean | null) => string> = {
     helmet: (v) => v === null ? "Ожидание" : v ? "Обнаружена" : "Не обнаружена",
@@ -103,6 +107,7 @@ export function ControlPanel({
 
   return (
     <div style={isSidebar ? styles.sidebar : styles.sheet}>
+      <style>{`@keyframes cardReveal{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:translateY(0)}}`}</style>
       <div style={styles.panelCard}>
         <div style={styles.cardTitle}>Управление</div>
         <button style={styles.btnStart} onClick={onStart} disabled={isRunning}>
@@ -128,81 +133,114 @@ export function ControlPanel({
         </button>
       </div>
 
-      <div style={styles.panelCard}>
-        <div style={styles.cardTitle}>Статус проверки</div>
-        {ppeConfig.map(({ key, icon, label }) => {
-          const val = ppe[key]
-          const ok = val === true
-          const fail = val === false
-          const neutral = val === null
+      {/* «Люди» — базовый режим: счётчик людей в кадре. */}
+      {peopleOn && (
+        <div style={styles.panelCard}>
+          <div style={styles.cardTitle}>Счётчик людей</div>
+          <div style={styles.counterBig}>{counters.total}</div>
+          <div style={styles.counterSub}>человек в кадре</div>
 
-          let wrapClass = styles.ppeIconNeutral
-          let checkClass = styles.ppeCheckNeutral
-          let checkText = "—"
+          <div style={styles.peopleRow}>
+            {persons.length === 0 ? (
+              <span style={{ fontSize: ".75rem", color: "#888" }}>нет людей</span>
+            ) : (
+              persons.map((p, i) => (
+                <div
+                  key={i}
+                  style={styles.personIcon}
+                  title={`${p.name}: ${p.approved ? "Допущен" : p.danger && p.violation ? "Зона + нарушение" : p.danger ? "В опасной зоне" : p.violation ? "Нет СИЗ" : "OK"}`}
+                >
+                  <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+                    <circle cx="14" cy="9" r="5" fill={personColor(p)} opacity=".9" />
+                    <path d="M4 24c0-5.5 4.5-9 10-9s10 3.5 10 9" stroke={personColor(p)} strokeWidth="2" strokeLinecap="round" fill="none" opacity=".9" />
+                  </svg>
+                  <span style={{ fontSize: ".6rem", color: personColor(p), fontFamily: "monospace" }}>{i + 1}</span>
+                </div>
+              ))
+            )}
+          </div>
 
-          if (ok) {
-            wrapClass = styles.ppeIconOk
-            checkClass = styles.ppeCheckOk
-            checkText = "✓"
-          } else if (fail) {
-            wrapClass = styles.ppeIconFail
-            checkClass = styles.ppeCheckFail
-            checkText = "✕"
-          }
-
-          return (
-            <div key={key} style={styles.ppeItem}>
-              <div style={{ ...styles.ppeIconWrap, ...wrapClass }}>
-                {icon}
+          {/* «Допущено/Нарушений» осмысленны только когда есть проверка СИЗ или лиц. */}
+          {(ppeOn || facesOn) && (
+            <div style={styles.counterRow}>
+              <div style={styles.counterSmall}>
+                <div style={styles.counterSmallNum}>{counters.approved}</div>
+                <div style={styles.counterSmallLabel}>Допущено</div>
               </div>
-              <div style={styles.ppeInfo}>
-                <div style={styles.ppeName}>{label}</div>
-                <div style={styles.ppeSub}>{ppeSubs[key](val)}</div>
-              </div>
-              <div style={{ ...styles.ppeCheck, ...checkClass }}>
-                {checkText}
+              <div style={styles.counterSmall}>
+                <div style={{ ...styles.counterSmallNum, color: "#f44336" }}>{counters.violations}</div>
+                <div style={styles.counterSmallLabel}>Нарушений</div>
               </div>
             </div>
-          )
-        })}
-      </div>
+          )}
+        </div>
+      )}
 
-      <div style={styles.panelCard}>
-        <div style={styles.cardTitle}>Счётчик людей</div>
-        <div style={styles.counterBig}>{counters.total}</div>
-        <div style={styles.counterSub}>человек в кадре</div>
+      {/* «СИЗ» — плавно появляющийся блок проверки средств защиты. */}
+      {ppeOn && (
+        <div style={{ ...styles.panelCard, animation: "cardReveal 0.35s cubic-bezier(0.4,0,0.2,1) both" }}>
+          <div style={styles.cardTitle}>Статус проверки СИЗ</div>
+          {ppeRows.map(({ key, icon, label }) => {
+            const val = ppe[key]
+            const ok = val === true
+            const fail = val === false
 
-        <div style={styles.peopleRow}>
-          {persons.length === 0 ? (
-            <span style={{ fontSize: ".75rem", color: "#888" }}>нет людей</span>
+            let wrapClass = styles.ppeIconNeutral
+            let checkClass = styles.ppeCheckNeutral
+            let checkText = "—"
+            if (ok) {
+              wrapClass = styles.ppeIconOk
+              checkClass = styles.ppeCheckOk
+              checkText = "✓"
+            } else if (fail) {
+              wrapClass = styles.ppeIconFail
+              checkClass = styles.ppeCheckFail
+              checkText = "✕"
+            }
+
+            return (
+              <div key={key} style={styles.ppeItem}>
+                <div style={{ ...styles.ppeIconWrap, ...wrapClass }}>{icon}</div>
+                <div style={styles.ppeInfo}>
+                  <div style={styles.ppeName}>{label}</div>
+                  <div style={styles.ppeSub}>{ppeSubs[key](val)}</div>
+                </div>
+                <div style={{ ...styles.ppeCheck, ...checkClass }}>{checkText}</div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* «Лица» — плавно появляющийся покамерный список: кто на какой камере. */}
+      {facesOn && (
+        <div style={{ ...styles.panelCard, animation: "cardReveal 0.35s cubic-bezier(0.4,0,0.2,1) both" }}>
+          <div style={styles.cardTitle}>Люди по камерам</div>
+          {personsByCam.length === 0 ? (
+            <div style={styles.empty}>Никого не распознано</div>
           ) : (
-            persons.map((p, i) => (
-              <div
-                key={i}
-                style={styles.personIcon}
-                title={`${p.name}: ${p.approved ? "Допущен" : p.danger && p.violation ? "Зона + нарушение" : p.danger ? "В опасной зоне" : p.violation ? "Нет СИЗ" : "OK"}`}
-              >
-                <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
-                  <circle cx="14" cy="9" r="5" fill={personColor(p)} opacity=".9" />
-                  <path d="M4 24c0-5.5 4.5-9 10-9s10 3.5 10 9" stroke={personColor(p)} strokeWidth="2" strokeLinecap="round" fill="none" opacity=".9" />
-                </svg>
-                <span style={{ fontSize: ".6rem", color: personColor(p), fontFamily: "monospace" }}>{i + 1}</span>
+            personsByCam.map(({ cam, persons: camPersons }) => (
+              <div key={cam} style={styles.camGroup}>
+                <div style={styles.camHeader}>
+                  <span style={styles.camDot} />
+                  {cam.toUpperCase()}
+                  <span style={styles.camCount}>{camPersons.length}</span>
+                </div>
+                {camPersons.map((p, i) => (
+                  <div key={i} style={styles.personRow}>
+                    <span style={{ ...styles.personDot, background: personColor(p) }} />
+                    <span style={styles.personName}>{p.name}</span>
+                    {p.ppe && <span style={styles.personPpe}>{p.ppe}</span>}
+                    <span style={{ color: personColor(p), fontFamily: "monospace", fontSize: "0.7rem" }}>
+                      {p.approved ? "✓" : p.violation ? "✗" : p.danger ? "⚠" : "•"}
+                    </span>
+                  </div>
+                ))}
               </div>
             ))
           )}
         </div>
-
-        <div style={styles.counterRow}>
-          <div style={styles.counterSmall}>
-            <div style={styles.counterSmallNum}>{counters.approved}</div>
-            <div style={styles.counterSmallLabel}>Допущено</div>
-          </div>
-          <div style={styles.counterSmall}>
-            <div style={{ ...styles.counterSmallNum, color: "#f44336" }}>{counters.violations}</div>
-            <div style={styles.counterSmallLabel}>Нарушений</div>
-          </div>
-        </div>
-      </div>
+      )}
     </div>
   )
 }
@@ -404,6 +442,72 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     gap: "10px",
     marginTop: "12px",
+  },
+  empty: {
+    fontSize: "clamp(0.7rem, 1.5vw, 0.78rem)",
+    color: "#888",
+    textAlign: "center" as const,
+    padding: "12px 0",
+  },
+  camGroup: {
+    marginBottom: "10px",
+  },
+  camHeader: {
+    display: "flex",
+    alignItems: "center",
+    gap: "6px",
+    fontSize: "0.62rem",
+    fontWeight: 700,
+    letterSpacing: "1.5px",
+    color: "#888",
+    textTransform: "uppercase" as const,
+    marginBottom: "6px",
+  },
+  camDot: {
+    width: "6px",
+    height: "6px",
+    borderRadius: "50%",
+    background: "#00e676",
+    flexShrink: 0,
+  },
+  camCount: {
+    marginLeft: "auto",
+    fontFamily: "monospace",
+    fontSize: "0.6rem",
+    color: "#666",
+    background: "#1a1a1a",
+    border: "1px solid #333",
+    borderRadius: "4px",
+    padding: "0 5px",
+  },
+  personRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    padding: "6px 8px",
+    marginBottom: "4px",
+    background: "#2a2a2a",
+    borderRadius: "6px",
+  },
+  personDot: {
+    width: "8px",
+    height: "8px",
+    borderRadius: "50%",
+    flexShrink: 0,
+  },
+  personName: {
+    fontSize: "0.75rem",
+    color: "#ffffff",
+    fontFamily: "'Inter', sans-serif",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap" as const,
+  },
+  personPpe: {
+    marginLeft: "auto",
+    fontFamily: "monospace",
+    fontSize: "0.65rem",
+    color: "#888",
   },
   counterSmall: {
     flex: 1,
