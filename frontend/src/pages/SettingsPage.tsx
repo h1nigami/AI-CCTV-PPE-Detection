@@ -16,7 +16,7 @@ export default function SettingsPage() {
       const list = Object.entries(data.cameras).map(([name, cfg]) => ({
         name,
         source: typeof cfg === "object" && cfg !== null ? cfg.source : cfg,
-        detect_enabled: true,
+        detect_enabled: typeof cfg === "object" && cfg !== null ? cfg.detect_enabled : true,
       }))
       setCameras(list)
     } catch {

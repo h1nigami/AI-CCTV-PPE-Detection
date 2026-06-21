@@ -1,6 +1,7 @@
 import { useMemo } from "react"
 import type { LogEntry, PpeStatus, PersonSummary } from "../types"
 import { useCamerasContext } from "../contexts/CameraContext"
+import { parsePpeFromMessage, parsePersonsFromMessage, parsePeopleCount } from "../utils/ppeParse"
 
 interface ControlPanelProps {
   variant?: "sidebar" | "sheet"
@@ -45,74 +46,20 @@ export function ControlPanel({
     })
 
     const src = selectedCam ? latestByCam[selectedCam] : Object.values(latestByCam)[0]
+    result.ppe = parsePpeFromMessage(src?.message)
 
-    if (src?.message) {
-      const m = src.message
-      if (!m.includes("Людей:")) {
-        result.ppe = { helmet: null, mask: null, vest: null, zone: null, gesture: null }
-      } else {
-        const personParts = m.split(" | ").filter((p) => /^[^[]+?\[.*?\]:/.test(p))
-
-        if (personParts.length === 0) {
-          result.ppe = { helmet: null, mask: null, vest: null, zone: null, gesture: null }
-        } else {
-          let helmetOk = true, maskOk = true, vestOk = true
-          let inDanger = false
-          let hasPass = false
-          for (const part of personParts) {
-            const ppeMatch = part.match(/\[(.*?)\]/)
-            if (ppeMatch) {
-              const ppe = ppeMatch[1]
-              if (ppe.includes("!К")) helmetOk = false
-              if (ppe.includes("!М")) maskOk = false
-              if (ppe.includes("!Ж")) vestOk = false
-            }
-            if (part.includes("ОПАСНАЯ ЗОНА")) inDanger = true
-            if (part.includes("ПРОПУСК")) hasPass = true
-          }
-          result.ppe = {
-            helmet: helmetOk,
-            mask: maskOk,
-            vest: vestOk,
-            zone: !inDanger,
-            gesture: hasPass,
-          }
-        }
-      }
-    }
-
-    Object.entries(latestByCam).forEach(([camId, log]) => {
-      const parts = (log.message || "").split(" | ")
-      const peopleMatch = log.message.match(/Людей:\s*(\d+)/)
-      const people = peopleMatch ? parseInt(peopleMatch[1]) : 0
-      result.counters.total += people
-      const a = (log.message || "").match(/ПРОПУСК/g)
-      if (a) result.counters.approved += a.length
-
-      const personParts = parts.filter((p) => {
-        if (p.startsWith("Людей:") || p.startsWith("Нет СИЗ")) return false
-        return /^[^\[\:]+(?:\[.*?\])?\s*:\s/.test(p)
+    // Счётчики — по ТЕКУЩЕМУ кадру каждой камеры (последняя лог-строка), а не по
+    // всему кольцевому буферу: «человек в кадре» и «нарушений» должны совпадать
+    // с тем, что видно сейчас. Раньше «Нарушений» считалось по всему буферу логов.
+    Object.values(latestByCam).forEach((log) => {
+      result.counters.total += parsePeopleCount(log.message)
+      const ps = parsePersonsFromMessage(log.message)
+      ps.forEach((p) => {
+        if (p.approved) result.counters.approved += 1
+        if (p.violation) result.counters.violations += 1
       })
-      personParts.forEach((part, idx) => {
-        const ppeMatch = part.match(/\[(.*?)\]/)
-        const ppeStr = ppeMatch ? ppeMatch[1] + " " : ""
-        const nameMatch = part.match(/^([^[]+?)\s*\[/)
-        const name = nameMatch ? nameMatch[1].trim() : part.split(":")[0].trim()
-
-        result.persons.push({
-          name,
-          ppe: ppeStr,
-          approved: part.includes("ПРОПУСК"),
-          danger: part.includes("ОПАСНАЯ"),
-          violation: ppeStr.includes("!К") || ppeStr.includes("!М") || ppeStr.includes("!Ж"),
-          index: idx,
-        })
-      })
+      result.persons.push(...ps)
     })
-
-    result.counters.violations = logs.filter(
-      (l) => l.category === "нарушение" || l.category === "violation",
-    ).length
 
     return result
   }, [logs, selectedCam])

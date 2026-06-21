@@ -22,12 +22,12 @@ interface CameraGridProps {
 
 export function CameraGrid({ fullscreenCam, onCamClick, isRunning, isLandscape }: CameraGridProps) {
   const bp = useBreakpoint()
-  const { filteredCameras, openDispatcher } = useCamerasContext()
+  const { cameras, openDispatcher } = useCamerasContext()
 
   // Если полноэкран — показываем только выбранную камеру
   const visibleCams: CameraInfo[] = fullscreenCam
-    ? filteredCameras.filter((c) => c.name === fullscreenCam)
-    : filteredCameras
+    ? cameras.filter((c) => c.name === fullscreenCam)
+    : cameras
 
   // Определяем количество колонок
   const cols = useMemo(() => {
@@ -59,7 +59,7 @@ export function CameraGrid({ fullscreenCam, onCamClick, isRunning, isLandscape }
               <path d="M8 40c0-8 7-14 16-14s16 6 16 14" stroke="#4a6a8a" strokeWidth="2" strokeLinecap="round" />
             </svg>
           </div>
-          <div style={styles.placeholderText}>Нет камер в этой группе</div>
+          <div style={styles.placeholderText}>Нет камер</div>
         </div>
       </div>
     )
