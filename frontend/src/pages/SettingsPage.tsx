@@ -1,82 +1,6 @@
-import { useState, useEffect, useCallback } from "react"
-import { api } from "../api/client"
-import type { CameraInfo } from "../types"
+import { CameraManager } from "../components/CameraManager"
 
 export default function SettingsPage() {
-  const [cameras, setCameras] = useState<CameraInfo[]>([])
-  const [newName, setNewName] = useState("")
-  const [newSource, setNewSource] = useState("")
-  const [status, setStatus] = useState("")
-  const [editingId, setEditingId] = useState<string | null>(null)
-  const [editingName, setEditingName] = useState("")
-  const [editingSource, setEditingSource] = useState("")
-  const refresh = useCallback(async () => {
-    try {
-      const data = await api.getCameras()
-      const list = Object.entries(data.cameras).map(([name, cfg]) => ({
-        name,
-        source: typeof cfg === "object" && cfg !== null ? cfg.source : cfg,
-        detect_enabled: typeof cfg === "object" && cfg !== null ? cfg.detect_enabled : true,
-      }))
-      setCameras(list)
-    } catch {
-      // ignore
-    }
-  }, [])
-
-  useEffect(() => {
-    refresh()
-  }, [refresh])
-
-  const handleAdd = async () => {
-    if (!newName.trim() || !newSource.trim()) {
-      setStatus("Заполните имя и источник")
-      return
-    }
-    try {
-      const srcInt = parseInt(newSource)
-      await api.addCamera(newName.trim(), isNaN(srcInt) ? newSource.trim() : srcInt)
-      setNewName("")
-      setNewSource("")
-      setStatus("OK")
-      refresh()
-    } catch (err) {
-      setStatus("ERR " + (err as Error).message)
-    }
-  }
-
-  const handleDelete = async (id: string) => {
-    try {
-      await api.deleteCamera(id)
-      refresh()
-    } catch {
-      // ignore
-    }
-  }
-
-  const handleRename = async (oldId: string) => {
-    if (!editingName.trim()) return
-    try {
-      await api.renameCamera(oldId, editingName.trim())
-      setEditingId(null)
-      refresh()
-    } catch (err) {
-      setStatus("ERR " + (err as Error).message)
-    }
-  }
-
-  const handleUpdateSource = async (id: string) => {
-    if (!editingSource.trim()) return
-    try {
-      const srcInt = parseInt(editingSource)
-      await api.updateCamera(id, isNaN(srcInt) ? editingSource.trim() : srcInt)
-      setEditingId(null)
-      refresh()
-    } catch {
-      // ignore
-    }
-  }
-
   return (
     <div style={styles.page}>
       <div style={styles.header}>
@@ -84,119 +8,11 @@ export default function SettingsPage() {
       </div>
 
       <div style={styles.content}>
-        {/* Блок: камеры */}
+        {/* Блок: камеры — общий компонент (тот же, что в модалке дашборда) */}
         <div style={styles.card}>
           <div style={styles.cardTitle}>КАМЕРЫ</div>
           <div style={styles.cardBody}>
-            {/* Форма добавления */}
-            <div style={styles.addRow}>
-              <input
-                style={styles.input}
-                placeholder="Имя (cam4)"
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") handleAdd() }}
-              />
-              <input
-                style={styles.inputWide}
-                placeholder="URL / номер (0)"
-                value={newSource}
-                onChange={(e) => setNewSource(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") handleAdd() }}
-              />
-              <button style={styles.addBtn} onClick={handleAdd}>
-                + Добавить
-              </button>
-            </div>
-
-            {status && (
-              <div
-                style={{
-                  ...styles.statusLine,
-                  color: status.startsWith("OK") ? "#00e676" : status.startsWith("ERR") ? "#f44336" : "#ffd600",
-                }}
-              >
-                {status}
-              </div>
-            )}
-
-            {/* Список камер */}
-            {cameras.length === 0 ? (
-              <div style={styles.empty}>Нет камер</div>
-            ) : (
-              cameras.map((cam) => {
-                const isEditing = editingId === cam.name
-                return (
-                  <div key={cam.name} style={styles.row}>
-                    <div style={styles.avatar}>
-                      {cam.name.charAt(0).toUpperCase()}
-                    </div>
-                    <div style={styles.info}>
-                      {isEditing ? (
-                        <div style={styles.editRow}>
-                          <input
-                            style={styles.inlineInput}
-                            value={editingName}
-                            onChange={(e) => setEditingName(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") handleRename(cam.name)
-                              if (e.key === "Escape") setEditingId(null)
-                            }}
-                            autoFocus
-                          />
-                          <input
-                            style={styles.inlineInputWide}
-                            value={editingSource}
-                            onChange={(e) => setEditingSource(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") handleUpdateSource(cam.name)
-                              if (e.key === "Escape") setEditingId(null)
-                            }}
-                          />
-                          <button style={styles.miniBtn} onClick={() => handleRename(cam.name)}>
-                            SAVE
-                          </button>
-                          <button style={{ ...styles.miniBtn, color: "#888" }} onClick={() => setEditingId(null)}>
-                            CANCEL
-                          </button>
-                        </div>
-                      ) : (
-                        <>
-                          <div style={styles.nameRow}>
-                            <span style={{ color: "#00e676", fontWeight: 600 }}>{cam.name}</span>
-                          </div>
-                          <div style={styles.sourceLine}>
-                            {typeof cam.source === "number"
-                              ? `LOCAL ${cam.source}`
-                              : `RTSP ${cam.source}`}
-                          </div>
-                        </>
-                      )}
-                    </div>
-                    <div style={styles.actions}>
-                      {!isEditing && (
-                        <button
-                          style={styles.miniBtn}
-                          onClick={() => {
-                            setEditingId(cam.name)
-                            setEditingName(cam.name)
-                            setEditingSource(String(cam.source))
-                          }}
-                        >
-                          EDIT
-                        </button>
-                      )}
-                      <button
-                        style={{ ...styles.miniBtn, color: "#ff5566", borderColor: "#ff556644" }}
-                        onClick={() => handleDelete(cam.name)}
-                      >
-                        DEL
-                      </button>
-                    </div>
-                  </div>
-                )
-              })
-            )}
+            <CameraManager />
           </div>
         </div>
 
@@ -212,17 +28,6 @@ export default function SettingsPage() {
       </div>
     </div>
   )
-}
-
-const baseInput: React.CSSProperties = {
-  background: "#1a1a1a",
-  border: "1px solid #333",
-  borderRadius: "6px",
-  padding: "6px 8px",
-  fontFamily: "monospace",
-  fontSize: ".75rem",
-  color: "#ffffff",
-  outline: "none",
 }
 
 const styles: Record<string, React.CSSProperties> = {
@@ -276,107 +81,11 @@ const styles: Record<string, React.CSSProperties> = {
   cardBody: {
     padding: "12px 16px",
   },
-  addRow: {
-    display: "flex",
-    gap: "6px",
-    marginBottom: "8px",
-    flexWrap: "wrap" as const,
-  },
-  input: { ...baseInput, flex: 1, minWidth: "80px" },
-  inputWide: { ...baseInput, flex: 2, minWidth: "140px" },
-  addBtn: {
-    background: "#2a2a2a",
-    border: "1px solid #00e676",
-    color: "#00e676",
-    borderRadius: "6px",
-    padding: "6px 12px",
-    cursor: "pointer",
-    fontFamily: "'Inter', sans-serif",
-    fontWeight: 600,
-    fontSize: ".7rem",
-    textTransform: "uppercase" as const,
-  },
-  statusLine: {
-    fontFamily: "monospace",
-    fontSize: ".7rem",
-    marginBottom: "8px",
-  },
-  empty: {
-    fontFamily: "monospace",
-    fontSize: "0.7rem",
-    color: "#888",
-    textAlign: "center" as const,
-    padding: "20px",
-  },
   placeholder: {
     fontFamily: "monospace",
     fontSize: "0.7rem",
     color: "#888",
     textAlign: "center" as const,
     padding: "20px",
-  },
-  row: {
-    display: "flex",
-    alignItems: "center",
-    gap: "10px",
-    padding: "10px 12px",
-    marginBottom: "6px",
-    background: "#2a2a2a",
-    border: "1px solid #333",
-    borderRadius: "8px",
-  },
-  avatar: {
-    width: "36px",
-    height: "36px",
-    borderRadius: "50%",
-    background: "#333",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontFamily: "monospace",
-    fontSize: "0.8rem",
-    color: "#00e676",
-    flexShrink: 0,
-  },
-  info: {
-    flex: 1,
-    minWidth: 0,
-  },
-  nameRow: {
-    fontFamily: "'Inter', sans-serif",
-    fontSize: "0.85rem",
-    display: "flex",
-    alignItems: "center",
-    gap: "6px",
-    marginBottom: "2px",
-  },
-  sourceLine: {
-    fontFamily: "monospace",
-    fontSize: "0.7rem",
-    color: "#888",
-  },
-  editRow: {
-    display: "flex",
-    gap: "4px",
-    flexWrap: "wrap" as const,
-    alignItems: "center",
-  },
-  inlineInput: { ...baseInput, width: "100px" },
-  inlineInputWide: { ...baseInput, width: "160px" },
-  actions: {
-    display: "flex",
-    gap: "4px",
-    flexShrink: 0,
-  },
-  miniBtn: {
-    background: "none",
-    border: "1px solid #333",
-    borderRadius: "6px",
-    color: "#888",
-    cursor: "pointer",
-    padding: "2px 8px",
-    fontFamily: "monospace",
-    fontSize: "0.65rem",
-    transition: "all .2s",
   },
 }
