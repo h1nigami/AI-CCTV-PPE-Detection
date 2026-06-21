@@ -57,6 +57,8 @@ interface CameraContextType {
   detectModes: Record<string, boolean> | null
   /** Обновить режимы детекции с бэка */
   refreshDetectModes: () => Promise<void>
+  /** Сохранить режимы детекции на бэк (оптимистично обновляет состояние) */
+  updateDetectModes: (modes: Record<string, boolean>) => Promise<void>
 }
 
 const CameraContext = createContext<CameraContextType | null>(null)
@@ -135,6 +137,19 @@ export function CameraProvider({ children }: { children: ReactNode }) {
       // ignore
     }
   }, [])
+
+  // Сохранение режимов на бэк через контекст — единый источник истины, чтобы
+  // все потребители (Header, ControlPanel, DispatcherPanel) обновлялись сразу,
+  // а не ждали фонового поллинга (раньше Header держал своё локальное состояние).
+  const updateDetectModes = useCallback(async (next: Record<string, boolean>) => {
+    setDetectModes(next) // оптимистично
+    try {
+      const data = await api.setDetectModes(next)
+      if (data.modes) setDetectModes(data.modes)
+    } catch {
+      refreshDetectModes() // откат к актуальному состоянию бэка
+    }
+  }, [refreshDetectModes])
 
   // Первичная загрузка detectModes и фоновый поллинг при isRunning
   useEffect(() => {
@@ -215,6 +230,7 @@ export function CameraProvider({ children }: { children: ReactNode }) {
         logs,
         detectModes,
         refreshDetectModes,
+        updateDetectModes,
       }}
     >
       {children}

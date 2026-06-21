@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from "react"
 import type { LogEntry } from "../types"
+import { api } from "../api/client"
+import { useCamerasContext } from "../contexts/CameraContext"
 
 interface EventsPanelProps {
   variant?: "sidebar" | "sheet"
@@ -15,6 +17,8 @@ const LOG_ICONS: Record<string, string> = {
 }
 
 export function EventsPanel({ variant = "sidebar", logs }: EventsPanelProps) {
+  const { isRunning } = useCamerasContext()
+  // Реальные метрики с бэка (/api/stats), а не случайные числа.
   const [cpu, setCpu] = useState(0)
   const [ram, setRam] = useState(0)
   const [fps, setFps] = useState(0)
@@ -22,27 +26,33 @@ export function EventsPanel({ variant = "sidebar", logs }: EventsPanelProps) {
   const isSidebar = variant === "sidebar"
 
   useEffect(() => {
-    const update = () => {
-      setCpu(30 + Math.random() * 40)
-      setRam(50 + Math.random() * 20)
-      setFps(20 + Math.random() * 10)
+    let alive = true
+    const update = async () => {
+      try {
+        const s = await api.getStats()
+        if (!alive) return
+        setCpu(s.system?.cpu_percent ?? 0)
+        setRam(s.system?.memory_percent ?? 0)
+        // Агрегатный FPS — сумма по всем камерам.
+        const totalFps = Object.values(s.cameras || {}).reduce((sum, c) => sum + (c.fps || 0), 0)
+        setFps(totalFps)
+      } catch {
+        // бэк недоступен — оставляем прошлые значения
+      }
     }
     update()
     const id = setInterval(update, 2000)
-    return () => clearInterval(id)
-  }, [])
+    return () => {
+      alive = false
+      clearInterval(id)
+    }
+  }, [isRunning])
 
   useEffect(() => {
     if (logBoxRef.current) {
       logBoxRef.current.scrollTop = 0
     }
   }, [logs])
-
-  const handleClear = () => {
-    if (logBoxRef.current) {
-      logBoxRef.current.innerHTML = ""
-    }
-  }
 
   const handleExport = () => {
     const text = logs
@@ -96,9 +106,6 @@ export function EventsPanel({ variant = "sidebar", logs }: EventsPanelProps) {
       </div>
 
       <div style={styles.logActions}>
-        <button style={styles.btnSm} onClick={handleClear}>
-          Очистить
-        </button>
         <button style={styles.btnSm} onClick={handleExport}>
           Экспорт
         </button>

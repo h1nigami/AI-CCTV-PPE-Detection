@@ -1,14 +1,12 @@
-import { useMemo, useRef, useEffect } from "react"
+import { useMemo } from "react"
 import type { LogEntry, PpeStatus, PersonSummary } from "../types"
-import { api } from "../api/client"
+import { useCamerasContext } from "../contexts/CameraContext"
 
 interface ControlPanelProps {
   variant?: "sidebar" | "sheet"
   isRunning: boolean
   selectedCam: string | null
   logs: LogEntry[]
-  lastLogIdsRef: React.MutableRefObject<Record<string, string>>
-  addNotification: (type: string, title: string, sub?: string, duration?: number) => void
   onStart: () => void
   onStop: () => void
   onShowGallery: () => void
@@ -20,14 +18,13 @@ export function ControlPanel({
   isRunning,
   selectedCam,
   logs,
-  lastLogIdsRef,
-  addNotification,
   onStart,
   onStop,
   onShowGallery,
   onShowCameraManager,
 }: ControlPanelProps) {
   const isSidebar = variant === "sidebar"
+  const { detectModes } = useCamerasContext()
 
   const { ppe, counters, persons } = useMemo(() => {
     const result: {
@@ -132,13 +129,19 @@ export function ControlPanel({
     return "#00b0ff"
   }
 
-  const ppeConfig: { key: keyof PpeStatus; icon: string; label: string }[] = [
-    { key: "helmet", icon: "⛑️", label: "СИЗ Каска" },
-    { key: "mask", icon: "😷", label: "СИЗ Маска" },
-    { key: "vest", icon: "🦺", label: "СИЗ Жилет" },
-    { key: "gesture", icon: "👌", label: "Жест ОК" },
-    { key: "zone", icon: "⚠️", label: "Опасная зона" },
+  // mode — режим детекции, к которому привязана строка (null = показывать всегда).
+  // Отображаем только то, что реально запрошено детектить (как в DispatcherPanel):
+  // при выключенном «СИЗ» скрываем каску/маску/жилет, при выключенных «Лицах» — жест.
+  const ppeConfigAll: { key: keyof PpeStatus; icon: string; label: string; mode: string | null }[] = [
+    { key: "helmet", icon: "⛑️", label: "СИЗ Каска", mode: "ppe" },
+    { key: "mask", icon: "😷", label: "СИЗ Маска", mode: "ppe" },
+    { key: "vest", icon: "🦺", label: "СИЗ Жилет", mode: "ppe" },
+    { key: "gesture", icon: "👌", label: "Жест ОК", mode: "faces" },
+    { key: "zone", icon: "⚠️", label: "Опасная зона", mode: null },
   ]
+  const ppeConfig = detectModes
+    ? ppeConfigAll.filter((i) => !i.mode || detectModes[i.mode] !== false)
+    : ppeConfigAll
 
   const ppeSubs: Record<string, (val: boolean | null) => string> = {
     helmet: (v) => v === null ? "Ожидание" : v ? "Обнаружена" : "Не обнаружена",
