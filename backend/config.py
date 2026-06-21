@@ -173,6 +173,13 @@ REID_EMB_MAX_AGE_DAYS = float(os.getenv("REID_EMB_MAX_AGE_DAYS", "30"))
 # Как часто (сек) фоновый цикл состаривает эмбеддинги (запись на диск только
 # при реальном удалении). По умолчанию раз в час.
 REID_EMB_CLEAN_INTERVAL = float(os.getenv("REID_EMB_CLEAN_INTERVAL", "3600"))
+# TTL дескрипторов ТЕЛА (Body Re-ID). Внешний вид завязан на одежду и устаревает
+# быстро (день-два), поэтому срок жизни короче, чем у лиц, и без защиты якоря.
+# Сохраняются на диск (flush), переживают перезапуск в пределах TTL.
+REID_BODY_MAX_AGE_DAYS = float(os.getenv("REID_BODY_MAX_AGE_DAYS", "2"))
+# Как часто (сек) фоновый цикл сбрасывает на диск выученное за сессию (липкие
+# лица + дескрипторы тела) — flush пишет pickle только при реальных изменениях.
+REID_FLUSH_INTERVAL = float(os.getenv("REID_FLUSH_INTERVAL", "30"))
 REID_GALLERY_PATH = BASE_DIR / "data" / "face_gallery.pkl"
 REID_DET_SIZE = (640, 640)
 REID_FRAME_SKIP = 3

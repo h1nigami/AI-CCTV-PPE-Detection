@@ -19,6 +19,7 @@ from backend.config import (
     MODEL_PATH, POSE_MODEL_PATH, CLASS_NAMES, CAMERAS, CONF_THRESH,
     REID_GALLERY_PATH, REID_DET_SIZE, REID_FRAME_SKIP, REID_MAX_AGE_DAYS,
     REID_EMB_MAX_AGE_DAYS, REID_EMB_CLEAN_INTERVAL,
+    REID_BODY_MAX_AGE_DAYS, REID_FLUSH_INTERVAL,
     EVENT_PRE_FRAMES, EVENT_POST_FRAMES, EVENT_MAX_FRAMES, EVENT_CLIP_FPS,
     VIOLATION_LOGS_DIR, get_camera_config, VOICE_ALERT_COOLDOWN,
     MOTION_DETECTION_ENABLED, MOTION_THRESHOLD, MOTION_MIN_AREA,
@@ -94,6 +95,8 @@ if state.gallery is not None:
     # Затухание памяти по времени: лишние постаревшие ракурсы стираются, образ
     # (якорь + last_seen) сохраняется. Периодически повторяется в _heartbeat_loop.
     state.gallery.prune_old_embeddings(REID_EMB_MAX_AGE_DAYS)
+    # Дескрипторы тела (одежда) — короткий TTL: при старте чистим устаревшие.
+    state.gallery.prune_old_bodies(REID_BODY_MAX_AGE_DAYS)
 # Пороги body Re-ID — под фактический бэкенд (deep OSNet vs цветовой fallback).
 if body_recognizer is not None:
     state.configure_body(body_recognizer.match_threshold,
@@ -670,6 +673,9 @@ def stop_live():
             _finalize_recording(cam_id, rec)
     for buf in annotated_buffers.values():
         buf.clear()
+    # Гарантированный сброс выученного за сессию на диск при остановке.
+    if state.gallery is not None:
+        state.gallery.flush()
     print("Детекция остановлена")
 
 
@@ -679,6 +685,7 @@ def _heartbeat_loop():
     metrics = get_metrics()
     publisher = get_publisher()
     last_emb_prune = time.time()
+    last_flush = time.time()
     while state.live_active:
         metrics.heartbeat()
         if publisher is not None:
@@ -686,12 +693,17 @@ def _heartbeat_loop():
                 "ts": time.time(), "uptime_seconds": metrics.uptime_seconds(),
                 "cameras": len(CAMERAS),
             })
-        # Состаривание памяти эмбеддингов по таймеру (на своём интервале, чтобы
-        # не дёргать диск на каждом heartbeat — _save только при удалении).
-        if (state.gallery is not None and REID_EMB_MAX_AGE_DAYS > 0
-                and time.time() - last_emb_prune >= REID_EMB_CLEAN_INTERVAL):
+        # Состаривание памяти по таймеру (на своём интервале, чтобы не дёргать
+        # диск на каждом heartbeat — _save только при реальном удалении).
+        if (state.gallery is not None and time.time() - last_emb_prune >= REID_EMB_CLEAN_INTERVAL):
             state.gallery.prune_old_embeddings(REID_EMB_MAX_AGE_DAYS)
+            state.gallery.prune_old_bodies(REID_BODY_MAX_AGE_DAYS)
             last_emb_prune = time.time()
+        # Сброс выученного за сессию (липкие лица + дескрипторы тела) на диск,
+        # только если что-то менялось — чтобы узнавание переживало перезапуск.
+        if (state.gallery is not None and time.time() - last_flush >= REID_FLUSH_INTERVAL):
+            state.gallery.flush()
+            last_flush = time.time()
         # Дробный сон, чтобы быстро реагировать на stop_live.
         slept = 0.0
         while state.live_active and slept < MQTT_HEARTBEAT_INTERVAL:

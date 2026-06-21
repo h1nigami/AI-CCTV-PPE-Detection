@@ -491,3 +491,82 @@ class TestEmbeddingMemoryAging:
         gal = FaceGallery(gallery_path, sim_threshold=0.55, max_embeddings_per_id=5)
         with gal._lock:
             assert len(gal._gallery[1]['embedding_ts']) == 2
+
+
+class TestBodyMemoryPersistence:
+    """Дескрипторы тела сохраняются на диск (flush) и устаревают по короткому
+    TTL — узнавание «со спины» переживает перезапуск в пределах срока жизни."""
+
+    def _body(self):
+        e = np.random.randn(512).astype(np.float32)
+        return e / np.linalg.norm(e)
+
+    def test_add_body_records_ts_and_marks_dirty(self, gallery, normalized_embedding):
+        gid = gallery.match_or_register(normalized_embedding, "cam01", quality=0.9)
+        assert gallery._dirty is False                  # регистрация уже сохранена
+        assert gallery.add_body(gid, self._body()) is True
+        assert gallery._dirty is True                   # тело не пишется сразу
+        with gallery._lock:
+            data = gallery._gallery[gid]
+            assert len(data['body_ts']) == len(data['body_embeddings']) == 1
+
+    def test_flush_writes_only_when_dirty(self, gallery, normalized_embedding):
+        gid = gallery.match_or_register(normalized_embedding, "cam01", quality=0.9)
+        gallery.add_body(gid, self._body())
+        assert gallery.flush() is True                  # были изменения
+        assert gallery._dirty is False
+        assert gallery.flush() is False                 # чисто — не пишем
+
+    def test_flush_persists_body_across_reload(self, gallery_path, normalized_embedding):
+        from backend.reid.gallery import FaceGallery
+        g1 = FaceGallery(gallery_path, sim_threshold=0.55, max_embeddings_per_id=5)
+        gid = g1.match_or_register(normalized_embedding, "cam01", quality=0.9)
+        g1.add_body(gid, self._body())
+        g1.flush()
+        g2 = FaceGallery(gallery_path, sim_threshold=0.55, max_embeddings_per_id=5)
+        with g2._lock:
+            assert len(g2._gallery[gid]['body_embeddings']) == 1
+            assert len(g2._gallery[gid]['body_ts']) == 1
+        g2.clear()
+
+    def test_prune_old_bodies_removes_all_stale(self, gallery, normalized_embedding):
+        gid = gallery.match_or_register(normalized_embedding, "cam01", quality=0.9)
+        for _ in range(3):
+            gallery.add_body(gid, self._body())
+        with gallery._lock:
+            ts = gallery._gallery[gid]['body_ts']
+            for i in range(len(ts)):
+                ts[i] = time.time() - 5 * 86400         # все старше TTL=2 дн.
+        assert gallery.prune_old_bodies(max_age_days=2) == 3
+        with gallery._lock:
+            assert gallery._gallery[gid]['body_embeddings'] == []   # якоря нет, чистим всё
+
+    def test_prune_old_bodies_keeps_recent(self, gallery, normalized_embedding):
+        gid = gallery.match_or_register(normalized_embedding, "cam01", quality=0.9)
+        gallery.add_body(gid, self._body())
+        assert gallery.prune_old_bodies(max_age_days=2) == 0
+        with gallery._lock:
+            assert len(gallery._gallery[gid]['body_embeddings']) == 1
+
+    def test_prune_old_bodies_disabled_with_zero(self, gallery, normalized_embedding):
+        gid = gallery.match_or_register(normalized_embedding, "cam01", quality=0.9)
+        gallery.add_body(gid, self._body())
+        with gallery._lock:
+            gallery._gallery[gid]['body_ts'][0] = time.time() - 999 * 86400
+        assert gallery.prune_old_bodies(max_age_days=0) == 0
+        with gallery._lock:
+            assert len(gallery._gallery[gid]['body_embeddings']) == 1
+
+    def test_backward_compat_body_without_ts(self, gallery_path, normalized_embedding):
+        import pickle
+        from backend.reid.gallery import FaceGallery
+        body = self._body()
+        old = {'gallery': {1: {'embeddings': [normalized_embedding],
+                               'body_embeddings': [body, body],
+                               'last_seen': time.time(), 'cameras': {'cam01'},
+                               'name': 'Иван'}}, 'next_id': 2}
+        with open(gallery_path, 'wb') as f:
+            pickle.dump(old, f)
+        gal = FaceGallery(gallery_path, sim_threshold=0.55, max_embeddings_per_id=5)
+        with gal._lock:
+            assert len(gal._gallery[1]['body_ts']) == 2
