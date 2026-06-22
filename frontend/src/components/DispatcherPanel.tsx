@@ -4,7 +4,7 @@ import type { PpeStatus, PersonSummary } from "../types"
 import { parsePpeFromMessage, parsePersonsFromMessage } from "../utils/ppeParse"
 
 export function DispatcherPanel() {
-  const { dispatcher, closeDispatcher, cameras, logs: allLogs, detectModes } = useCamerasContext()
+  const { dispatcher, closeDispatcher, cameras, logs: allLogs, detectModes, ppeRequired } = useCamerasContext()
   const { cameraName } = dispatcher
 
   const camera = useMemo(
@@ -63,9 +63,16 @@ export function DispatcherPanel() {
               { key: "zone" as const, icon: "⚠", label: "Зона", mode: null },
               { key: "gesture" as const, icon: "👌", label: "Жест", mode: "faces" },
             ]
-            const visible = detectModes
-              ? allItems.filter((i) => !i.mode || detectModes[i.mode] !== false)
-              : allItems
+            // Видимость строки: (1) режим детекции включён; (2) для СИЗ
+            // (helmet/mask/vest) — средство требуется в настройках (ppeRequired).
+            // «Зона»/«Жест» (mode null/faces) фильтром СИЗ не затрагиваются.
+            const ppeKeys = ["helmet", "mask", "vest"]
+            const visible = allItems.filter((i) => {
+              if (detectModes && i.mode && detectModes[i.mode] === false) return false
+              if (ppeKeys.includes(i.key) && ppeRequired !== null && !ppeRequired.includes(i.key))
+                return false
+              return true
+            })
             return visible.map(({ key, icon, label }) => {
               const val = ppe[key]
               const ok = val === true
