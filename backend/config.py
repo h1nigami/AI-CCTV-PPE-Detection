@@ -344,3 +344,24 @@ def save_detect_modes():
     _DETECT_MODES_PATH.parent.mkdir(parents=True, exist_ok=True)
     with open(_DETECT_MODES_PATH, "w", encoding="utf-8") as _f:
         json.dump(DETECT_MODES, _f, ensure_ascii=False, indent=2)
+
+
+# ── Обязательные СИЗ для пропуска по жесту «ОК» (рантайм-настройка из UI) ──
+# Персистится в data/ppe_required.json и ПЕРЕОПРЕДЕЛЯЕТ дефолт из env при старте.
+# Мутируется ТОЛЬКО на месте (PPE_REQUIRED_DEFAULT[:] = ...), т.к. список
+# импортирован по значению в main.py — переприсваивание разорвало бы связь.
+_PPE_REQUIRED_PATH = BASE_DIR / "data" / "ppe_required.json"
+try:
+    with open(_PPE_REQUIRED_PATH, encoding="utf-8") as _f:
+        _loaded_ppe = json.load(_f)
+        if isinstance(_loaded_ppe, list):
+            PPE_REQUIRED_DEFAULT[:] = [x for x in ("helmet", "mask", "vest")
+                                      if x in _loaded_ppe]
+except FileNotFoundError:
+    pass
+
+
+def save_ppe_required():
+    _PPE_REQUIRED_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(_PPE_REQUIRED_PATH, "w", encoding="utf-8") as _f:
+        json.dump(PPE_REQUIRED_DEFAULT, _f, ensure_ascii=False, indent=2)

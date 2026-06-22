@@ -137,6 +137,25 @@ def configure_detection_routes(app, state, annotated_buffers, generate_live_feed
                 print(f"[Detection] Face worker switch failed: {exc}")
         return jsonify({"status": "updated", "modes": dict(DETECT_MODES)})
 
+    @app.route("/api/ppe-required", methods=["GET"])
+    def api_get_ppe_required():
+        from backend.config import PPE_REQUIRED_DEFAULT
+        return jsonify({"required": list(PPE_REQUIRED_DEFAULT)})
+
+    @app.route("/api/ppe-required", methods=["PUT"])
+    def api_set_ppe_required():
+        # Какие СИЗ обязательны для выдачи пропуска по жесту «ОК» (дефолт вне
+        # пользовательских зон). Мутируем список НА МЕСТЕ — main.py держит ту же
+        # ссылку. Пустой список → пропуск выдаётся без требования СИЗ.
+        from backend.config import PPE_REQUIRED_DEFAULT, save_ppe_required
+        data = request.get_json() or {}
+        items = data.get("required", [])
+        if not isinstance(items, list):
+            return jsonify({"error": "required должен быть списком"}), 400
+        PPE_REQUIRED_DEFAULT[:] = [x for x in ("helmet", "mask", "vest") if x in items]
+        save_ppe_required()
+        return jsonify({"status": "updated", "required": list(PPE_REQUIRED_DEFAULT)})
+
     @app.route("/api/status")
     def api_status():
         return jsonify({"running": state.live_active})

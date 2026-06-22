@@ -224,6 +224,15 @@ export const api = {
       body: JSON.stringify(modes),
     }),
 
+  // ---- Обязательные СИЗ для пропуска по жесту «ОК» ----
+  getPpeRequired: () =>
+    request<{ required: string[] }>("/api/ppe-required"),
+  setPpeRequired: (required: string[]) =>
+    request<{ status: string; required: string[] }>("/api/ppe-required", {
+      method: "PUT",
+      body: JSON.stringify({ required }),
+    }),
+
   // ---- Голосовые предупреждения ----
   getVoiceAlert: () =>
     request<{ id?: string; cam_id?: string; text?: string; timestamp?: number }>(

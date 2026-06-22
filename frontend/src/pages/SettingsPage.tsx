@@ -1,4 +1,5 @@
 import { CameraManager } from "../components/CameraManager"
+import { PpeRequiredSettings } from "../components/PpeRequiredSettings"
 
 export default function SettingsPage() {
   return (
@@ -13,6 +14,14 @@ export default function SettingsPage() {
           <div style={styles.cardTitle}>КАМЕРЫ</div>
           <div style={styles.cardBody}>
             <CameraManager />
+          </div>
+        </div>
+
+        {/* Блок: какие СИЗ нужны для пропуска по жесту «ОК» */}
+        <div style={styles.card}>
+          <div style={styles.cardTitle}>ОБЯЗАТЕЛЬНЫЕ СИЗ ДЛЯ ПРОПУСКА</div>
+          <div style={styles.cardBody}>
+            <PpeRequiredSettings />
           </div>
         </div>
 
