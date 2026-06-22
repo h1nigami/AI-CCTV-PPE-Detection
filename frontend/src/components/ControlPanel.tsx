@@ -47,11 +47,18 @@ export function ControlPanel({
       if (!latestByCam[l.cam_id]) latestByCam[l.cam_id] = l
     })
 
-    // Индикаторы «Статус проверки» — строго по выбранной/полноэкранной камере.
-    // Пока камера не выбрана, статус неоднозначен (несколько камер) → «—»
-    // (ожидание), а не данные случайной первой камеры.
-    const src = selectedCam ? latestByCam[selectedCam] : undefined
-    result.ppe = parsePpeFromMessage(src?.message)
+    // Индикаторы «Статус проверки СИЗ»: по выбранной/полноэкранной камере, а
+    // если ни одна не выбрана (обычный вид сетки) — не зависаем на «Ожидании»:
+    // при единственной камере берём её, при нескольких — агрегируем по всем
+    // (любое нарушение на любой камере → «не обнаружено»). Иначе панель вечно
+    // показывала «Ожидание», пока оператор не развернёт камеру.
+    const camIds = Object.keys(latestByCam)
+    const ppeMessage = selectedCam
+      ? latestByCam[selectedCam]?.message
+      : camIds.length === 1
+        ? latestByCam[camIds[0]]?.message
+        : camIds.map((c) => latestByCam[c]?.message).filter(Boolean).join(" | ")
+    result.ppe = parsePpeFromMessage(ppeMessage)
 
     // Счётчики и покамерный список — по ТЕКУЩЕМУ кадру каждой камеры (последняя
     // лог-строка), а не по всему кольцевому буферу.
