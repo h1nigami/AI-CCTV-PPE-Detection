@@ -7,8 +7,20 @@ server {
     root /usr/share/nginx/html;
     index index.html;
 
-    # SPA React Router: отдаём файл, иначе фоллбэк на index.html
+    # Хэшированные ассеты (Vite кладёт хэш контента в имя, напр. index-LfTeMWO_.js)
+    # неизменяемы — кэшируем навсегда, чтобы не дёргать сеть на каждый заход.
+    location /assets/ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+        try_files $uri =404;
+    }
+
+    # SPA React Router: отдаём файл, иначе фоллбэк на index.html.
+    # index.html НЕ кэшируем (no-cache → браузер ревалидирует по ETag): иначе
+    # после деплоя он держит в кэше старый index.html со ссылкой на ПРЕЖНИЙ
+    # бандл, и правки фронта «не появляются» без ручного хард-рефреша.
     location / {
+        add_header Cache-Control "no-cache, must-revalidate";
         try_files $uri $uri/ /index.html;
     }
 
