@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react"
 import { api } from "../api/client"
+import { useCamerasContext } from "../contexts/CameraContext"
 
 // ============================================================
 // Настройка обязательных СИЗ для выдачи пропуска по жесту «ОК».
@@ -17,6 +18,7 @@ const ITEMS: { key: PpeKey; icon: string; label: string }[] = [
 ]
 
 export function PpeRequiredSettings() {
+  const { refreshPpeRequired } = useCamerasContext()
   const [required, setRequired] = useState<PpeKey[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -52,6 +54,9 @@ export function PpeRequiredSettings() {
     try {
       const res = await api.setPpeRequired(ordered)
       setRequired((res.required || []) as PpeKey[])
+      // Обновляем контекст, чтобы панель «Статус проверки СИЗ» сразу
+      // показывала только выбранные средства.
+      refreshPpeRequired()
     } catch {
       setError("Не удалось сохранить — изменения не применены")
       // Откатываем оптимистичное изменение.

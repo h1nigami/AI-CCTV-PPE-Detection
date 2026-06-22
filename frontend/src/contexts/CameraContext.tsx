@@ -40,6 +40,12 @@ interface CameraContextType {
   refreshDetectModes: () => Promise<void>
   /** Сохранить режимы детекции на бэк (оптимистично обновляет состояние) */
   updateDetectModes: (modes: Record<string, boolean>) => Promise<void>
+
+  // ---- Обязательные СИЗ для пропуска (helmet/mask/vest) ----
+  /** Какие СИЗ требуются для пропуска по жесту «ОК» (из настроек). null — ещё не загружено. */
+  ppeRequired: string[] | null
+  /** Перечитать обязательные СИЗ с бэка */
+  refreshPpeRequired: () => Promise<void>
 }
 
 const CameraContext = createContext<CameraContextType | null>(null)
@@ -51,6 +57,7 @@ export function CameraProvider({ children }: { children: ReactNode }) {
   const [isRunning, setDetectionRunning] = useState(false)
   const [logs, setLogs] = useState<LogEntry[]>([])
   const [detectModes, setDetectModes] = useState<Record<string, boolean> | null>(null)
+  const [ppeRequired, setPpeRequired] = useState<string[] | null>(null)
 
   // Единый поллинг логов на всё приложение (Dashboard и DispatcherPanel читают
   // их отсюда, чтобы не плодить параллельные интервалы на /detection_log).
@@ -119,13 +126,27 @@ export function CameraProvider({ children }: { children: ReactNode }) {
     }
   }, [refreshDetectModes])
 
-  // Первичная загрузка detectModes и фоновый поллинг при isRunning
+  const refreshPpeRequired = useCallback(async () => {
+    try {
+      const data = await api.getPpeRequired()
+      setPpeRequired(data.required || [])
+    } catch {
+      // ignore
+    }
+  }, [])
+
+  // Первичная загрузка detectModes/ppeRequired и фоновый поллинг при isRunning
+  // (настройка обязательных СИЗ может меняться на странице настроек).
   useEffect(() => {
     refreshDetectModes()
+    refreshPpeRequired()
     if (!isRunning) return
-    const id = setInterval(refreshDetectModes, 10000)
+    const id = setInterval(() => {
+      refreshDetectModes()
+      refreshPpeRequired()
+    }, 10000)
     return () => clearInterval(id)
-  }, [isRunning, refreshDetectModes])
+  }, [isRunning, refreshDetectModes, refreshPpeRequired])
 
   // Получаем статус детекции при монтировании провайдера (один раз)
   useEffect(() => {
@@ -158,6 +179,8 @@ export function CameraProvider({ children }: { children: ReactNode }) {
         detectModes,
         refreshDetectModes,
         updateDetectModes,
+        ppeRequired,
+        refreshPpeRequired,
       }}
     >
       {children}

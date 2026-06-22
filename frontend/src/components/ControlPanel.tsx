@@ -25,7 +25,7 @@ export function ControlPanel({
   onShowCameraManager,
 }: ControlPanelProps) {
   const isSidebar = variant === "sidebar"
-  const { detectModes } = useCamerasContext()
+  const { detectModes, ppeRequired } = useCamerasContext()
 
   const { ppe, counters, persons, personsByCam } = useMemo(() => {
     const result: {
@@ -97,12 +97,19 @@ export function ControlPanel({
   const ppeOn = detectModes ? detectModes.ppe !== false : true
   const facesOn = detectModes ? detectModes.faces !== false : true
 
-  const ppeRows: { key: keyof PpeStatus; icon: string; label: string }[] = [
+  // Строки СИЗ показываем только для тех средств, что требуются в настройках
+  // (ppeRequired). Например, при выбранной только каске строки «Маска»/«Жилет»
+  // не отображаются. «Опасная зона» — не СИЗ, показывается всегда.
+  // ppeRequired === null (ещё не загружено) → показываем все три.
+  const allPpeRows: { key: keyof PpeStatus; icon: string; label: string }[] = [
     { key: "helmet", icon: "⛑️", label: "СИЗ Каска" },
     { key: "mask", icon: "😷", label: "СИЗ Маска" },
     { key: "vest", icon: "🦺", label: "СИЗ Жилет" },
     { key: "zone", icon: "⚠️", label: "Опасная зона" },
   ]
+  const ppeRows = allPpeRows.filter(
+    (r) => r.key === "zone" || ppeRequired === null || ppeRequired.includes(r.key)
+  )
 
   const ppeSubs: Record<string, (val: boolean | null) => string> = {
     helmet: (v) => v === null ? "Ожидание" : v ? "Обнаружена" : "Не обнаружена",
