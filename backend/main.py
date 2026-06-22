@@ -460,6 +460,12 @@ def process_frame(frame, cam_id: str, face_worker=None, det_model=None, det_pose
     voice_approved: list[tuple[int, str]] = []
     detect_people = DETECT_MODES.get("people", True)
     detect_faces_mode = DETECT_MODES.get("faces", True)
+    # Режим «только люди»: СИЗ и лица выключены. Здесь нет смысла в статусах
+    # СИЗ/зоны/пропуска — просто выделяем людей рамкой. Без этого жест «ОК»
+    # (поза детектится независимо от режима) при пустом списке требуемых СИЗ
+    # выдавал «пропуск», который из-за нестабильных global_id (лица выкл.)
+    # разъезжался «на всех».
+    people_only = detect_people and not ppe_on and not detect_faces_mode
     if detected["persons"] and detect_people:
         msg_parts.append(f"Людей: {persons_count}")
         face_embeddings = None
@@ -506,7 +512,7 @@ def process_frame(frame, cam_id: str, face_worker=None, det_model=None, det_pose
             # должен идти ПОСЛЕДНИМ в конъюнкции — у него побочный эффект).
             gesture_ok = (
                 detect_ok_gesture(frame, pbox, det_pose)
-                if (not approved and state.can_gesture(global_id)
+                if (not people_only and not approved and state.can_gesture(global_id)
                     and state.should_run_gesture(global_id))
                 else False
             )
@@ -524,29 +530,37 @@ def process_frame(frame, cam_id: str, face_worker=None, det_model=None, det_pose
                     # Не рисуем «ОДЕНЬТЕ СИЗ» на стриме — показываем уведомление сверху.
                     state.push_notification("missing", "НЕ ХВАТАЕТ СИЗ",
                                             f"{_who}: {', '.join(missing) if missing else 'нужны СИЗ'}")
-            if approved:
-                approved_count += 1
-            elif not fully_equipped and DETECT_MODES.get("ppe", True):
-                violation_count += 1
-            name_tag = f"{person_name} " if person_name else ""
-            if approved:
-                label = f"{name_tag}ПРОПУСК | {ppe}" if ppe else f"{name_tag}ПРОПУСК"
-            elif in_danger:
-                label = f"{name_tag}ОПАСНАЯ ЗОНА | {ppe}" if ppe else f"{name_tag}ОПАСНАЯ ЗОНА"
+            if people_only:
+                # Только люди: нейтральная рамка без текста статусов/пропуска.
+                frame = draw_person(frame, pbox, "", False, False, False)
             else:
-                label = f"{name_tag}Вне зоны | {ppe}" if ppe else f"{name_tag}Вне зоны"
-            frame = draw_person(frame, pbox, label, in_danger, not fully_equipped and DETECT_MODES.get("ppe", True), approved)
-            if fully_equipped and not approved and in_danger:
-                frame = draw_hint(frame, pbox)
-            # Реальный нарушитель для голосовой озвучки: в опасной зоне, без
-            # пропуска, не хватает именно ЕГО требуемых СИЗ. Имя и missing — одного
-            # человека (иначе озвучка путала людей: «нет каски» на человеке в каске).
-            if (in_danger and not approved and not fully_equipped
-                    and missing and DETECT_MODES.get("ppe", True)):
-                voice_violators.append((person_name, list(missing)))
-            # Человек с активным пропуском в зоне — для спокойной голосовой отметки.
-            if in_danger and approved:
-                voice_approved.append((global_id, person_name))
+                if approved:
+                    approved_count += 1
+                elif not fully_equipped and DETECT_MODES.get("ppe", True):
+                    violation_count += 1
+                name_tag = f"{person_name} " if person_name else ""
+                if approved:
+                    label = f"{name_tag}ПРОПУСК | {ppe}" if ppe else f"{name_tag}ПРОПУСК"
+                elif in_danger:
+                    label = f"{name_tag}ОПАСНАЯ ЗОНА | {ppe}" if ppe else f"{name_tag}ОПАСНАЯ ЗОНА"
+                else:
+                    label = f"{name_tag}Вне зоны | {ppe}" if ppe else f"{name_tag}Вне зоны"
+                frame = draw_person(frame, pbox, label, in_danger, not fully_equipped and DETECT_MODES.get("ppe", True), approved)
+                if fully_equipped and not approved and in_danger:
+                    frame = draw_hint(frame, pbox)
+                # Реальный нарушитель для голосовой озвучки: в опасной зоне, без
+                # пропуска, не хватает именно ЕГО требуемых СИЗ. Имя и missing — одного
+                # человека (иначе озвучка путала людей: «нет каски» на человеке в каске).
+                if (in_danger and not approved and not fully_equipped
+                        and missing and DETECT_MODES.get("ppe", True)):
+                    voice_violators.append((person_name, list(missing)))
+                # Человек с активным пропуском в зоне — для спокойной голосовой отметки.
+                if in_danger and approved:
+                    voice_approved.append((global_id, person_name))
+            if people_only:
+                # Только люди: в лог без статусов СИЗ/зоны/пропуска (счётчик
+                # «Людей: N» уже добавлен выше).
+                continue
             part = f"{person_name}" if person_name else "Неизвестный"
             if ppe:
                 part += f" [{ppe}]"
@@ -573,7 +587,9 @@ def process_frame(frame, cam_id: str, face_worker=None, det_model=None, det_pose
         msg_parts.append("Людей не обнаружено")
     if danger_zone is not None:
         msg_parts.append(f"Зона активна ({len(detected['cones'])} конуса)")
-    frame = draw_legend(frame)
+    # Легенда описывает СИЗ/зоны/пропуск — в режиме «только люди» не нужна.
+    if not people_only:
+        frame = draw_legend(frame)
     message = " | ".join(msg_parts)
     category = "нарушение" if has_any_violation else \
         "внимание" if (danger_zone is not None or danger_user) and detected["persons"] else "норма"
