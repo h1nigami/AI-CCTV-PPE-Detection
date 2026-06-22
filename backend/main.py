@@ -388,8 +388,11 @@ def process_frame(frame, cam_id: str, face_worker=None, det_model=None, det_pose
     det_model = det_model if det_model is not None else model
     det_pose = det_pose if det_pose is not None else pose_model
     if not any(DETECT_MODES.values()):
-        frame = draw_legend(frame)
-        return frame, f"{datetime.now().strftime('%H:%M:%S')} [{cam_id}] Детекция отключена", "норма", [], {}
+        # Все режимы выключены — детекция не выполняется, но стрим продолжается:
+        # отдаём сырой кадр без оверлеев. Кортеж из 7 элементов (как в основной
+        # ветке) — иначе воркер падал на распаковке и переставал писать кадры в
+        # annotated_buffers → /video_frame отдавал 204 → фронт «NO SIGNAL».
+        return frame, f"{datetime.now().strftime('%H:%M:%S')} [{cam_id}] Детекция отключена", "норма", [], {}, [], []
     state.cleanup_stale_tracks()
     detected = run_detection(frame, det_model)
     # Пользовательские зоны (нарисованы в редакторе): сперва маски — исключаем
