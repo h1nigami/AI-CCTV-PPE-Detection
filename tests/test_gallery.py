@@ -570,3 +570,131 @@ class TestBodyMemoryPersistence:
         gal = FaceGallery(gallery_path, sim_threshold=0.55, max_embeddings_per_id=5)
         with gal._lock:
             assert len(gal._gallery[1]['body_ts']) == 2
+
+
+class TestStoreMinSim:
+    """Строгий гейт сохранения эмбеддинга по якорю — защита от порчи личности
+    при ByteTrack ID-switch. Гейтим только дописывание (не создание якоря)."""
+
+    def _make_gallery(self, gallery_path, store_min_sim: float):
+        from backend.reid.gallery import FaceGallery
+        return FaceGallery(
+            gallery_path=gallery_path,
+            sim_threshold=0.55,
+            max_embeddings_per_id=5,
+            store_min_sim=store_min_sim,
+        )
+
+    def _make_emb_with_cos(self, anchor, target_cos: float, seed: int = 7, dim: int = 512):
+        """Сконструировать L2-нормированный вектор с заданным косинусом к anchor.
+        Разложение: v = target_cos * anchor + sqrt(1 - target_cos^2) * perp,
+        где perp — единичный вектор, ортогональный anchor."""
+        rng = np.random.RandomState(seed)
+        raw = rng.randn(dim).astype(np.float32)
+        # Выбить компоненту вдоль anchor
+        raw -= np.dot(raw, anchor) * anchor
+        perp = raw / np.linalg.norm(raw)
+        scale = float(np.sqrt(max(0.0, 1.0 - target_cos ** 2)))
+        v = target_cos * anchor + scale * perp
+        return v / np.linalg.norm(v)
+
+    def _anchor_and_close(self, dim=512):
+        """Возвращает (anchor, close): close близок к anchor (cos = 0.75)."""
+        rng = np.random.RandomState(7)
+        anchor = rng.randn(dim).astype(np.float32)
+        anchor /= np.linalg.norm(anchor)
+        close = self._make_emb_with_cos(anchor, 0.75, seed=13)
+        return anchor, close
+
+    def _far_embedding(self, anchor, dim=512, seed=99):
+        """Возвращает эмбеддинг, далёкий от anchor (cos = 0.1, < 0.45 для гейта)."""
+        return self._make_emb_with_cos(anchor, 0.1, seed=seed)
+
+    def test_foreign_emb_not_stored_when_gate_enabled(self, gallery_path):
+        """Чужой эмбеддинг (cos(anchor) < 0.45) не записывается при store_min_sim=0.45."""
+        gal = self._make_gallery(gallery_path, store_min_sim=0.45)
+        anchor, _ = self._anchor_and_close()
+        gid = gal.match_or_register(anchor, "cam01", quality=0.9)
+        info_before = gal.get_info(gid)
+        assert info_before['embedding_count'] == 1
+
+        foreign = self._far_embedding(anchor)
+        sim = float(np.dot(anchor, foreign))
+        assert sim < 0.45, f"Ожидали cos < 0.45, получили {sim:.3f}"
+
+        # add_observation с store=True — чужой эмбеддинг НЕ должен записаться
+        gal.add_observation(gid, "cam01", foreign, quality=0.9, store=True)
+        info_after = gal.get_info(gid)
+        assert info_after['embedding_count'] == 1, (
+            f"Чужой эмбеддинг не должен дописываться (cos={sim:.3f} < store_min_sim=0.45)"
+        )
+        # last_seen всё равно обновился (recall не блокируется)
+        assert info_after['last_seen'] >= info_before['last_seen']
+
+    def test_own_emb_stored_when_close_to_anchor(self, gallery_path):
+        """Близкий эмбеддинг (cos(anchor) = 0.75 > 0.45) дописывается при store_min_sim=0.45."""
+        gal = self._make_gallery(gallery_path, store_min_sim=0.45)
+        anchor, close = self._anchor_and_close()
+
+        sim = float(np.dot(anchor, close))
+        assert sim >= 0.45, f"Ожидали cos >= 0.45, получили {sim:.3f}"
+
+        # close должен пройти и гейт якоря (cos=0.75 >= 0.45) и diversity-гейт
+        # (cos к anchor = 0.75 < diversity_max_sim=0.92 — добавится как новый ракурс)
+        gid = gal.match_or_register(anchor, "cam01", quality=0.9)
+        result = gal.add_observation(gid, "cam01", close, quality=0.9, store=True)
+        assert result is True
+        info = gal.get_info(gid)
+        assert info['embedding_count'] == 2, (
+            f"Близкий эмбеддинг должен дописываться (cos={sim:.3f} >= store_min_sim=0.45)"
+        )
+
+    def test_gate_disabled_allows_foreign_emb(self, gallery_path):
+        """При store_min_sim=0.0 (выключено) чужой эмбеддинг дописывается
+        (обратная совместимость — старое поведение сохранено)."""
+        gal = self._make_gallery(gallery_path, store_min_sim=0.0)
+        anchor, _ = self._anchor_and_close()
+        foreign = self._far_embedding(anchor)
+
+        gid = gal.match_or_register(anchor, "cam01", quality=0.9)
+        gal.add_observation(gid, "cam01", foreign, quality=0.9, store=True)
+        info = gal.get_info(gid)
+        assert info['embedding_count'] == 2, (
+            "При store_min_sim=0.0 гейт выключен — чужой эмбеддинг должен дописываться"
+        )
+
+    def test_anchor_registration_not_gated(self, gallery_path):
+        """Создание новой личности (якорь) работает независимо от store_min_sim.
+        Гейт применяется только к дописыванию, не к первичной регистрации."""
+        gal = self._make_gallery(gallery_path, store_min_sim=0.99)  # очень строгий порог
+        emb = np.random.randn(512).astype(np.float32)
+        emb /= np.linalg.norm(emb)
+        gid = gal.match_or_register(emb, "cam01", quality=0.9)
+        assert gal.has_id(gid)
+        info = gal.get_info(gid)
+        assert info['embedding_count'] == 1, "Якорь должен создаваться при любом store_min_sim"
+
+    def test_match_or_register_store_gated_by_anchor(self, gallery_path):
+        """match_or_register с store=True тоже проходит через _append_embedding:
+        чужой эмбеддинг (cos к якорю < 0.45) не дописывается, даже если сматчился."""
+        gal = self._make_gallery(gallery_path, store_min_sim=0.45)
+        anchor, _ = self._anchor_and_close()
+        gid = gal.match_or_register(anchor, "cam01", quality=0.9)
+
+        # Дописываем второй эмбеддинг, близкий к якорю (cos=0.75), чтобы галерея
+        # получила ≥2 эмбеддингов → threshold discount → порог матча снизится до ~0.37
+        second = self._make_emb_with_cos(anchor, 0.75, seed=21)
+        gal.add_observation(gid, "cam01", second, quality=0.9, store=True)
+        assert gal.get_info(gid)['embedding_count'] == 2  # прошёл гейт (cos=0.75 >= 0.45)
+
+        # Чужой эмбеддинг с cos=0.1 к якорю: гейт должен заблокировать store
+        foreign = self._far_embedding(anchor, seed=77)
+        count_before = gal.get_info(gid)['embedding_count']
+        # match_or_register может вернуть gid (если прошёл порог матча) или новый id
+        result_id = gal.match_or_register(foreign, "cam01", quality=0.9, store=True)
+        if result_id == gid:
+            # Сматчился — гейт по якорю должен заблокировать store
+            assert gal.get_info(gid)['embedding_count'] == count_before, (
+                "Чужой эмбеддинг (cos=0.1 к якорю) не должен дописываться "
+                "при store_min_sim=0.45"
+            )

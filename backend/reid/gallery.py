@@ -17,7 +17,8 @@ except ImportError:
 class FaceGallery:
     def __init__(self, gallery_path: Path, sim_threshold: float = 0.55,
                  max_embeddings_per_id: int = 5, diversity_max_sim: float = 0.92,
-                 max_body_embeddings: int = 12, body_diversity_max_sim: float = 0.97):
+                 max_body_embeddings: int = 12, body_diversity_max_sim: float = 0.97,
+                 store_min_sim: float = 0.0):
         if isinstance(gallery_path, str):
             gallery_path = Path(gallery_path)
         self.gallery_path = gallery_path
@@ -27,6 +28,9 @@ class FaceGallery:
         # Body Re-ID: дескрипторы внешнего вида (одежда) для опознания «со спины».
         self.max_body_embeddings = max_body_embeddings
         self.body_diversity_max_sim = body_diversity_max_sim
+        # Строгий гейт сохранения эмбеддинга по якорю: 0.0 = выключено (обратная
+        # совместимость, тесты создают галерею напрямую без этого аргумента).
+        self.store_min_sim = store_min_sim
         self._lock = threading.Lock()
         self._gallery: Dict[int, Dict] = {}
         self._next_id = 1
@@ -128,6 +132,12 @@ class FaceGallery:
         сохранённых (max косинус < diversity_max_sim); иначе это почти-дубль кадра."""
         if diverse and data['embeddings']:
             if max(self._cosine_sim(embedding, e) for e in data['embeddings']) >= self.diversity_max_sim:
+                return
+        # Нижний гейт по якорю: не дописываем эмбеддинг, если он недостаточно похож
+        # на эталон личности (embeddings[0]). Останавливает порчу галереи чужим лицом
+        # при ByteTrack ID-switch. Якорь и пустой список не гейтим.
+        if self.store_min_sim > 0 and data['embeddings']:
+            if self._cosine_sim(embedding, data['embeddings'][0]) < self.store_min_sim:
                 return
         ts = self._embedding_ts(data)
         data['embeddings'].append(embedding)
