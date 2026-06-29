@@ -51,8 +51,20 @@ print(f"Используется устройство: {DEVICE}")
 
 
 def _resolve_model(path):
+    """Приоритет: .engine (TensorRT) > .torchscript (ARM64/TorchScript) > .pt"""
     engine = path.with_suffix('.engine')
-    return engine if engine.exists() else path
+    if engine.exists():
+        return engine
+    ts = path.with_suffix('.torchscript')
+    if ts.exists():
+        return ts
+    return path
+
+
+def _apply_class_names(yolo_model, resolved_path):
+    """Применить CLASS_NAMES для .pt-моделей (TorchScript и .engine берут имена из весов)."""
+    if resolved_path.suffix == '.pt':
+        yolo_model.model.names = CLASS_NAMES
 
 
 model_path = _resolve_model(MODEL_PATH)
@@ -60,14 +72,16 @@ pose_path = _resolve_model(POSE_MODEL_PATH)
 
 model = YOLO(str(model_path))
 model.to(DEVICE)
-if model_path.suffix == '.pt':
-    model.model.names = CLASS_NAMES
+_apply_class_names(model, model_path)
 pose_model = YOLO(str(pose_path))
 pose_model.to(DEVICE)
 
 is_tensorrt = model_path.suffix == '.engine'
+is_torchscript = model_path.suffix == '.torchscript'
 if is_tensorrt:
-    print("[TensorRT] FP16 engine loaded")
+    print("[TensorRT] FP16 engine загружен")
+elif is_torchscript:
+    print("[TorchScript] .torchscript модель загружена")
 
 face_recognizer = None
 try:
@@ -339,8 +353,7 @@ def _get_cam_models(cam_id: str) -> tuple:
         if pair is None:
             ym = YOLO(str(model_path))
             ym.to(DEVICE)
-            if model_path.suffix == '.pt':
-                ym.model.names = CLASS_NAMES
+            _apply_class_names(ym, model_path)
             pm = YOLO(str(pose_path))
             pm.to(DEVICE)
             pair = (ym, pm)
