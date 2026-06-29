@@ -18,7 +18,6 @@
 """
 
 import argparse
-import sys
 import time
 from pathlib import Path
 
@@ -57,22 +56,29 @@ def convert_model(name: str, pt_path: Path, imgsz: int, half: bool, device: str,
         imgsz=imgsz,
         half=half,
         device=device,
-        optimize=True,   # torch.utils.mobile_optimizer — полезно для ARM
-        simplify=False,  # ONNX-simplifier не нужен для TorchScript
+        optimize=True,  # torch.utils.mobile_optimizer — полезно для ARM
     )
     elapsed = time.time() - t0
 
-    # Ultralytics возвращает путь к файлу или сохраняет рядом
-    out = Path(exported) if exported else ts_path
-    if not out.exists():
-        # Ultralytics иногда кладёт рядом с .pt
-        candidate = pt_path.parent / (pt_path.stem + ".torchscript")
-        if candidate.exists():
-            out = candidate
+    # Ultralytics возвращает строку-путь к экспортированному файлу.
+    # Если путь непустой и файл существует — используем его напрямую.
+    # Иначе ищем по двум типичным именованиям: <stem>.torchscript и <stem>.pt.torchscript.
+    candidates = []
+    if exported:
+        candidates.append(Path(exported))
+    candidates += [
+        pt_path.with_suffix(".torchscript"),                        # best.torchscript
+        pt_path.parent / (pt_path.stem + ".torchscript"),          # best.torchscript (alt)
+        pt_path.parent / (pt_path.name + ".torchscript"),          # best.pt.torchscript
+    ]
+    out = next((p for p in candidates if p.exists()), None)
+    if out is None:
+        print(f"  ОШИБКА: файл .torchscript не найден после экспорта")
+        return None
 
     print(f"  Сохранено: {out}  ({elapsed:.1f}с)")
 
-    if verify and out.exists():
+    if verify:
         _verify(name, out, imgsz, device)
 
     return out
