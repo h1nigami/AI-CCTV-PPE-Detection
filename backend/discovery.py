@@ -172,15 +172,12 @@ def name_for_ip(ip: str) -> str:
 
 # ── Сетевые операции ────────────────────────────────────────────────────────
 def local_ip() -> str | None:
-    """IP-адрес хоста в локальной сети (через UDP-сокет, без отправки данных)."""
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    try:
-        s.connect(("8.8.8.8", 80))
-        return s.getsockname()[0]
-    except Exception:
-        return None
-    finally:
-        s.close()
+    """Основной локальный LAN-адрес хоста (или None). Работает офлайн: берётся
+    первый приватный IPv4 из перечисления интерфейсов (см. netutil.lan_ipv4s),
+    а не только connect-трюк, который без маршрута по умолчанию даёт None."""
+    from backend.netutil import lan_ipv4s
+    ips = lan_ipv4s()
+    return ips[0] if ips else None
 
 
 def discover_onvif(timeout: float = 3.0) -> set[str]:
@@ -255,9 +252,10 @@ def scan_prefixes(extra_subnets=None, known_ips=None) -> set[str]:
         prefixes |= normalize_subnets(extra_subnets)
     if known_ips:
         prefixes |= {p for p in (prefix_of(ip) for ip in known_ips) if p}
-    base = local_ip()
-    if base:
-        p = prefix_of(base)
+    # Подсети ВСЕХ локальных интерфейсов (работает офлайн, ловит несколько LAN).
+    from backend.netutil import lan_ipv4s
+    for ip in lan_ipv4s():
+        p = prefix_of(ip)
         if p:
             prefixes.add(p)
     return prefixes

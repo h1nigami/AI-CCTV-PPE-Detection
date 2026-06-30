@@ -32,6 +32,25 @@ class FaceRecognizer:
         # конкуренции) и безопасно при нескольких.
         self._infer_lock = threading.Lock()
 
+        model_dir = Path(root) / "models" / model_name
+
+        def _have_model() -> bool:
+            return model_dir.exists() and any(model_dir.iterdir())
+
+        # Офлайн-старт: если модели нет локально И нет сети — не виснем на
+        # download-ретраях insightface (DNS/connect-таймауты × 3), а сразу
+        # деградируем (main.py поймает и отключит Re-ID). Когда модель на месте,
+        # is_online() не вызывается — офлайн-загрузка с диска работает как обычно.
+        if not _have_model():
+            from backend.netutil import is_online
+            if not is_online():
+                raise RuntimeError(
+                    f"InsightFace {model_name} отсутствует локально ({model_dir}), "
+                    f"а сети нет — Re-ID отключён. Заранее выполните "
+                    f"download_models.py при наличии интернета или задайте "
+                    f"INSIGHTFACE_ROOT с готовой моделью."
+                )
+
         last_exc = None
         for attempt in range(3):
             try:
@@ -47,11 +66,16 @@ class FaceRecognizer:
                 print(f"[ReID] Попытка {attempt + 1}/3 не удалась: {err_msg}")
                 if attempt < 2:
                     # Если директория модели пуста — удаляем, чтобы insightface попробовал скачать заново
-                    model_dir = Path(root) / "models" / model_name
                     if model_dir.exists() and not any(model_dir.iterdir()):
                         import shutil
                         shutil.rmtree(model_dir)
                         print(f"[ReID] Пустая директория {model_dir} удалена, будет повторная загрузка")
+                    # Сетевая пауза перед ретраем имеет смысл только онлайн —
+                    # офлайн скачивание не поможет, не тратим время на сон.
+                    from backend.netutil import is_online
+                    if not is_online():
+                        print("[ReID] Сети нет — повторные попытки скачивания пропущены")
+                        break
                     wait = 2 ** attempt * 5
                     print(f"[ReID] Повтор через {wait}с...")
                     time.sleep(wait)
