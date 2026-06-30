@@ -447,9 +447,12 @@ def process_frame(frame, cam_id: str, face_worker=None, det_model=None, det_pose
     # Чистый кадр ДО любой отрисовки нужен И для body Re-ID (рамки/заливка зоны
     # исказили бы цвета одежды), И для детекции жеста: контурный анализ кисти в
     # _is_ok_by_contour чувствителен к нарисованным оверлеям и полупрозрачной
-    # заливке опасной зоны. Берём копию, когда есть люди и не режим «только люди»
-    # (тогда возможен жест и/или body Re-ID).
-    clean_frame = frame.copy() if (detected["persons"] and not people_only) else None
+    # заливке опасной зоны. Копию берём, только когда она реально используется —
+    # людей детектим (жест/тело идут внутри ветки detect_people) и не режим
+    # «только люди» (там жест/тело отключены).
+    clean_frame = (frame.copy()
+                   if (detected["persons"] and detect_people and not people_only)
+                   else None)
     danger_zone = get_danger_zone(detected["cones"]) if ppe_on else None
 
     def _in_danger(pbox) -> bool:
