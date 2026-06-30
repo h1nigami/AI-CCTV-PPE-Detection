@@ -56,8 +56,10 @@ class TestLifecycle:
         worker.start()
         assert worker._thread is not None
         assert worker._thread.is_alive()
+        thread_ref = worker._thread  # сохраняем до stop(), который обнуляет _thread
         worker.stop()
-        assert not worker._thread.is_alive()
+        assert worker._thread is None
+        assert not thread_ref.is_alive()
 
     def test_double_stop_safe(self):
         from backend.detection.batch_worker import BatchDetectionWorker
