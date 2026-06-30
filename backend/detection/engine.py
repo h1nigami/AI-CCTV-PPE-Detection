@@ -70,28 +70,27 @@ def is_in_danger_zone(person_box, danger_zone) -> bool:
 TRACKER_CFG = str(BASE_DIR / "backend" / "detection" / "bytetrack_custom.yaml")
 
 
-def run_detection(frame, model, person_conf: float = CONF_THRESH,
-                  ppe_conf: float = PPE_CONF_THRESH) -> Dict[str, Any]:
-    # Детекцию гоняем по НИЖНЕМУ из порогов, чтобы из модели вернулись и менее
-    # уверенные предметы СИЗ; затем фильтруем покласово: люди/конусы — по
-    # person_conf, предметы СИЗ — по более мягкому ppe_conf (каска/маска/жилет
-    # мельче и часто детектятся слабее → при едином 0.75 ложно «нет каски»).
-    base_conf = min(person_conf, ppe_conf)
-    results = model.track(frame, conf=base_conf, verbose=False,
-                          persist=True, tracker=TRACKER_CFG)[0]
+def parse_detection_results(
+    results, model,
+    person_conf: float = CONF_THRESH,
+    ppe_conf: float = PPE_CONF_THRESH,
+) -> Dict[str, Any]:
+    """Извлечь detection-словарь из готового объекта ultralytics Results.
+
+    Используется как при одиночном инференсе (run_detection), так и при
+    батч-инференсе (BatchDetectionWorker), где results уже получен снаружи.
+    """
     names = model.names
     boxes = results.boxes.xyxy.cpu().numpy()
     classes = results.boxes.cls.cpu().numpy().astype(int)
     conf_attr = getattr(results.boxes, "conf", None)
-    if conf_attr is not None:
-        confs = conf_attr.cpu().numpy()
-    else:
-        confs = np.ones(len(classes), dtype=np.float32)
+    confs = conf_attr.cpu().numpy() if conf_attr is not None else np.ones(len(classes), dtype=np.float32)
     all_track_ids = None
     if results.boxes.id is not None:
         all_track_ids = results.boxes.id.cpu().numpy().astype(int)
-    persons = []
-    person_track_ids = []
+
+    persons: List = []
+    person_track_ids: List = []
     for i, c in enumerate(classes):
         if names[c] == "Человек" and confs[i] >= person_conf:
             persons.append(boxes[i])
@@ -110,3 +109,15 @@ def run_detection(frame, model, person_conf: float = CONF_THRESH,
         "vests": _by_class("Защитный жилет", ppe_conf),
         "cones": _by_class("Конус безопасности", person_conf),
     }
+
+
+def run_detection(frame, model, person_conf: float = CONF_THRESH,
+                  ppe_conf: float = PPE_CONF_THRESH) -> Dict[str, Any]:
+    # Детекцию гоняем по НИЖНЕМУ из порогов, чтобы из модели вернулись и менее
+    # уверенные предметы СИЗ; затем фильтруем покласово: люди/конусы — по
+    # person_conf, предметы СИЗ — по более мягкому ppe_conf (каска/маска/жилет
+    # мельче и часто детектятся слабее → при едином 0.75 ложно «нет каски»).
+    base_conf = min(person_conf, ppe_conf)
+    results = model.track(frame, conf=base_conf, verbose=False,
+                          persist=True, tracker=TRACKER_CFG)[0]
+    return parse_detection_results(results, model, person_conf, ppe_conf)

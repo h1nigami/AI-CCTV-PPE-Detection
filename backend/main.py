@@ -9,7 +9,7 @@ import traceback
 from collections import deque
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, Optional
 from ultralytics import YOLO
 import torch
 
@@ -34,6 +34,7 @@ from backend.zones import get_zones, apply_masks, in_any_danger_zone, required_p
 from backend.capture.buffer import FrameBuffer
 from backend.capture.camera import CameraCapture
 from backend.detection.engine import run_detection, get_danger_zone, has_item_on_person, is_in_danger_zone
+from backend.detection.batch_worker import BatchDetectionWorker
 from backend.gestures.detector import detect_ok_gesture
 from backend.tts.alert import (build_voice_text as _build_voice_text,
                                build_approved_voice_text as _build_approved_voice_text)
@@ -51,8 +52,20 @@ print(f"Используется устройство: {DEVICE}")
 
 
 def _resolve_model(path):
+    """Приоритет: .engine (TensorRT) > .torchscript (ARM64/TorchScript) > .pt"""
     engine = path.with_suffix('.engine')
-    return engine if engine.exists() else path
+    if engine.exists():
+        return engine
+    ts = path.with_suffix('.torchscript')
+    if ts.exists():
+        return ts
+    return path
+
+
+def _apply_class_names(yolo_model, resolved_path):
+    """Применить CLASS_NAMES для .pt-моделей (TorchScript и .engine берут имена из весов)."""
+    if resolved_path.suffix == '.pt':
+        yolo_model.model.names = CLASS_NAMES
 
 
 model_path = _resolve_model(MODEL_PATH)
@@ -60,14 +73,23 @@ pose_path = _resolve_model(POSE_MODEL_PATH)
 
 model = YOLO(str(model_path))
 model.to(DEVICE)
-if model_path.suffix == '.pt':
-    model.model.names = CLASS_NAMES
+_apply_class_names(model, model_path)
 pose_model = YOLO(str(pose_path))
 pose_model.to(DEVICE)
 
 is_tensorrt = model_path.suffix == '.engine'
+is_torchscript = model_path.suffix == '.torchscript'
 if is_tensorrt:
-    print("[TensorRT] FP16 engine loaded")
+    print("[TensorRT] FP16 engine загружен")
+elif is_torchscript:
+    print("[TorchScript] .torchscript модель загружена")
+
+# Батч-инференс: один model.track(batch) вместо N последовательных вызовов.
+# Авто-включается при ≥2 камерах; BATCH_INFERENCE=0 отключает принудительно.
+_BATCH_INFERENCE_ENV = os.environ.get("BATCH_INFERENCE", "").strip().lower()
+BATCH_INFERENCE_ENABLED: bool = _BATCH_INFERENCE_ENV not in ("0", "false", "no", "off")
+# Синглтон воркера; создаётся/уничтожается в start_live/stop_live
+_batch_worker: Optional[BatchDetectionWorker] = None
 
 face_recognizer = None
 try:
@@ -192,6 +214,9 @@ def add_camera(cam_id: str, source: str | int):
             fw = FaceRecognitionWorker(frame_buffers[cam_id], face_recognizer, REID_FRAME_SKIP)
             fw.start()
             face_workers[cam_id] = fw
+        # Регистрируем в батч-воркере, если он активен.
+        if _batch_worker is not None:
+            _batch_worker.register_camera(cam_id)
         # Поднимаем поток детекции для новой камеры на лету.
         if cam_id not in detection_threads or not detection_threads[cam_id].is_alive():
             t = threading.Thread(target=_camera_detection_worker, args=(cam_id,), daemon=True)
@@ -219,6 +244,8 @@ def remove_camera(cam_id: str):
     detection_threads.pop(cam_id, None)
     with _cam_models_lock:
         _cam_models.pop(cam_id, None)
+    if _batch_worker is not None:
+        _batch_worker.unregister_camera(cam_id)
     _motion_detectors.pop(cam_id, None)
     if RECORD_ENABLED:
         get_recording_manager().remove_camera(cam_id)
@@ -339,8 +366,7 @@ def _get_cam_models(cam_id: str) -> tuple:
         if pair is None:
             ym = YOLO(str(model_path))
             ym.to(DEVICE)
-            if model_path.suffix == '.pt':
-                ym.model.names = CLASS_NAMES
+            _apply_class_names(ym, model_path)
             pm = YOLO(str(pose_path))
             pm.to(DEVICE)
             pair = (ym, pm)
@@ -381,7 +407,8 @@ def _draw_user_zones(frame, zones: list, w: int, h: int):
         frame[:] = put_text(frame, label, (pts[0][0], max(0, pts[0][1] - 18)), color=color)
 
 
-def process_frame(frame, cam_id: str, face_worker=None, det_model=None, det_pose=None):
+def process_frame(frame, cam_id: str, face_worker=None, det_model=None, det_pose=None,
+                  precomputed_detection: Optional[Dict[str, Any]] = None):
     from backend.config import DETECT_MODES
     # Модели на камеру (для параллельных потоков детекции); по умолчанию —
     # глобальные (обратная совместимость с /upload и тестами).
@@ -394,7 +421,12 @@ def process_frame(frame, cam_id: str, face_worker=None, det_model=None, det_pose
         # annotated_buffers → /video_frame отдавал 204 → фронт «NO SIGNAL».
         return frame, f"{datetime.now().strftime('%H:%M:%S')} [{cam_id}] Детекция отключена", "норма", [], {}, [], []
     state.cleanup_stale_tracks()
-    detected = run_detection(frame, det_model)
+    # Батч-режим: детекция уже выполнена централизованно — используем готовый результат.
+    # Одиночный режим (/upload, тесты, одна камера): вызываем run_detection здесь.
+    if precomputed_detection is not None:
+        detected = precomputed_detection
+    else:
+        detected = run_detection(frame, det_model)
     # Пользовательские зоны (нарисованы в редакторе): сперва маски — исключаем
     # объекты в замаскированных областях ДО любой логики/отрисовки.
     fh, fw = frame.shape[:2]
@@ -643,6 +675,7 @@ def generate_live_feed(cam_id: str = "cam1"):
 
 
 def start_live():
+    global _batch_worker
     if state.live_active:
         stop_live()
         time.sleep(0.5)
@@ -658,6 +691,20 @@ def start_live():
         _init_camera_resources(cam_id, CAMERAS[cam_id])
         camera_captures[cam_id].start()
     start_face_workers()
+
+    # Батч-инференс: включаем при ≥2 камерах (или при BATCH_INFERENCE=1).
+    # Один model.track(batch) вместо N последовательных GPU-вызовов.
+    cam_count = len(CAMERAS)
+    if BATCH_INFERENCE_ENABLED and cam_count >= 2:
+        _batch_worker = BatchDetectionWorker(model)
+        _batch_worker.start()
+        for cam_id in CAMERAS:
+            _batch_worker.register_camera(cam_id)
+    else:
+        _batch_worker = None
+        if cam_count < 2:
+            print("[BatchInference] Одна камера — батчинг не нужен, используется прямой инференс")
+
     # Поток детекции на КАЖДУЮ камеру — параллельная обработка вместо
     # последовательного round-robin (см. _camera_detection_worker).
     for cam_id in list(CAMERAS.keys()):
@@ -669,13 +716,20 @@ def start_live():
     hb.start()
     if RECORD_ENABLED:
         get_recording_manager().start_all(dict(CAMERAS))
-    print(f"Детекция запущена на {len(CAMERAS)} камерах ({len(CAMERAS)} потоков)")
+    mode = "батч" if _batch_worker is not None else "прямой"
+    print(f"Детекция запущена на {cam_count} камерах (режим: {mode})")
 
 
 def stop_live():
+    global _batch_worker
     if not state.live_active:
         return
     state.live_active = False
+    # Останавливаем батч-воркер до join потоков детекции: потоки заблокированы
+    # на _batch_worker.submit() — stop() разблокирует их через _result_events.
+    if _batch_worker is not None:
+        _batch_worker.stop()
+        _batch_worker = None
     for cam_id in list(CAMERAS.keys()):
         if cam_id in camera_captures:
             camera_captures[cam_id].stop()
@@ -731,12 +785,23 @@ def _heartbeat_loop():
 
 
 def _camera_detection_worker(cam_id: str):
-    """Поток детекции ОДНОЙ камеры. Запускается по экземпляру на камеру —
-    YOLO/InsightFace/OpenCV отпускают GIL на время вычислений, поэтому камеры
-    обрабатываются параллельно (на CPU — по ядрам, на GPU — с перекрытием),
-    без последовательного round-robin прежней единой петли."""
+    """Поток детекции ОДНОЙ камеры.
+
+    Два режима (выбираются при запуске по BATCH_INFERENCE_ENABLED):
+
+    Батч-режим (≥2 камеры, GPU): кадр сдаётся в BatchDetectionWorker,
+    поток блокируется до готового detection-словаря. Все камеры обрабатываются
+    одним model.track(batch) — GPU занят непрерывно, throughput ×N.
+
+    Одиночный режим (1 камера / CPU): каждый поток вызывает свою YOLO-модель
+    напрямую (ByteTrack изолирован на уровне экземпляра модели).
+    """
     metrics = get_metrics()
     publisher = get_publisher()
+    use_batch = _batch_worker is not None
+    # Per-camera модели: в батч-режиме YOLO для детекции не используется
+    # (батч-воркер делает это централизованно), но pose-модель нужна всегда
+    # для жестов (throttled predict на кроп, без ByteTrack).
     det_model, det_pose = _get_cam_models(cam_id)
     while state.live_active and cam_id in CAMERAS:
         if cam_id not in frame_buffers:
@@ -782,9 +847,13 @@ def _camera_detection_worker(cam_id: str):
 
         try:
             _t0 = time.time()
+            # Батч-режим: сдаём кадр в централизованный воркер и ждём detection-словарь.
+            # Одиночный режим: precomputed_detection=None → process_frame вызовет run_detection.
+            precomputed = _batch_worker.submit(cam_id, frame) if use_batch else None
             annotated, message, category, global_ids, statuses, voice_violators, voice_approved = process_frame(
                 frame, cam_id, face_worker=face_workers.get(cam_id),
-                det_model=det_model, det_pose=det_pose)
+                det_model=det_model, det_pose=det_pose,
+                precomputed_detection=precomputed)
             metrics.record_frame(cam_id, (time.time() - _t0) * 1000.0)
             metrics.record_event(category)
             out_buf.write(annotated)
