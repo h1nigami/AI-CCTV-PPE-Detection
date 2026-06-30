@@ -662,12 +662,48 @@ def process_frame(frame, cam_id: str, face_worker=None, det_model=None, det_pose
     return frame, message, category, global_ids, statuses, voice_violators, voice_approved
 
 
+_NO_SIGNAL_CACHE: dict[tuple, bytes] = {}
+
+
+def _no_signal_jpeg(width: int = 1280, height: int = 720) -> bytes:
+    """JPEG-заставка «NO SIGNAL» (чёрный кадр с текстом). Кэшируется по размеру —
+    рисуем один раз на разрешение. Текст ASCII → cv2.putText (без PIL/кириллицы)."""
+    key = (width, height)
+    cached = _NO_SIGNAL_CACHE.get(key)
+    if cached is not None:
+        return cached
+    import numpy as np
+    frame = np.zeros((height, width, 3), dtype=np.uint8)
+    text = "NO SIGNAL"
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    scale = max(1.0, width / 640.0)
+    thickness = max(2, int(scale * 1.5))
+    (tw, th), _ = cv2.getTextSize(text, font, scale, thickness)
+    org = ((width - tw) // 2, (height + th) // 2)
+    cv2.putText(frame, text, org, font, scale, (60, 60, 200), thickness, cv2.LINE_AA)
+    ok, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+    data = buffer.tobytes() if ok else b""
+    _NO_SIGNAL_CACHE[key] = data
+    return data
+
+
 def generate_live_feed(cam_id: str = "cam1"):
     ann_buf = annotated_buffers.get(cam_id)
     if ann_buf is None:
         return
+    raw_buf = frame_buffers.get(cam_id)
     consecutive_errors = 0
+    last_dims = (1280, 720)
     while state.live_active:
+        # Камера «отвалилась» (capture не пишет новых кадров) — шлём «NO SIGNAL»
+        # вместо застывшего последнего кадра, как /video_frame отдаёт 204. Иначе
+        # MJPEG держал бы замороженный кадр, выдавая потерю связи за «живой» поток.
+        if raw_buf is not None and raw_buf.age() > STREAM_STALE_SEC:
+            yield (b'--frame\r\n'
+                   b'Content-Type: image/jpeg\r\n\r\n'
+                   + _no_signal_jpeg(*last_dims) + b'\r\n')
+            time.sleep(0.5)  # троттлинг заставки (не чаще 2 кадров/с)
+            continue
         ann_buf.wait(timeout=2.0)
         frame = ann_buf.read()
         if frame is None:
@@ -676,6 +712,7 @@ def generate_live_feed(cam_id: str = "cam1"):
             ret, buffer = cv2.imencode('.jpg', frame)
             if not ret:
                 continue
+            last_dims = (frame.shape[1], frame.shape[0])
             consecutive_errors = 0
             yield (b'--frame\r\n'
                    b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')

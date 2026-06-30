@@ -162,8 +162,12 @@ def configure_detection_routes(app, state, annotated_buffers, generate_live_feed
 
     @app.route("/api/voice_alert")
     def api_voice_alert():
-        alert = state.pop_voice_alert()
-        return jsonify(alert or {})
+        # Курсорная модель: клиент шлёт ?after=<seq> и получает все алерты новее
+        # курсора (не извлекая их из общей очереди). Без after — только текущий
+        # курсор (инициализация без переигрывания бэклога). Так несколько вкладок
+        # и несколько камер обслуживаются независимо, без «съедания» алертов.
+        after = request.args.get("after", type=int)
+        return jsonify(state.get_voice_alerts_since(after))
 
     @app.route("/api/notifications")
     def api_notifications():

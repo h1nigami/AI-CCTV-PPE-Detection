@@ -44,9 +44,14 @@ class DetectionState:
         # Статусы последнего залогированного события (cam_id+track_id → compact_status)
         self._last_logged_status: Dict[Tuple[str, int], str] = {}
 
-        # Очередь голосовых предупреждений (max 50) + кулдаун по камере
+        # Кольцевой буфер голосовых предупреждений (max 50) + кулдаун по камере.
+        # Каждому алерту присваивается монотонный seq — клиенты читают «всё после
+        # своего курсора» и НЕ извлекают из общей очереди (иначе один клиент
+        # «съедал» бы алерт у других, а несколько камер сериализовались бы по
+        # одному на опрос). Так каждый клиент получает все алерты независимо.
         self._voice_alerts: deque = deque(maxlen=50)
         self._voice_alert_last: Dict[str, float] = {}
+        self._voice_seq: int = 0
 
         # Очередь UI-уведомлений (жест ОК / нехватка СИЗ и т.п.) — фронт поллит
         # /api/notifications и показывает их сверху. Структурированные (type/title/
@@ -363,25 +368,36 @@ class DetectionState:
             self._last_logged_status.clear()
 
     def push_voice_alert(self, cam_id: str, text: str) -> bool:
-        """Добавить голосовое предупреждение в очередь с соблюдением кулдауна.
+        """Добавить голосовое предупреждение в буфер с соблюдением кулдауна.
         Возвращает True, если предупреждение добавлено."""
         now = time.time()
         with self._lock:
             if now - self._voice_alert_last.get(cam_id, 0.0) < VOICE_ALERT_COOLDOWN:
                 return False
             self._voice_alert_last[cam_id] = now
+            self._voice_seq += 1
             self._voice_alerts.append({
-                "id": f"{cam_id}_{now}",
+                "id": f"{cam_id}_{self._voice_seq}",
+                "seq": self._voice_seq,
                 "cam_id": cam_id,
                 "text": text,
                 "timestamp": now,
             })
             return True
 
-    def pop_voice_alert(self) -> Optional[dict]:
-        """Извлечь и вернуть старейшее ожидающее предупреждение (или None)."""
+    def get_voice_alerts_since(self, after_seq: Optional[int]) -> dict:
+        """Вернуть голосовые алерты НОВЕЕ курсора клиента, не удаляя их из буфера.
+
+        ``after_seq is None`` (первый опрос клиента) → пустой список и текущий
+        курсор: клиент инициализирует курсор «здесь и сейчас» и не переигрывает
+        накопившийся бэклог. Дальше клиент шлёт ``after_seq=cursor`` и получает
+        только новые алерты. Несколько клиентов/камер обслуживаются независимо."""
         with self._lock:
-            return self._voice_alerts.popleft() if self._voice_alerts else None
+            cursor = self._voice_seq
+            if after_seq is None:
+                return {"alerts": [], "cursor": cursor}
+            alerts = [dict(a) for a in self._voice_alerts if a["seq"] > after_seq]
+            return {"alerts": alerts, "cursor": cursor}
 
     def push_notification(self, ntype: str, title: str, sub: str = ""):
         """Добавить UI-уведомление (показывается сверху на фронте)."""

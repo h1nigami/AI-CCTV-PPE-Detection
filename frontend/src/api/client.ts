@@ -234,10 +234,14 @@ export const api = {
     }),
 
   // ---- Голосовые предупреждения ----
-  getVoiceAlert: () =>
-    request<{ id?: string; cam_id?: string; text?: string; timestamp?: number }>(
-      "/api/voice_alert"
-    ),
+  // Курсорная модель: ?after=<seq> отдаёт все алерты новее курсора (не извлекая
+  // их из общей очереди), без after — только текущий курсор. Несколько вкладок и
+  // камер обслуживаются независимо (раньше pop «съедал» алерт у других клиентов).
+  getVoiceAlerts: (after?: number) =>
+    request<{
+      alerts: { id: string; seq: number; cam_id: string; text: string; timestamp: number }[]
+      cursor: number
+    }>(`/api/voice_alert${after === undefined ? "" : `?after=${after}`}`),
   /** URL готового WAV с синтезированной на бэке (Piper) речью. 503 → фронт
    *  откатывается на Web Speech. Тот же origin (nginx/vite-proxy) → без CORS. */
   getVoiceAlertAudioUrl: (text: string) =>
