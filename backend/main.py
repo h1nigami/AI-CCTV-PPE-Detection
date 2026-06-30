@@ -314,8 +314,14 @@ def discover_cameras(add: bool = False) -> dict:
     existing = {str(v) for v in CAMERAS.values()}
     added = []
     for f in found:
-        if f["rtsp_url"] in existing:
+        # Хост уже добавлен (по URL открытой камеры ИЛИ по IP — покрывает и
+        # запароленные, добавленные ранее с логином в URL).
+        if (f.get("rtsp_url") and f["rtsp_url"] in existing) or f["ip"] in known_ips:
             f["status"] = "exists"
+            continue
+        if f.get("requires_auth"):
+            # Запароленная: автодобавить нельзя (нужны логин/пароль) — UI спросит их.
+            f["status"] = "locked"
             continue
         f["status"] = "new"
         if add:
@@ -325,6 +331,26 @@ def discover_cameras(add: bool = False) -> dict:
             f["status"] = "added"
             added.append(name)
     return {"found": found, "added": added}
+
+
+def add_authenticated_camera(ip: str, username: str, password: str,
+                             port: int = 554, name: str | None = None) -> dict:
+    """Подобрать рабочий RTSP-URL для запароленной камеры (ip + логин/пароль),
+    перебрав типовые пути, и добавить её. Возвращает {ok, rtsp_url?, added_as?,
+    error?}. Логин/пароль попадают в URL источника (URL-кодируются)."""
+    from backend.discovery import probe_rtsp_auth, paths_from_sources, name_for_ip, merge_paths
+    if not ip:
+        return {"ok": False, "error": "Не указан IP камеры"}
+    # Пути уже добавленных камер пробуем первыми (часто все камеры одного вендора).
+    paths = merge_paths(paths_from_sources(CAMERAS.values()))
+    url = probe_rtsp_auth(ip, username, password, port=port, paths=paths)
+    if not url:
+        return {"ok": False, "error": "Поток не открылся с этими логином и паролем"}
+    if str(url) in {str(v) for v in CAMERAS.values()}:
+        return {"ok": False, "error": "Камера с таким URL уже добавлена"}
+    cam_name = _unique_cam_name((name or "").strip() or name_for_ip(ip))
+    add_camera(cam_name, url)
+    return {"ok": True, "rtsp_url": url, "added_as": cam_name}
 
 
 def autodiscover_and_add():
