@@ -29,12 +29,16 @@ from typing import Dict, List, Optional, Any
 import numpy as np
 
 from backend.detection.engine import parse_detection_results, TRACKER_CFG
-from backend.config import CONF_THRESH, PPE_CONF_THRESH
+from backend.config import get_detection_setting
 
 _BATCH_TIMEOUT = float(os.environ.get("BATCH_TIMEOUT_MS", "20")) / 1000.0
 _MAX_SLOTS = int(os.environ.get("BATCH_MAX_CAMERAS", "16"))
 
-_BASE_CONF = min(CONF_THRESH, PPE_CONF_THRESH)
+
+def _base_conf() -> float:
+    """Нижний из живых порогов (человек/конус и СИЗ) — читается на каждом батче,
+    чтобы изменения порогов из UI применялись без рестарта."""
+    return min(get_detection_setting("person_conf"), get_detection_setting("ppe_conf"))
 
 
 class BatchDetectionWorker:
@@ -196,7 +200,7 @@ class BatchDetectionWorker:
             try:
                 batch_results = self._model.track(
                     batch_frames,
-                    conf=_BASE_CONF,
+                    conf=_base_conf(),
                     verbose=False,
                     persist=True,
                     tracker=TRACKER_CFG,

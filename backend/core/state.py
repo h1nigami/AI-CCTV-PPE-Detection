@@ -13,6 +13,7 @@ from backend.config import (
     REID_DIVERSITY_MAX_SIM, REID_STORE_MIN_SIM, VOICE_ALERT_COOLDOWN,
     REID_BODY_ENABLED, REID_BODY_MATCH_THRESHOLD, REID_BODY_MAX_EMBEDDINGS,
     REID_BODY_DIVERSITY_MAX_SIM, REID_BODY_STORE_INTERVAL,
+    get_detection_setting,
 )
 
 TRACK_EXPIRY = 60.0
@@ -282,9 +283,10 @@ class DetectionState:
         elif gid <= 0:
             # Неопознанную личность (sentinel<=0) не одобряем — см. is_approved.
             return
+        duration = get_detection_setting("approval_duration")
         with self._lock:
-            self._approved[gid] = time.time() + APPROVAL_DURATION
-        print(f"Пропуск выдан: global_id={gid} на {APPROVAL_DURATION} сек.")
+            self._approved[gid] = time.time() + duration
+        print(f"Пропуск выдан: global_id={gid} на {duration} сек.")
 
     def clear_approved(self):
         with self._lock:
@@ -294,9 +296,10 @@ class DetectionState:
         """Выдать пропуск личности вручную (из UI) на APPROVAL_DURATION секунд."""
         if global_id <= 0:
             return  # неопознанная личность (sentinel) — пропуск выдавать некому
+        duration = get_detection_setting("approval_duration")
         with self._lock:
-            self._approved[global_id] = time.time() + APPROVAL_DURATION
-        print(f"Пропуск выдан вручную: global_id={global_id} на {APPROVAL_DURATION} сек.")
+            self._approved[global_id] = time.time() + duration
+        print(f"Пропуск выдан вручную: global_id={global_id} на {duration} сек.")
 
     def revoke_approval(self, global_id: int) -> bool:
         """Отозвать (сбросить) пропуск конкретной личности.
@@ -333,9 +336,10 @@ class DetectionState:
             return time.time() < self._gesture_until
 
     def can_gesture(self, global_id: int) -> bool:
+        cooldown = get_detection_setting("gesture_cooldown")
         with self._lock:
             last = self._last_gesture_time.get(global_id, 0)
-            return time.time() - last >= GESTURE_COOLDOWN
+            return time.time() - last >= cooldown
 
     def should_run_gesture(self, global_id: int) -> bool:
         """Троттлинг ДОРОГОГО pose-инференса жеста: True не чаще раза в
@@ -371,8 +375,9 @@ class DetectionState:
         """Добавить голосовое предупреждение в буфер с соблюдением кулдауна.
         Возвращает True, если предупреждение добавлено."""
         now = time.time()
+        cooldown = get_detection_setting("voice_alert_cooldown")
         with self._lock:
-            if now - self._voice_alert_last.get(cam_id, 0.0) < VOICE_ALERT_COOLDOWN:
+            if now - self._voice_alert_last.get(cam_id, 0.0) < cooldown:
                 return False
             self._voice_alert_last[cam_id] = now
             self._voice_seq += 1

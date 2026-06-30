@@ -11,6 +11,7 @@ import type {
   RecordingSegment,
   Zone,
   ServerNotification,
+  DetectionSettingSpec,
 } from "../types"
 
 // ============================================================
@@ -232,6 +233,19 @@ export const api = {
       method: "PUT",
       body: JSON.stringify({ required }),
     }),
+
+  // ---- Рантайм-настройки детекции (Настройки → Детекция и логика) ----
+  // Бэк отдаёт И текущие значения, И спеку (label/desc/min/max/step/unit/group)
+  // — панель рендерится по спеке. PUT принимает частичный патч {settings:{...}}.
+  getDetectionSettings: () =>
+    request<{ settings: Record<string, number>; spec: DetectionSettingSpec[] }>(
+      "/api/detection-settings",
+    ),
+  setDetectionSettings: (settings: Record<string, number>) =>
+    request<{ status: string; settings: Record<string, number> }>(
+      "/api/detection-settings",
+      { method: "PUT", body: JSON.stringify({ settings }) },
+    ),
 
   // ---- Голосовые предупреждения ----
   // Курсорная модель: ?after=<seq> отдаёт все алерты новее курсора (не извлекая
