@@ -255,6 +255,11 @@ class DetectionState:
         if gid is None:
             pid = self._old_person_id(person_box, cam_id)
             gid = hash(pid) & 0x7FFFFFFF
+        elif gid <= 0:
+            # global_id<=0 — «личность не определена» (нет лица/тела/трека). Это НЕ
+            # настоящая личность, а общий sentinel: пропуск ему выдавать нельзя,
+            # иначе одобрение «протекает» на ВСЕХ неопознанных людей в кадре.
+            return False
         with self._lock:
             expire = self._approved.get(gid)
             if expire is None:
@@ -269,6 +274,9 @@ class DetectionState:
         if gid is None:
             pid = self._old_person_id(person_box, cam_id)
             gid = hash(pid) & 0x7FFFFFFF
+        elif gid <= 0:
+            # Неопознанную личность (sentinel<=0) не одобряем — см. is_approved.
+            return
         with self._lock:
             self._approved[gid] = time.time() + APPROVAL_DURATION
         print(f"Пропуск выдан: global_id={gid} на {APPROVAL_DURATION} сек.")
@@ -279,6 +287,8 @@ class DetectionState:
 
     def grant_approval(self, global_id: int) -> None:
         """Выдать пропуск личности вручную (из UI) на APPROVAL_DURATION секунд."""
+        if global_id <= 0:
+            return  # неопознанная личность (sentinel) — пропуск выдавать некому
         with self._lock:
             self._approved[global_id] = time.time() + APPROVAL_DURATION
         print(f"Пропуск выдан вручную: global_id={global_id} на {APPROVAL_DURATION} сек.")

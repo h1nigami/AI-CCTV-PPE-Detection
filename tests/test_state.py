@@ -276,6 +276,18 @@ class TestApproval:
         # Different box with same global_id → still approved
         assert state.is_approved([500, 500, 600, 600], "cam01", global_id=999) is True
 
+    def test_unidentified_sentinel_not_approvable(self, state):
+        # global_id<=0 — «личность не определена» (нет лица/тела/трека). Одобрение
+        # такого sentinel «протекало» бы на ВСЕХ неопознанных людей в кадре,
+        # поэтому approve/grant_approval его игнорируют, а is_approved → False.
+        state.approve([0, 0, 10, 10], "cam01", global_id=0)
+        assert state.is_approved([0, 0, 10, 10], "cam01", global_id=0) is False
+        assert 0 not in state._approved
+        state.grant_approval(0)
+        assert 0 not in state._approved
+        state.grant_approval(-5)
+        assert state.is_approved([0, 0, 10, 10], "cam01", global_id=-5) is False
+
     def test_clear_approved_removes_all(self, state):
         state.approve([10, 20, 50, 80], "cam01", global_id=1)
         state.approve([100, 200, 150, 250], "cam01", global_id=2)
@@ -399,8 +411,10 @@ class TestConcurrency:
             except Exception as e:
                 errors.append(e)
 
+        # global_id 1..10 (положительные): gid<=0 — sentinel «личность не
+        # определена», его approve намеренно игнорирует (см. test ниже).
         threads = [threading.Thread(target=approve_in_thread, args=(i,))
-                   for i in range(10)]
+                   for i in range(1, 11)]
         for t in threads:
             t.start()
         for t in threads:

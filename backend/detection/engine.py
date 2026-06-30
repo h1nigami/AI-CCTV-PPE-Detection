@@ -4,8 +4,6 @@ from typing import List, Optional, Tuple, Dict, Any
 from backend.config import (BASE_DIR, MIN_CONES, ZONE_EXPAND_PX, TOP_RATIO,
                             CONF_THRESH, PPE_CONF_THRESH)
 
-CLASS_PERSON = 5
-
 
 def get_boxes_by_class(boxes, classes, names, class_name: str) -> List:
     return [boxes[i] for i, c in enumerate(classes) if names[c] == class_name]

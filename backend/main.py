@@ -342,6 +342,9 @@ face_workers: dict[str, 'FaceRecognitionWorker'] = {}
 # ── Event recording ──
 _event_recordings: dict[str, Optional[dict]] = {}
 _frame_prebuf: dict[str, deque] = {}
+# Последняя категория кадра по камере — чтобы метрика событий считала СОБЫТИЯ
+# (смены категории), а не каждый кадр (иначе frigate_events_total раздувался).
+_last_event_category: dict[str, str] = {}
 # Состав людей с пропуском в зоне, для которых уже проговорена спокойная отметка
 # (cam_id → set global_id). Чтобы не повторять «причин для внимания нет» каждый
 # кулдаун — озвучиваем только при ВХОДЕ нового человека с пропуском в зону.
@@ -437,11 +440,16 @@ def process_frame(frame, cam_id: str, face_worker=None, det_model=None, det_pose
     # Опасные/ограниченные пользовательские зоны учитываются вместе с зоной по
     # конусам (только когда включена детекция СИЗ — как и зона по конусам).
     danger_user = [z for z in cam_zones if z.get("type") in ("danger", "restricted")] if ppe_on else []
-    # Чистый кадр ДО любой отрисовки — для body Re-ID (рамки/заливка зоны исказили
-    # бы цвета одежды). Берём копию только когда body Re-ID реально нужен.
-    clean_frame = frame.copy() if (body_recognizer is not None
-                                   and DETECT_MODES.get("faces", True)
-                                   and detected["persons"]) else None
+    detect_people = DETECT_MODES.get("people", True)
+    detect_faces_mode = DETECT_MODES.get("faces", True)
+    # Режим «только люди»: СИЗ и лица выключены — жест/пропуск/тело не нужны.
+    people_only = detect_people and not ppe_on and not detect_faces_mode
+    # Чистый кадр ДО любой отрисовки нужен И для body Re-ID (рамки/заливка зоны
+    # исказили бы цвета одежды), И для детекции жеста: контурный анализ кисти в
+    # _is_ok_by_contour чувствителен к нарисованным оверлеям и полупрозрачной
+    # заливке опасной зоны. Берём копию, когда есть люди и не режим «только люди»
+    # (тогда возможен жест и/или body Re-ID).
+    clean_frame = frame.copy() if (detected["persons"] and not people_only) else None
     danger_zone = get_danger_zone(detected["cones"]) if ppe_on else None
 
     def _in_danger(pbox) -> bool:
@@ -493,14 +501,11 @@ def process_frame(frame, cam_id: str, face_worker=None, det_model=None, det_pose
     # Люди с активным пропуском, стоящие в зоне: (global_id, имя). Для спокойной
     # голосовой отметки «в СИЗ, причин для внимания нет» (озвучивается при входе).
     voice_approved: list[tuple[int, str]] = []
-    detect_people = DETECT_MODES.get("people", True)
-    detect_faces_mode = DETECT_MODES.get("faces", True)
-    # Режим «только люди»: СИЗ и лица выключены. Здесь нет смысла в статусах
-    # СИЗ/зоны/пропуска — просто выделяем людей рамкой. Без этого жест «ОК»
-    # (поза детектится независимо от режима) при пустом списке требуемых СИЗ
-    # выдавал «пропуск», который из-за нестабильных global_id (лица выкл.)
-    # разъезжался «на всех».
-    people_only = detect_people and not ppe_on and not detect_faces_mode
+    # detect_people / detect_faces_mode / people_only вычислены выше (нужны для
+    # clean_frame). Режим «только люди» (СИЗ и лица выключены): людей рисуем
+    # нейтральной рамкой без статусов/пропуска, а жест «ОК» не запускаем — иначе
+    # при пустом наборе требуемых СИЗ «пропуск» из-за нестабильных global_id
+    # (лица выкл.) разъезжался «на всех».
     if detected["persons"] and detect_people:
         msg_parts.append(f"Людей: {persons_count}")
         face_embeddings = None
@@ -508,9 +513,12 @@ def process_frame(frame, cam_id: str, face_worker=None, det_model=None, det_pose
             face_data = face_worker.get_faces()
             face_embeddings = match_faces_to_persons(detected["persons"], face_data)
         # Дескрипторы тел (одежда/силуэт) с ЧИСТОГО кадра — для опознания «со спины».
-        # Батчем: для OSNet это один инференс на кадр (а не на человека).
+        # Батчем: для OSNet это один инференс на кадр (а не на человека). clean_frame
+        # теперь берётся и ради жеста, поэтому body Re-ID гейтим явно (распознаватель
+        # активен и включены лица), а не по наличию clean_frame.
         body_embs = (body_recognizer.extract_batch(clean_frame, detected["persons"])
-                     if clean_frame is not None else None)
+                     if (body_recognizer is not None and detect_faces_mode
+                         and clean_frame is not None) else None)
         for idx, pbox in enumerate(detected["persons"]):
             track_id = person_track_ids[idx] if idx < len(person_track_ids) else -1
             if track_id < 0:
@@ -545,9 +553,15 @@ def process_frame(frame, cam_id: str, face_worker=None, det_model=None, det_pose
             # Pose-инференс жеста дорогой — запускаем только для неодобренных,
             # вне кулдауна И не чаще GESTURE_CHECK_INTERVAL на личность (троттлинг
             # должен идти ПОСЛЕДНИМ в конъюнкции — у него побочный эффект).
+            # global_id > 0: для неопознанной личности (gid=0 — общий sentinel)
+            # жест не проверяем, иначе выданный пропуск и кулдаун жеста делятся
+            # на ВСЕХ неопознанных. Детекция — по ЧИСТОМУ кадру (clean_frame),
+            # без рамок/заливки зоны, иначе контурный анализ кисти искажается.
             gesture_ok = (
-                detect_ok_gesture(frame, pbox, det_pose)
-                if (not people_only and not approved and state.can_gesture(global_id)
+                detect_ok_gesture(clean_frame if clean_frame is not None else frame,
+                                  pbox, det_pose)
+                if (not people_only and global_id > 0 and not approved
+                    and state.can_gesture(global_id)
                     and state.should_run_gesture(global_id))
                 else False
             )
@@ -684,6 +698,12 @@ def start_live():
     state.clear_notifications()
     _motion_detectors.clear()
     _voice_approved_seen.clear()
+    # Пер-сессионные буферы событий: иначе пред-буфер первого клипа новой сессии
+    # содержал бы застывшие кадры предыдущей (другая сцена/время), а счётчик
+    # событий не зафиксировал бы первую категорию.
+    _frame_prebuf.clear()
+    _event_recordings.clear()
+    _last_event_category.clear()
     for buf in annotated_buffers.values():
         buf.clear()
     state.live_active = True
@@ -784,6 +804,21 @@ def _heartbeat_loop():
             slept += 0.5
 
 
+def _violator_global_id(global_ids: list, statuses: dict) -> int:
+    """global_id первого РЕАЛЬНОГО нарушителя, а не просто первого человека в кадре.
+
+    statuses и global_ids идут в одном порядке людей (оба строятся циклом по
+    detected["persons"]). Строчная буква в первых трёх символах компактного
+    статуса (КМЖ) = отсутствует требуемый СИЗ → это нарушитель. Фоллбэк, если
+    нарушитель не вычленён, — первый global_id (старое поведение)."""
+    status_list = list(statuses.values())
+    for i, gid in enumerate(global_ids):
+        st = status_list[i] if i < len(status_list) else ""
+        if len(st) >= 3 and any(c.islower() for c in st[:3]):
+            return gid
+    return global_ids[0] if global_ids else 0
+
+
 def _camera_detection_worker(cam_id: str):
     """Поток детекции ОДНОЙ камеры.
 
@@ -855,7 +890,11 @@ def _camera_detection_worker(cam_id: str):
                 det_model=det_model, det_pose=det_pose,
                 precomputed_detection=precomputed)
             metrics.record_frame(cam_id, (time.time() - _t0) * 1000.0)
-            metrics.record_event(category)
+            # Считаем СОБЫТИЕ, а не кадр: инкремент только при смене категории для
+            # камеры (иначе frigate_events_total рос на каждом кадре «нормы»).
+            if _last_event_category.get(cam_id) != category:
+                metrics.record_event(category)
+                _last_event_category[cam_id] = category
             out_buf.write(annotated)
 
             if publisher is not None:
@@ -890,7 +929,7 @@ def _camera_detection_worker(cam_id: str):
             is_violation = category == "нарушение"
             rec = _event_recordings.get(cam_id)
             if is_violation:
-                gid = global_ids[0] if global_ids else 0
+                gid = _violator_global_id(global_ids, statuses)
                 person_name = state.get_person_name(gid, cam_id, has_face=True) if gid else ""
                 if rec is None or not rec.get('active'):
                     event_id = create_event_record(
@@ -925,7 +964,9 @@ def _camera_detection_worker(cam_id: str):
                         rec['active'] = False
                         _finalize_recording(cam_id, rec)
 
-            any_changed = any(state.is_status_changed(cam_id, int(k.split(":")[1]), v) for k, v in statuses.items())
+            # rsplit по последнему ':' — track_id корректно извлекается, даже если
+            # имя камеры само содержит двоеточие (ключ = f"{cam_id}:{track_id}").
+            any_changed = any(state.is_status_changed(cam_id, int(k.rsplit(":", 1)[1]), v) for k, v in statuses.items())
             if any_changed:
                 gid = global_ids[0] if global_ids else 0
                 state.add_log(LogEntry(
