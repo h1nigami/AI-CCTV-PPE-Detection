@@ -87,6 +87,11 @@ class BatchDetectionWorker:
     def stop(self) -> None:
         self._stop_event.set()
         self._any_new.set()  # разбудить заблокированный _run
+        # Разбудить все потоки, ожидающие результата в submit() — иначе они
+        # зависнут до своего таймаута после того как воркер уже остановлен.
+        with self._lock:
+            for ev in self._result_events.values():
+                ev.set()
         if self._thread is not None:
             self._thread.join(timeout=2.0)
         self._thread = None
