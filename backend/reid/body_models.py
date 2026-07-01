@@ -26,6 +26,11 @@ def ensure_body_model(model_dir, model_name: str, url: str) -> Optional[Path]:
         return onnx_path
     if os.environ.get("REID_BODY_OFFLINE") == "1":
         return None
+    # Офлайн — не виснем на скачивании, сразу деградируем на цветовой дескриптор.
+    from backend.netutil import is_online
+    if not is_online():
+        print("[ReID/body] Сети нет — пропуск скачивания OSNet, цветовой fallback")
+        return None
     try:
         import requests
         model_dir.mkdir(parents=True, exist_ok=True)

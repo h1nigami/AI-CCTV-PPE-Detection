@@ -33,6 +33,11 @@ def ensure_model(model_dir, model_name: str) -> Optional[Tuple[Path, Path]]:
     config_path = model_dir / f"{model_name}.onnx.json"
     if _is_present(onnx_path) and _is_present(config_path):
         return onnx_path, config_path
+    # Офлайн — не виснем на скачивании голоса; фронт откатится на Web Speech.
+    from backend.netutil import is_online
+    if not is_online():
+        print("[tts] Сети нет — пропуск скачивания голоса Piper (фоллбэк Web Speech)")
+        return None
     try:
         import requests
         model_dir.mkdir(parents=True, exist_ok=True)

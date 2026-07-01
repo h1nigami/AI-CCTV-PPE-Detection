@@ -98,11 +98,32 @@ def configure_camera_routes(app, state, camera_captures):
     # ── Зоны (полигоны редактора) ───────────────────────────────
     @app.route("/api/cameras/discover", methods=["POST"])
     def api_discover_cameras():
-        """Найти открытые RTSP-потоки в локальной сети. {add:true} — добавить."""
+        """Найти RTSP-камеры в локальной сети. Возвращает открытые (status=new/added)
+        и запароленные (status=locked, requires_auth=true — нужен логин/пароль).
+        {add:true} — автодобавить открытые."""
         from backend.main import discover_cameras
         data = request.get_json(silent=True) or {}
         result = discover_cameras(add=bool(data.get("add")))
         return jsonify(result)
+
+    @app.route("/api/cameras/discover/auth", methods=["POST"])
+    def api_discover_auth():
+        """Добавить запароленную камеру: по {ip, username, password, port?, name?}
+        подбирается рабочий RTSP-URL (перебор типовых путей с кредами) и камера
+        добавляется. 200 {ok:true, rtsp_url, added_as} либо 400 {ok:false, error}."""
+        from backend.main import add_authenticated_camera
+        data = request.get_json(silent=True) or {}
+        ip = (data.get("ip") or "").strip()
+        if not ip:
+            return jsonify({"ok": False, "error": "ip обязателен"}), 400
+        try:
+            port = int(data.get("port") or 554)
+        except (ValueError, TypeError):
+            port = 554
+        result = add_authenticated_camera(
+            ip, data.get("username") or "", data.get("password") or "",
+            port=port, name=(data.get("name") or "").strip() or None)
+        return jsonify(result), (200 if result.get("ok") else 400)
 
     @app.route("/api/cameras/<cam_id>/zones", methods=["GET"])
     def api_get_zones(cam_id):

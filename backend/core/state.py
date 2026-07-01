@@ -13,6 +13,7 @@ from backend.config import (
     REID_DIVERSITY_MAX_SIM, REID_STORE_MIN_SIM, VOICE_ALERT_COOLDOWN,
     REID_BODY_ENABLED, REID_BODY_MATCH_THRESHOLD, REID_BODY_MAX_EMBEDDINGS,
     REID_BODY_DIVERSITY_MAX_SIM, REID_BODY_STORE_INTERVAL,
+    get_detection_setting,
 )
 
 TRACK_EXPIRY = 60.0
@@ -44,9 +45,14 @@ class DetectionState:
         # Статусы последнего залогированного события (cam_id+track_id → compact_status)
         self._last_logged_status: Dict[Tuple[str, int], str] = {}
 
-        # Очередь голосовых предупреждений (max 50) + кулдаун по камере
+        # Кольцевой буфер голосовых предупреждений (max 50) + кулдаун по камере.
+        # Каждому алерту присваивается монотонный seq — клиенты читают «всё после
+        # своего курсора» и НЕ извлекают из общей очереди (иначе один клиент
+        # «съедал» бы алерт у других, а несколько камер сериализовались бы по
+        # одному на опрос). Так каждый клиент получает все алерты независимо.
         self._voice_alerts: deque = deque(maxlen=50)
         self._voice_alert_last: Dict[str, float] = {}
+        self._voice_seq: int = 0
 
         # Очередь UI-уведомлений (жест ОК / нехватка СИЗ и т.п.) — фронт поллит
         # /api/notifications и показывает их сверху. Структурированные (type/title/
@@ -255,6 +261,11 @@ class DetectionState:
         if gid is None:
             pid = self._old_person_id(person_box, cam_id)
             gid = hash(pid) & 0x7FFFFFFF
+        elif gid <= 0:
+            # global_id<=0 — «личность не определена» (нет лица/тела/трека). Это НЕ
+            # настоящая личность, а общий sentinel: пропуск ему выдавать нельзя,
+            # иначе одобрение «протекает» на ВСЕХ неопознанных людей в кадре.
+            return False
         with self._lock:
             expire = self._approved.get(gid)
             if expire is None:
@@ -269,9 +280,13 @@ class DetectionState:
         if gid is None:
             pid = self._old_person_id(person_box, cam_id)
             gid = hash(pid) & 0x7FFFFFFF
+        elif gid <= 0:
+            # Неопознанную личность (sentinel<=0) не одобряем — см. is_approved.
+            return
+        duration = get_detection_setting("approval_duration")
         with self._lock:
-            self._approved[gid] = time.time() + APPROVAL_DURATION
-        print(f"Пропуск выдан: global_id={gid} на {APPROVAL_DURATION} сек.")
+            self._approved[gid] = time.time() + duration
+        print(f"Пропуск выдан: global_id={gid} на {duration} сек.")
 
     def clear_approved(self):
         with self._lock:
@@ -279,9 +294,12 @@ class DetectionState:
 
     def grant_approval(self, global_id: int) -> None:
         """Выдать пропуск личности вручную (из UI) на APPROVAL_DURATION секунд."""
+        if global_id <= 0:
+            return  # неопознанная личность (sentinel) — пропуск выдавать некому
+        duration = get_detection_setting("approval_duration")
         with self._lock:
-            self._approved[global_id] = time.time() + APPROVAL_DURATION
-        print(f"Пропуск выдан вручную: global_id={global_id} на {APPROVAL_DURATION} сек.")
+            self._approved[global_id] = time.time() + duration
+        print(f"Пропуск выдан вручную: global_id={global_id} на {duration} сек.")
 
     def revoke_approval(self, global_id: int) -> bool:
         """Отозвать (сбросить) пропуск конкретной личности.
@@ -318,9 +336,10 @@ class DetectionState:
             return time.time() < self._gesture_until
 
     def can_gesture(self, global_id: int) -> bool:
+        cooldown = get_detection_setting("gesture_cooldown")
         with self._lock:
             last = self._last_gesture_time.get(global_id, 0)
-            return time.time() - last >= GESTURE_COOLDOWN
+            return time.time() - last >= cooldown
 
     def should_run_gesture(self, global_id: int) -> bool:
         """Троттлинг ДОРОГОГО pose-инференса жеста: True не чаще раза в
@@ -353,25 +372,37 @@ class DetectionState:
             self._last_logged_status.clear()
 
     def push_voice_alert(self, cam_id: str, text: str) -> bool:
-        """Добавить голосовое предупреждение в очередь с соблюдением кулдауна.
+        """Добавить голосовое предупреждение в буфер с соблюдением кулдауна.
         Возвращает True, если предупреждение добавлено."""
         now = time.time()
+        cooldown = get_detection_setting("voice_alert_cooldown")
         with self._lock:
-            if now - self._voice_alert_last.get(cam_id, 0.0) < VOICE_ALERT_COOLDOWN:
+            if now - self._voice_alert_last.get(cam_id, 0.0) < cooldown:
                 return False
             self._voice_alert_last[cam_id] = now
+            self._voice_seq += 1
             self._voice_alerts.append({
-                "id": f"{cam_id}_{now}",
+                "id": f"{cam_id}_{self._voice_seq}",
+                "seq": self._voice_seq,
                 "cam_id": cam_id,
                 "text": text,
                 "timestamp": now,
             })
             return True
 
-    def pop_voice_alert(self) -> Optional[dict]:
-        """Извлечь и вернуть старейшее ожидающее предупреждение (или None)."""
+    def get_voice_alerts_since(self, after_seq: Optional[int]) -> dict:
+        """Вернуть голосовые алерты НОВЕЕ курсора клиента, не удаляя их из буфера.
+
+        ``after_seq is None`` (первый опрос клиента) → пустой список и текущий
+        курсор: клиент инициализирует курсор «здесь и сейчас» и не переигрывает
+        накопившийся бэклог. Дальше клиент шлёт ``after_seq=cursor`` и получает
+        только новые алерты. Несколько клиентов/камер обслуживаются независимо."""
         with self._lock:
-            return self._voice_alerts.popleft() if self._voice_alerts else None
+            cursor = self._voice_seq
+            if after_seq is None:
+                return {"alerts": [], "cursor": cursor}
+            alerts = [dict(a) for a in self._voice_alerts if a["seq"] > after_seq]
+            return {"alerts": alerts, "cursor": cursor}
 
     def push_notification(self, ntype: str, title: str, sub: str = ""):
         """Добавить UI-уведомление (показывается сверху на фронте)."""

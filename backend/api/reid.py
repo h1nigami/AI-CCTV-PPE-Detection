@@ -66,7 +66,9 @@ def configure_reid_routes(app, state):
             return jsonify({"error": "Re-ID не активен"}), 400
         return jsonify({
             "total_persons": state.gallery.count,
-            "total_approved": len(list(state._approved.keys())) if hasattr(state, '_approved') else 0,
+            # get_active_approvals() считает только НЕистёкшие пропуска и под локом
+            # (прямой доступ к state._approved давал бы гонку и учитывал просрочку).
+            "total_approved": len(state.get_active_approvals()),
         })
 
     return app
