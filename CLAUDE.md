@@ -48,7 +48,16 @@ docker compose --profile cpu logs -f app-cpu
 - Dockerfile'ы: `Dockerfile` (CPU multi-stage), `Dockerfile.gpu` (CUDA), `Dockerfile.jetson` (ARM/Jetson), `Dockerfile.frontend` (nginx как reverse-proxy для отдельного фронт-сервера, `docker-compose.frontend.yml`, env `BACKEND_URL`).
 - Полный чеклист деплоя бэка на GPU-сервер + фронта отдельным контейнером — `DEPLOY_FRONTEND_CHECKLIST.md`.
 
-### Киоск-режим (Windows, Chrome Kiosk)
+### Киоск-режим (Chrome/Chromium Kiosk)
+
+**Linux** — Chromium поднимается прямо в Docker вместе с бэкендом, без ручных скриптов:
+```bash
+xhost +local:docker                            # один раз на хосте — разрешить контейнерам рисовать в X
+docker compose --profile gpu up --build        # поднимает app-gpu + kiosk-gpu (Chromium в контейнере на дисплее хоста)
+```
+Сервисы `kiosk-cpu`/`kiosk-gpu` (`docker-compose.yml`, `kiosk/Dockerfile`, `kiosk/entrypoint.sh`) стартуют по `condition: service_healthy` бэкенда, монтируют `/tmp/.X11-unix` + `~/.Xauthority` хоста, профиль Chromium — в volume (`kiosk_profile_cpu`/`_gpu`, переживает пересоздание контейнера). `entrypoint.sh` перед стартом снимает Singleton-локи от упавшего предыдущего запуска и поднимает локальный `dbus-daemon --system` (иначе Chromium пишет "Failed to connect to the bus"). Подробности — `docs/kiosk-mode.md`.
+
+**Windows** — нативный Chrome на хосте (GUI-в-Docker через Docker Desktop/WSLg оказался ненадёжным — падал на CRLF/D-Bus/"missing X server"):
 ```powershell
 cd kiosk
 .\start_kiosk.ps1                                    # Chrome --kiosk на http://localhost:8000, автоперезапуск при закрытии
@@ -57,7 +66,7 @@ cd kiosk
 .\stop_kiosk.ps1                                      # штатная остановка (стоп-флаг + закрытие Chrome)
 ```
 - Дашборд открывается как отдельное полноэкранное приложение (без адресной строки/вкладок), а не вкладка браузера. Изолированный профиль Chrome (`%LOCALAPPDATA%\PPEKiosk\ChromeProfile`) — JWT-сессия переживает перезапуск.
-- **`docker compose --profile gpu up --build` сам по себе Chrome НЕ открывает** — это только поднимает бэкенд-контейнер; в foreground-режиме терминал занят логами и до киоска дело не доходит. Если бэкенд и киоск — одна Windows-машина, используйте `start_docker_gpu_kiosk.ps1` (поднимает контейнер в фоне `-d`, затем сам вызывает `start_kiosk.ps1`, который дожидается `/health`).
+- **`docker compose --profile gpu up --build` сам по себе Chrome НЕ открывает на Windows** — это только поднимает бэкенд-контейнер; в foreground-режиме терминал занят логами и до киоска дело не доходит. Используйте `start_docker_gpu_kiosk.ps1` (поднимает контейнер в фоне `-d`, затем сам вызывает `start_kiosk.ps1`, который дожидается `/health`).
 - Реализована блокировка только на уровне Chrome (флаги `--kiosk`, автоперезапуск при закрытии/падении). Более глубокая блокировка ОС (Alt+Tab, диспетчер задач) — штатный Windows Assigned Access, не автоматизирована в репо.
 - Полная инструкция (автологин, отключение спящего режима, установка на выделенный терминал) — `docs/kiosk-mode.md`.
 
