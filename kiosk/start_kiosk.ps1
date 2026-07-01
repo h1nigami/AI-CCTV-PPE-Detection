@@ -71,7 +71,14 @@ function Wait-Backend {
 
 # Не даём двум экземплярам watchdog-цикла работать одновременно на одном профиле.
 $mutex = New-Object System.Threading.Mutex($false, "Global\PPEKioskWatchdog")
-if (-not $mutex.WaitOne(0)) {
+try {
+    $acquired = $mutex.WaitOne(0)
+} catch [System.Threading.AbandonedMutexException] {
+    # Предыдущий владелец завершился аварийно (сбой питания, Task Manager, BSOD) —
+    # мьютекс всё равно передаётся нам, продолжаем как при успешном захвате.
+    $acquired = $true
+}
+if (-not $acquired) {
     Write-Warning "start_kiosk.ps1 уже запущен в другом процессе — выходим, чтобы не плодить дублирующиеся Chrome."
     exit 1
 }
