@@ -131,6 +131,11 @@ docker compose --profile gpu up --build -d
 Открыть: `http://localhost:8000`  
 Логин: `admin` / пароль: `admin123` (переопределяется через `ADMIN_PASSWORD`)
 
+### Киоск-режим (Windows)
+Запуск дашборда как отдельного полноэкранного приложения (Chrome Kiosk) на
+Windows-терминале с монитором, вместо вкладки браузера — скрипты `kiosk/`,
+инструкция `docs/kiosk-mode.md`.
+
 ### Локальная разработка
 ```bash
 pip install -r requirements.txt
