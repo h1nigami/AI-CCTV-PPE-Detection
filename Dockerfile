@@ -51,8 +51,7 @@ COPY backend/ ./backend/
 # ── Корневые реэкспорты и конфигурация ───────────────────
 COPY app.py config.py main.py state.py \
      camera.py detection.py gestures.py visualization.py reid.py ./
-# ── Шаблоны и YOLO-модели (.pt файлы) ─────────────────────
-COPY templates/ ./templates/
+# ── YOLO-модели (.pt файлы) ────────────────────────────────
 COPY models/*.pt ./models/
 COPY models/buffalo_l/ ./models/buffalo_l/
 COPY data/ ./data/

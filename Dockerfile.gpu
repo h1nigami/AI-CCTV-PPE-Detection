@@ -65,8 +65,7 @@ COPY backend/ ./backend/
 # ── Корневые реэкспорты и конфигурация ───────────────────
 COPY app.py config.py main.py state.py \
      camera.py detection.py gestures.py visualization.py reid.py ./
-# ── Шаблоны и модели ─────────────────────────────────────
-COPY templates/ ./templates/
+# ── Модели ────────────────────────────────────────────────
 COPY models/ ./models/
 COPY data/ ./data/
 # ── Скрипты ──────────────────────────────────────────────
