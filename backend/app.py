@@ -40,14 +40,16 @@ FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")
 FRONTEND_INDEX = os.path.join(FRONTEND_DIR, "index.html")
 
 if not os.path.exists(FRONTEND_INDEX):
-    # Частая причина: docker-compose.override.yml (применяется автоматически)
-    # бинд-маунтит ./frontend/dist поверх собранного в образе фронтенда — если
-    # на хосте frontend/dist не собран, монтируется пустая папка и React-сборка
-    # "исчезает". Нужен `cd frontend && npm install && npm run build` до `docker
-    # compose up` (или после каждой правки React — см. CLAUDE.md).
+    # В Docker фронтенд собирается ВНУТРИ образа (Stage 1 Dockerfile/Dockerfile.gpu,
+    # npm ci && npm run build) — при отсутствии здесь это либо запуск вне Docker
+    # (голый python app.py на хосте без npm run build), либо образ собран без
+    # `--build` до появления фронтенда. Чинится `docker compose ... up --build`
+    # (Docker сам поставит зависимости и соберёт React — npm на хосте не нужен),
+    # либо для запуска вне Docker — `cd frontend && npm install && npm run build`.
     print(
         f"[WARN] Не найден собранный frontend: {FRONTEND_INDEX}\n"
-        f"       Соберите его: cd frontend && npm install && npm run build\n"
+        f"       В Docker: docker compose --profile <cpu|gpu> up --build\n"
+        f"       Вне Docker: cd frontend && npm install && npm run build\n"
         f"       До сборки на '/' будет отдаваться диагностическая страница вместо дашборда."
     )
 
@@ -74,11 +76,12 @@ _FRONTEND_MISSING_HTML = """<!DOCTYPE html>
   <div class="box">
     <h1>⚠ Frontend не собран</h1>
     <p>Бэкенд не нашёл собранный React-фронтенд (<code>frontend/dist/index.html</code>).</p>
-    <p>Соберите фронтенд и перезапустите контейнер:</p>
+    <p>В Docker — пересоберите образ (фронтенд собирается внутри него):</p>
+    <pre>docker compose --profile gpu up --build -d</pre>
+    <p>Вне Docker (локальный запуск python app.py):</p>
     <pre>cd frontend
 npm install
-npm run build
-docker compose --profile gpu restart app-gpu</pre>
+npm run build</pre>
     <p>Подробнее — раздел «Локальный запуск» / «Docker» в CLAUDE.md.</p>
   </div>
 </body></html>"""
