@@ -34,13 +34,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 RUN ln -sf /usr/bin/python3 /usr/bin/python
 
-# ── PyTorch с поддержкой Pascal (sm_61) для Tesla P4 ──────────
-# Официальные cu124/cu130-колёса собираются только под sm_75+ и на Pascal падают
-# ("no kernel image is available"). Ставим cu121-сборку ПЕРВОЙ: ultralytics требует
-# лишь torch>=1.8, поэтому не перетянет более новый torch поверх.
+# ── PyTorch с поддержкой Blackwell (sm_120) для RTX 5070 Ti ──
+# RTX 5070 Ti (Blackwell, sm_120) требует torch>=2.9.0+cu130
 COPY requirements.txt .
-RUN pip install --no-cache-dir torch==2.4.1 torchvision==0.19.1 \
-    --index-url https://download.pytorch.org/whl/cu121
+RUN pip install --no-cache-dir torch==2.12.1+cu130 torchvision==0.27.1+cu130 \
+    --index-url https://download.pytorch.org/whl/cu130
 RUN pip install --no-cache-dir --timeout=300 \
     opencv-python-headless \
     flask \
