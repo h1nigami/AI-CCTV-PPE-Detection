@@ -123,7 +123,7 @@ export function Header() {
 
       <div style={styles.headerCenter}>
         <img src="/logo.svg" alt="" style={styles.centerLogo} />
-        {!isMobile && <span>Нейроконтролер</span>}
+        {!isMobile && <span>НейроИИ</span>}
       </div>
 
       <div style={styles.headerRight}>
