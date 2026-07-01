@@ -34,3 +34,4 @@ class FrameBuffer:
         with self._lock:
             self._frame = None
             self._ts = 0.0
+        self._event.set()
