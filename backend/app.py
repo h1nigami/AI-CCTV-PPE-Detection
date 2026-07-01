@@ -4,7 +4,7 @@ import cv2
 if not hasattr(cv2, 'INTER_NEAREST_EXACT'):
     cv2.INTER_NEAREST_EXACT = cv2.INTER_NEAREST
 
-from flask import Flask, send_file, send_from_directory, render_template
+from flask import Flask, send_file, send_from_directory
 from backend.main import (
     generate_live_feed, start_live, stop_live, state,
     annotated_buffers, model, camera_captures,
@@ -22,9 +22,7 @@ from backend.db.engine import init_db
 from backend.auth.routes import auth_bp
 from backend.auth.service import init_admin, set_jwt_secret
 
-app = Flask(__name__, static_folder=None, template_folder=str(
-    os.path.join(os.path.dirname(__file__), "..", "templates")
-))
+app = Flask(__name__, static_folder=None)
 
 init_db()
 
@@ -39,6 +37,19 @@ init_admin(
 )
 
 FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")
+FRONTEND_INDEX = os.path.join(FRONTEND_DIR, "index.html")
+
+if not os.path.exists(FRONTEND_INDEX):
+    # Частая причина: docker-compose.override.yml (применяется автоматически)
+    # бинд-маунтит ./frontend/dist поверх собранного в образе фронтенда — если
+    # на хосте frontend/dist не собран, монтируется пустая папка и React-сборка
+    # "исчезает". Нужен `cd frontend && npm install && npm run build` до `docker
+    # compose up` (или после каждой правки React — см. CLAUDE.md).
+    print(
+        f"[WARN] Не найден собранный frontend: {FRONTEND_INDEX}\n"
+        f"       Соберите его: cd frontend && npm install && npm run build\n"
+        f"       До сборки на '/' будет отдаваться диагностическая страница вместо дашборда."
+    )
 
 
 @app.after_request
@@ -49,15 +60,38 @@ def add_cors(response):
     return response
 
 
+_FRONTEND_MISSING_HTML = """<!DOCTYPE html>
+<html lang="ru"><head><meta charset="UTF-8"><title>Frontend не собран</title>
+<style>
+  body{background:#080d14;color:#c8dff0;font-family:monospace;display:flex;
+       align-items:center;justify-content:center;min-height:100vh;margin:0}
+  .box{max-width:640px;padding:32px;border:1px solid #ff3355;border-radius:8px;
+       background:#ff335511}
+  h1{color:#ff3355;font-size:1.2rem;margin:0 0 12px}
+  code{background:#111c2b;padding:2px 6px;border-radius:4px;color:#00e5ff}
+  pre{background:#111c2b;padding:12px;border-radius:6px;overflow-x:auto}
+</style></head><body>
+  <div class="box">
+    <h1>⚠ Frontend не собран</h1>
+    <p>Бэкенд не нашёл собранный React-фронтенд (<code>frontend/dist/index.html</code>).</p>
+    <p>Соберите фронтенд и перезапустите контейнер:</p>
+    <pre>cd frontend
+npm install
+npm run build
+docker compose --profile gpu restart app-gpu</pre>
+    <p>Подробнее — раздел «Локальный запуск» / «Docker» в CLAUDE.md.</p>
+  </div>
+</body></html>"""
+
+
 @app.route("/", defaults={"path": ""})
 @app.route("/<path:path>")
 def serve_frontend(path):
     if path and os.path.exists(os.path.join(FRONTEND_DIR, path)):
         return send_from_directory(FRONTEND_DIR, path)
-    index_path = os.path.join(FRONTEND_DIR, "index.html")
-    if os.path.exists(index_path):
-        return send_file(index_path)
-    return render_template("index.html")
+    if os.path.exists(FRONTEND_INDEX):
+        return send_file(FRONTEND_INDEX)
+    return _FRONTEND_MISSING_HTML, 503
 
 
 app.register_blueprint(auth_bp)

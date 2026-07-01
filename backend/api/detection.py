@@ -1,7 +1,7 @@
 import os
 import uuid
 import cv2
-from flask import Flask, send_file, render_template, Response, request, jsonify, send_from_directory
+from flask import Flask, send_file, Response, request, jsonify, send_from_directory
 from backend.detection.engine import get_danger_zone, is_in_danger_zone
 from backend.visualization.renderer import draw_danger_zone, put_text
 from backend.config import CONF_THRESH, get_detection_setting
