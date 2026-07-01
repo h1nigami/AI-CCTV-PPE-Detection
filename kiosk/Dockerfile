@@ -11,6 +11,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+# sed -i убирает \r — если репозиторий выкачан на Windows с core.autocrlf=true,
+# git конвертирует .sh в CRLF, и шебанг "#!/bin/sh\r" ломает exec с
+# малопонятной ошибкой "no such file or directory". Не полагаемся на
+# git-настройки хоста, чиним прямо при сборке образа.
+RUN sed -i 's/\r$//' /entrypoint.sh && chmod +x /entrypoint.sh
 
 ENTRYPOINT ["/entrypoint.sh"]
