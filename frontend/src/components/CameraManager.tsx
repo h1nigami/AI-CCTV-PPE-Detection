@@ -11,9 +11,11 @@ import { useCamerasContext } from "../contexts/CameraContext"
 
 interface DiscoveredCamera {
   ip: string
-  rtsp_url: string
+  rtsp_url: string | null
   name: string
-  status: string
+  status: string // new | added | exists | locked
+  requires_auth?: boolean
+  port?: number
 }
 
 export function CameraManager() {
@@ -27,14 +29,26 @@ export function CameraManager() {
   const [editingSource, setEditingSource] = useState("")
   const [discovering, setDiscovering] = useState(false)
   const [discovered, setDiscovered] = useState<DiscoveredCamera[]>([])
+  // Ввод логина/пароля для запароленной камеры (по IP, на котором открыта форма).
+  const [authIp, setAuthIp] = useState<string | null>(null)
+  const [authUser, setAuthUser] = useState("")
+  const [authPass, setAuthPass] = useState("")
+  const [authBusy, setAuthBusy] = useState(false)
 
   const handleDiscover = async () => {
     setDiscovering(true)
+    setAuthIp(null)
     setStatus("Поиск камер в сети…")
     try {
       const res = await api.discoverCameras(false)
       setDiscovered(res.found)
-      setStatus(res.found.length ? `Найдено: ${res.found.length}` : "Открытых камер не найдено")
+      if (!res.found.length) {
+        setStatus("Камеры не найдены")
+      } else {
+        const locked = res.found.filter((d) => d.requires_auth).length
+        const open = res.found.length - locked
+        setStatus(`Найдено: ${res.found.length} (открытых ${open}, под паролем ${locked})`)
+      }
     } catch (err) {
       setStatus("ERR " + (err as Error).message)
     } finally {
@@ -43,12 +57,45 @@ export function CameraManager() {
   }
 
   const handleAddDiscovered = async (d: DiscoveredCamera) => {
+    if (!d.rtsp_url) return
     try {
       await api.addCamera(d.name, d.rtsp_url)
-      setDiscovered((prev) => prev.filter((x) => x.rtsp_url !== d.rtsp_url))
+      setDiscovered((prev) => prev.filter((x) => x.ip !== d.ip))
       refresh()
     } catch (err) {
       setStatus("ERR " + (err as Error).message)
+    }
+  }
+
+  const openAuth = (d: DiscoveredCamera) => {
+    setAuthIp(d.ip)
+    setAuthUser("")
+    setAuthPass("")
+    setStatus("")
+  }
+
+  const handleAuthSubmit = async (d: DiscoveredCamera) => {
+    setAuthBusy(true)
+    setStatus("")
+    try {
+      const res = await api.discoverAuth({
+        ip: d.ip,
+        username: authUser,
+        password: authPass,
+        port: d.port,
+      })
+      if (res.ok) {
+        setDiscovered((prev) => prev.filter((x) => x.ip !== d.ip))
+        setAuthIp(null)
+        setStatus(`OK добавлена ${res.added_as || d.ip}`)
+        refresh()
+      } else {
+        setStatus("ERR " + (res.error || "не удалось подключиться"))
+      }
+    } catch (err) {
+      setStatus("ERR " + (err as Error).message)
+    } finally {
+      setAuthBusy(false)
     }
   }
 
@@ -135,17 +182,71 @@ export function CameraManager() {
       {discovered.length > 0 && (
         <div style={styles.discoverList}>
           {discovered.map((d) => (
-            <div key={d.rtsp_url} style={styles.discoverItem}>
-              <div style={styles.discoverInfo}>
-                <span style={{ color: "#00b0ff" }}>{d.ip}</span>
-                <span style={styles.discoverUrl}>{d.rtsp_url}</span>
+            <div key={d.ip} style={styles.discoverItemWrap}>
+              <div style={styles.discoverItem}>
+                <div style={styles.discoverInfo}>
+                  <span style={{ color: "#00b0ff" }}>
+                    {d.requires_auth ? "🔒 " : ""}
+                    {d.ip}
+                  </span>
+                  <span style={styles.discoverUrl}>
+                    {d.rtsp_url || "RTSP требует логин/пароль"}
+                  </span>
+                </div>
+                {d.status === "exists" ? (
+                  <span style={styles.discoverExists}>уже есть</span>
+                ) : d.requires_auth ? (
+                  authIp === d.ip ? (
+                    <button
+                      style={{ ...styles.actionBtn, color: "#888" }}
+                      onClick={() => setAuthIp(null)}
+                    >
+                      Отмена
+                    </button>
+                  ) : (
+                    <button style={styles.lockBtn} onClick={() => openAuth(d)}>
+                      🔑 Ввести пароль
+                    </button>
+                  )
+                ) : (
+                  <button style={styles.actionBtn} onClick={() => handleAddDiscovered(d)}>
+                    + Добавить
+                  </button>
+                )}
               </div>
-              {d.status === "exists" ? (
-                <span style={styles.discoverExists}>уже есть</span>
-              ) : (
-                <button style={styles.actionBtn} onClick={() => handleAddDiscovered(d)}>
-                  + Добавить
-                </button>
+              {/* Форма логина/пароля для запароленной камеры */}
+              {d.requires_auth && authIp === d.ip && (
+                <div style={styles.authForm}>
+                  <input
+                    style={styles.authInput}
+                    placeholder="Логин"
+                    value={authUser}
+                    autoFocus
+                    onChange={(e) => setAuthUser(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleAuthSubmit(d)
+                      if (e.key === "Escape") setAuthIp(null)
+                    }}
+                  />
+                  <input
+                    style={styles.authInput}
+                    type="password"
+                    placeholder="Пароль"
+                    value={authPass}
+                    onChange={(e) => setAuthPass(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleAuthSubmit(d)
+                      if (e.key === "Escape") setAuthIp(null)
+                    }}
+                  />
+                  <button
+                    style={styles.connectBtn}
+                    disabled={authBusy}
+                    onClick={() => handleAuthSubmit(d)}
+                  >
+                    {authBusy ? "Проверка…" : "Подключить"}
+                  </button>
+                </div>
               )}
             </div>
           ))}
@@ -288,13 +389,52 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: "8px",
     overflow: "hidden",
   },
+  discoverItemWrap: {
+    borderBottom: "1px solid #222",
+  },
   discoverItem: {
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
     gap: "8px",
     padding: "8px 12px",
-    borderBottom: "1px solid #222",
+  },
+  lockBtn: {
+    background: "none",
+    border: "1px solid #ffb30055",
+    borderRadius: "6px",
+    color: "#ffb300",
+    cursor: "pointer",
+    padding: "2px 8px",
+    fontFamily: "monospace",
+    fontSize: "0.65rem",
+    whiteSpace: "nowrap",
+    flexShrink: 0,
+  },
+  authForm: {
+    display: "flex",
+    gap: "6px",
+    padding: "0 12px 10px 12px",
+    flexWrap: "wrap",
+    alignItems: "center",
+  },
+  authInput: {
+    ...baseInput,
+    flex: 1,
+    minWidth: "100px",
+  },
+  connectBtn: {
+    background: "#2a2a2a",
+    border: "1px solid #00e676",
+    color: "#00e676",
+    borderRadius: "6px",
+    padding: "6px 12px",
+    cursor: "pointer",
+    fontFamily: "'Inter', sans-serif",
+    fontWeight: 600,
+    fontSize: ".7rem",
+    textTransform: "uppercase",
+    flexShrink: 0,
   },
   discoverInfo: { display: "flex", flexDirection: "column", minWidth: 0, gap: "2px" },
   discoverUrl: {

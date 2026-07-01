@@ -1,14 +1,19 @@
 # ── Development override ─────────────────────────────────────
 # Использование:
-#   docker compose --profile cpu up --build      (первый запуск / после новых зависимостей)
+#   docker compose --profile cpu up --build      (первый запуск / после новых зависимостей
+#                                                  ИЛИ после правок React — фронтенд
+#                                                  собирается ВНУТРИ образа, npm на хосте
+#                                                  не нужен)
 #   docker compose --profile cpu up              (bind-mounts подтягивают изменения кода)
 #
 # После изменений в Python → достаточно перезапустить контейнер (без --build):
 #   docker compose --profile cpu restart app-cpu
 #
-# После изменений в React → нужно пересобрать frontend:
-#   cd frontend && npm run build
-#   docker compose --profile cpu restart app-cpu
+# frontend/dist НЕ бинд-маунтится специально: он собирается в Stage 1
+# Dockerfile'а (node:20-alpine, npm ci && npm run build) и копируется в образ.
+# Бинд-маунт поверх него скрыл бы собранный фронтенд пустой хостовой папкой
+# при первом запуске (frontend/dist в .gitignore, на хосте её ещё нет) —
+# оставляем сборку целиком на Docker, чтобы `up --build` сам делал всё.
 
 x-dev-mounts: &dev-mounts
   volumes:
@@ -23,7 +28,6 @@ x-dev-mounts: &dev-mounts
     - ./visualization.py:/app/visualization.py
     - ./reid.py:/app/reid.py
     - ./migrations:/app/migrations
-    - ./frontend/dist:/app/frontend/dist
     - ./tests:/app/tests
   environment:
     - FLASK_DEBUG=1

@@ -198,6 +198,14 @@ REID_DIVERSITY_MAX_SIM = 0.92
 # похожем ракурсе (один человек, sim 0.3-0.5), а разные люди (~0) переключаются.
 REID_STICKY_MARGIN = 0.25
 REID_STICKY_MIN = 0.28
+# Строгий порог СОХРАНЕНИЯ эмбеддинга в галерею (отдельно от мягкого порога
+# матчинга/липкости). Новый эмбеддинг дописывается к личности, только если его
+# косинус к ЯКОРЮ (embeddings[0], эталон) >= этого значения. Защита от порчи:
+# при ByteTrack ID-switch чужое лицо (для ArcFace разные люди дают 0.28-0.45)
+# больше не дописывается в галерею другого человека. Гейт по якорю (а не по
+# max ко всем) устойчив к дрейфу. 0/отрицательное — гейт выключен (старое
+# поведение). Берётся из env REID_STORE_MIN_SIM.
+REID_STORE_MIN_SIM = float(os.environ.get("REID_STORE_MIN_SIM", "0.45"))
 
 # ── Body Re-ID (опознание «со спины» по внешнему виду) ─────────────────────
 # Лицевой Re-ID (InsightFace) видит только фронтальные лица. Когда человек стоит
@@ -365,3 +373,125 @@ def save_ppe_required():
     _PPE_REQUIRED_PATH.parent.mkdir(parents=True, exist_ok=True)
     with open(_PPE_REQUIRED_PATH, "w", encoding="utf-8") as _f:
         json.dump(PPE_REQUIRED_DEFAULT, _f, ensure_ascii=False, indent=2)
+
+
+# ── Рантайм-настройки детекции (правятся из UI «Настройки → Детекция и логика») ─
+# Параметры детекции/логики, которые оператор меняет «на лету» из интерфейса —
+# точки использования читают их ЖИВЫМИ через get_detection_setting(), без рестарта
+# (per-camera YOLO применяет conf на каждом кадре, state — на каждом вызове).
+# Константы выше остаются ДЕФОЛТАМИ (и обратной совместимостью для импортов/тестов).
+# Спека ниже — ЕДИНЫЙ источник и для валидации (clamp по типу/диапазону на бэке),
+# и для генеративной отрисовки UI (label/desc/min/max/step/unit/group). Чтобы
+# добавить новый тумблер настроек — достаточно дописать запись в спеку и читать её
+# через get_detection_setting() в точке использования.
+DETECTION_SETTINGS_SPEC = [
+    {"key": "person_conf", "default": CONF_THRESH, "type": "float",
+     "min": 0.1, "max": 0.95, "step": 0.05,
+     "group": "Чувствительность детекции",
+     "label": "Порог уверенности: человек / конус", "unit": "",
+     "desc": "Минимальная уверенность модели, чтобы засчитать человека или конус. "
+             "Выше → меньше ложных срабатываний, но можно пропустить реальные "
+             "объекты; ниже → ловит больше, но растёт «мусор»."},
+    {"key": "ppe_conf", "default": PPE_CONF_THRESH, "type": "float",
+     "min": 0.1, "max": 0.95, "step": 0.05,
+     "group": "Чувствительность детекции",
+     "label": "Порог уверенности: СИЗ (каска / маска / жилет)", "unit": "",
+     "desc": "Отдельный, обычно более мягкий порог для предметов СИЗ — они мельче "
+             "человека. Слишком высокий → каска на голове не засчитается (ложное "
+             "«нет каски»); слишком низкий → ложное «СИЗ есть»."},
+    {"key": "min_cones", "default": MIN_CONES, "type": "int",
+     "min": 3, "max": 12, "step": 1,
+     "group": "Опасные зоны по конусам",
+     "label": "Минимум конусов для авто-зоны", "unit": "шт",
+     "desc": "Сколько конусов безопасности нужно в кадре, чтобы построить опасную "
+             "зону-многоугольник. Меньше 3 — зона вырождается и в неё нельзя «войти»."},
+    {"key": "zone_expand_px", "default": ZONE_EXPAND_PX, "type": "int",
+     "min": 0, "max": 200, "step": 5,
+     "group": "Опасные зоны по конусам",
+     "label": "Расширение зоны за конусы", "unit": "px",
+     "desc": "На сколько пикселей раздуть многоугольник наружу от конусов — запас "
+             "по краю зоны."},
+    {"key": "ppe_top_ratio", "default": TOP_RATIO, "type": "float",
+     "min": 0.1, "max": 1.0, "step": 0.05,
+     "group": "Сопоставление СИЗ с человеком",
+     "label": "Зона СИЗ по высоте человека", "unit": "",
+     "desc": "В какой верхней доле рамки человека должен быть центр предмета, чтобы "
+             "засчитать его этому человеку (0.4 = верхние 40%). Больше → засчитывает "
+             "СИЗ даже низко; меньше → строго у головы/торса."},
+    {"key": "approval_duration", "default": APPROVAL_DURATION, "type": "int",
+     "min": 10, "max": 3600, "step": 10,
+     "group": "Пропуск и жесты",
+     "label": "Время действия пропуска", "unit": "сек",
+     "desc": "Сколько секунд действует пропуск, выданный по жесту «ОК» (или вручную), "
+             "прежде чем человека снова начнут проверять."},
+    {"key": "gesture_cooldown", "default": GESTURE_COOLDOWN, "type": "float",
+     "min": 0.5, "max": 30.0, "step": 0.5,
+     "group": "Пропуск и жесты",
+     "label": "Кулдаун повторного жеста", "unit": "сек",
+     "desc": "Минимальный интервал между распознаваниями жеста у одного человека — "
+             "защита от повторных срабатываний."},
+    {"key": "voice_alert_cooldown", "default": VOICE_ALERT_COOLDOWN, "type": "float",
+     "min": 0.0, "max": 120.0, "step": 1.0,
+     "group": "Голосовые оповещения",
+     "label": "Кулдаун озвучки на камеру", "unit": "сек",
+     "desc": "Минимальный интервал между голосовыми тревогами по одной камере — "
+             "чтобы не повторять предупреждение каждый кадр."},
+]
+
+_DS_SPEC_BY_KEY = {s["key"]: s for s in DETECTION_SETTINGS_SPEC}
+
+
+def _coerce_clamp_setting(spec: dict, value):
+    """Привести значение к типу спеки и зажать в [min, max]. None при мусоре."""
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return None
+    v = max(spec["min"], min(spec["max"], v))
+    return int(round(v)) if spec["type"] == "int" else float(v)
+
+
+DETECTION_SETTINGS = {s["key"]: s["default"] for s in DETECTION_SETTINGS_SPEC}
+_DETECTION_SETTINGS_PATH = BASE_DIR / "data" / "detection_settings.json"
+try:
+    with open(_DETECTION_SETTINGS_PATH, encoding="utf-8") as _f:
+        _loaded_ds = json.load(_f)
+        if isinstance(_loaded_ds, dict):
+            for _k, _v in _loaded_ds.items():
+                _spec = _DS_SPEC_BY_KEY.get(_k)
+                if _spec is None:
+                    continue
+                _cv = _coerce_clamp_setting(_spec, _v)
+                if _cv is not None:
+                    DETECTION_SETTINGS[_k] = _cv
+except FileNotFoundError:
+    pass
+
+
+def get_detection_setting(key: str):
+    """Живое значение рантайм-настройки детекции (читается в точках использования
+    на каждом кадре/вызове → изменения из UI применяются без рестарта)."""
+    return DETECTION_SETTINGS.get(key)
+
+
+def save_detection_settings():
+    _DETECTION_SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(_DETECTION_SETTINGS_PATH, "w", encoding="utf-8") as _f:
+        json.dump(DETECTION_SETTINGS, _f, ensure_ascii=False, indent=2)
+
+
+def update_detection_settings(patch: dict) -> dict:
+    """Применить частичные изменения (валидация/clamp по спеке), мутируя
+    DETECTION_SETTINGS НА МЕСТЕ (точки использования держат ту же ссылку), и
+    персистнуть. Неизвестные ключи и мусорные значения игнорируются. Возвращает
+    актуальный словарь настроек."""
+    if isinstance(patch, dict):
+        for k, v in patch.items():
+            spec = _DS_SPEC_BY_KEY.get(k)
+            if spec is None:
+                continue
+            cv = _coerce_clamp_setting(spec, v)
+            if cv is not None:
+                DETECTION_SETTINGS[k] = cv
+    save_detection_settings()
+    return dict(DETECTION_SETTINGS)

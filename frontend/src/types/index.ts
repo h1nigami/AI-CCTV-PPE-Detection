@@ -128,6 +128,21 @@ export interface ServerNotification {
   timestamp: number
 }
 
+/** Описание одной рантайм-настройки детекции (бэк отдаёт спеку для генеративного
+ *  рендера панели в «Настройки → Детекция и логика»). */
+export interface DetectionSettingSpec {
+  key: string
+  default: number
+  type: "int" | "float"
+  min: number
+  max: number
+  step: number
+  group: string
+  label: string
+  unit: string
+  desc: string
+}
+
 /** Пользовательская полигональная зона (редактор зон) */
 export type ZoneType = "danger" | "restricted" | "mask"
 export interface Zone {

@@ -1,5 +1,6 @@
 import { CameraManager } from "../components/CameraManager"
 import { PpeRequiredSettings } from "../components/PpeRequiredSettings"
+import { DetectionSettings } from "../components/DetectionSettings"
 
 export default function SettingsPage() {
   return (
@@ -22,6 +23,14 @@ export default function SettingsPage() {
           <div style={styles.cardTitle}>ОБЯЗАТЕЛЬНЫЕ СИЗ ДЛЯ ПРОПУСКА</div>
           <div style={styles.cardBody}>
             <PpeRequiredSettings />
+          </div>
+        </div>
+
+        {/* Блок: рантайм-настройки детекции и логики (пороги/зоны/пропуск/голос) */}
+        <div style={styles.card}>
+          <div style={styles.cardTitle}>ДЕТЕКЦИЯ И ЛОГИКА</div>
+          <div style={styles.cardBody}>
+            <DetectionSettings />
           </div>
         </div>
 

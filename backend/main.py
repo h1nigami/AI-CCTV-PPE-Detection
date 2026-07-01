@@ -9,7 +9,7 @@ import traceback
 from collections import deque
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, Optional
 from ultralytics import YOLO
 import torch
 
@@ -34,6 +34,7 @@ from backend.zones import get_zones, apply_masks, in_any_danger_zone, required_p
 from backend.capture.buffer import FrameBuffer
 from backend.capture.camera import CameraCapture
 from backend.detection.engine import run_detection, get_danger_zone, has_item_on_person, is_in_danger_zone
+from backend.detection.batch_worker import BatchDetectionWorker
 from backend.gestures.detector import detect_ok_gesture
 from backend.tts.alert import (build_voice_text as _build_voice_text,
                                build_approved_voice_text as _build_approved_voice_text)
@@ -51,8 +52,20 @@ print(f"Используется устройство: {DEVICE}")
 
 
 def _resolve_model(path):
+    """Приоритет: .engine (TensorRT) > .torchscript (ARM64/TorchScript) > .pt"""
     engine = path.with_suffix('.engine')
-    return engine if engine.exists() else path
+    if engine.exists():
+        return engine
+    ts = path.with_suffix('.torchscript')
+    if ts.exists():
+        return ts
+    return path
+
+
+def _apply_class_names(yolo_model, resolved_path):
+    """Применить CLASS_NAMES для .pt-моделей (TorchScript и .engine берут имена из весов)."""
+    if resolved_path.suffix == '.pt':
+        yolo_model.model.names = CLASS_NAMES
 
 
 model_path = _resolve_model(MODEL_PATH)
@@ -60,14 +73,23 @@ pose_path = _resolve_model(POSE_MODEL_PATH)
 
 model = YOLO(str(model_path))
 model.to(DEVICE)
-if model_path.suffix == '.pt':
-    model.model.names = CLASS_NAMES
+_apply_class_names(model, model_path)
 pose_model = YOLO(str(pose_path))
 pose_model.to(DEVICE)
 
 is_tensorrt = model_path.suffix == '.engine'
+is_torchscript = model_path.suffix == '.torchscript'
 if is_tensorrt:
-    print("[TensorRT] FP16 engine loaded")
+    print("[TensorRT] FP16 engine загружен")
+elif is_torchscript:
+    print("[TorchScript] .torchscript модель загружена")
+
+# Батч-инференс: один model.track(batch) вместо N последовательных вызовов.
+# Авто-включается при ≥2 камерах; BATCH_INFERENCE=0 отключает принудительно.
+_BATCH_INFERENCE_ENV = os.environ.get("BATCH_INFERENCE", "").strip().lower()
+BATCH_INFERENCE_ENABLED: bool = _BATCH_INFERENCE_ENV not in ("0", "false", "no", "off")
+# Синглтон воркера; создаётся/уничтожается в start_live/stop_live
+_batch_worker: Optional[BatchDetectionWorker] = None
 
 face_recognizer = None
 try:
@@ -192,6 +214,9 @@ def add_camera(cam_id: str, source: str | int):
             fw = FaceRecognitionWorker(frame_buffers[cam_id], face_recognizer, REID_FRAME_SKIP)
             fw.start()
             face_workers[cam_id] = fw
+        # Регистрируем в батч-воркере, если он активен.
+        if _batch_worker is not None:
+            _batch_worker.register_camera(cam_id)
         # Поднимаем поток детекции для новой камеры на лету.
         if cam_id not in detection_threads or not detection_threads[cam_id].is_alive():
             t = threading.Thread(target=_camera_detection_worker, args=(cam_id,), daemon=True)
@@ -219,6 +244,8 @@ def remove_camera(cam_id: str):
     detection_threads.pop(cam_id, None)
     with _cam_models_lock:
         _cam_models.pop(cam_id, None)
+    if _batch_worker is not None:
+        _batch_worker.unregister_camera(cam_id)
     _motion_detectors.pop(cam_id, None)
     if RECORD_ENABLED:
         get_recording_manager().remove_camera(cam_id)
@@ -287,8 +314,14 @@ def discover_cameras(add: bool = False) -> dict:
     existing = {str(v) for v in CAMERAS.values()}
     added = []
     for f in found:
-        if f["rtsp_url"] in existing:
+        # Хост уже добавлен (по URL открытой камеры ИЛИ по IP — покрывает и
+        # запароленные, добавленные ранее с логином в URL).
+        if (f.get("rtsp_url") and f["rtsp_url"] in existing) or f["ip"] in known_ips:
             f["status"] = "exists"
+            continue
+        if f.get("requires_auth"):
+            # Запароленная: автодобавить нельзя (нужны логин/пароль) — UI спросит их.
+            f["status"] = "locked"
             continue
         f["status"] = "new"
         if add:
@@ -298,6 +331,26 @@ def discover_cameras(add: bool = False) -> dict:
             f["status"] = "added"
             added.append(name)
     return {"found": found, "added": added}
+
+
+def add_authenticated_camera(ip: str, username: str, password: str,
+                             port: int = 554, name: str | None = None) -> dict:
+    """Подобрать рабочий RTSP-URL для запароленной камеры (ip + логин/пароль),
+    перебрав типовые пути, и добавить её. Возвращает {ok, rtsp_url?, added_as?,
+    error?}. Логин/пароль попадают в URL источника (URL-кодируются)."""
+    from backend.discovery import probe_rtsp_auth, paths_from_sources, name_for_ip, merge_paths
+    if not ip:
+        return {"ok": False, "error": "Не указан IP камеры"}
+    # Пути уже добавленных камер пробуем первыми (часто все камеры одного вендора).
+    paths = merge_paths(paths_from_sources(CAMERAS.values()))
+    url = probe_rtsp_auth(ip, username, password, port=port, paths=paths)
+    if not url:
+        return {"ok": False, "error": "Поток не открылся с этими логином и паролем"}
+    if str(url) in {str(v) for v in CAMERAS.values()}:
+        return {"ok": False, "error": "Камера с таким URL уже добавлена"}
+    cam_name = _unique_cam_name((name or "").strip() or name_for_ip(ip))
+    add_camera(cam_name, url)
+    return {"ok": True, "rtsp_url": url, "added_as": cam_name}
 
 
 def autodiscover_and_add():
@@ -315,6 +368,9 @@ face_workers: dict[str, 'FaceRecognitionWorker'] = {}
 # ── Event recording ──
 _event_recordings: dict[str, Optional[dict]] = {}
 _frame_prebuf: dict[str, deque] = {}
+# Последняя категория кадра по камере — чтобы метрика событий считала СОБЫТИЯ
+# (смены категории), а не каждый кадр (иначе frigate_events_total раздувался).
+_last_event_category: dict[str, str] = {}
 # Состав людей с пропуском в зоне, для которых уже проговорена спокойная отметка
 # (cam_id → set global_id). Чтобы не повторять «причин для внимания нет» каждый
 # кулдаун — озвучиваем только при ВХОДЕ нового человека с пропуском в зону.
@@ -339,8 +395,7 @@ def _get_cam_models(cam_id: str) -> tuple:
         if pair is None:
             ym = YOLO(str(model_path))
             ym.to(DEVICE)
-            if model_path.suffix == '.pt':
-                ym.model.names = CLASS_NAMES
+            _apply_class_names(ym, model_path)
             pm = YOLO(str(pose_path))
             pm.to(DEVICE)
             pair = (ym, pm)
@@ -381,7 +436,8 @@ def _draw_user_zones(frame, zones: list, w: int, h: int):
         frame[:] = put_text(frame, label, (pts[0][0], max(0, pts[0][1] - 18)), color=color)
 
 
-def process_frame(frame, cam_id: str, face_worker=None, det_model=None, det_pose=None):
+def process_frame(frame, cam_id: str, face_worker=None, det_model=None, det_pose=None,
+                  precomputed_detection: Optional[Dict[str, Any]] = None):
     from backend.config import DETECT_MODES
     # Модели на камеру (для параллельных потоков детекции); по умолчанию —
     # глобальные (обратная совместимость с /upload и тестами).
@@ -394,7 +450,12 @@ def process_frame(frame, cam_id: str, face_worker=None, det_model=None, det_pose
         # annotated_buffers → /video_frame отдавал 204 → фронт «NO SIGNAL».
         return frame, f"{datetime.now().strftime('%H:%M:%S')} [{cam_id}] Детекция отключена", "норма", [], {}, [], []
     state.cleanup_stale_tracks()
-    detected = run_detection(frame, det_model)
+    # Батч-режим: детекция уже выполнена централизованно — используем готовый результат.
+    # Одиночный режим (/upload, тесты, одна камера): вызываем run_detection здесь.
+    if precomputed_detection is not None:
+        detected = precomputed_detection
+    else:
+        detected = run_detection(frame, det_model)
     # Пользовательские зоны (нарисованы в редакторе): сперва маски — исключаем
     # объекты в замаскированных областях ДО любой логики/отрисовки.
     fh, fw = frame.shape[:2]
@@ -405,11 +466,19 @@ def process_frame(frame, cam_id: str, face_worker=None, det_model=None, det_pose
     # Опасные/ограниченные пользовательские зоны учитываются вместе с зоной по
     # конусам (только когда включена детекция СИЗ — как и зона по конусам).
     danger_user = [z for z in cam_zones if z.get("type") in ("danger", "restricted")] if ppe_on else []
-    # Чистый кадр ДО любой отрисовки — для body Re-ID (рамки/заливка зоны исказили
-    # бы цвета одежды). Берём копию только когда body Re-ID реально нужен.
-    clean_frame = frame.copy() if (body_recognizer is not None
-                                   and DETECT_MODES.get("faces", True)
-                                   and detected["persons"]) else None
+    detect_people = DETECT_MODES.get("people", True)
+    detect_faces_mode = DETECT_MODES.get("faces", True)
+    # Режим «только люди»: СИЗ и лица выключены — жест/пропуск/тело не нужны.
+    people_only = detect_people and not ppe_on and not detect_faces_mode
+    # Чистый кадр ДО любой отрисовки нужен И для body Re-ID (рамки/заливка зоны
+    # исказили бы цвета одежды), И для детекции жеста: контурный анализ кисти в
+    # _is_ok_by_contour чувствителен к нарисованным оверлеям и полупрозрачной
+    # заливке опасной зоны. Копию берём, только когда она реально используется —
+    # людей детектим (жест/тело идут внутри ветки detect_people) и не режим
+    # «только люди» (там жест/тело отключены).
+    clean_frame = (frame.copy()
+                   if (detected["persons"] and detect_people and not people_only)
+                   else None)
     danger_zone = get_danger_zone(detected["cones"]) if ppe_on else None
 
     def _in_danger(pbox) -> bool:
@@ -461,14 +530,11 @@ def process_frame(frame, cam_id: str, face_worker=None, det_model=None, det_pose
     # Люди с активным пропуском, стоящие в зоне: (global_id, имя). Для спокойной
     # голосовой отметки «в СИЗ, причин для внимания нет» (озвучивается при входе).
     voice_approved: list[tuple[int, str]] = []
-    detect_people = DETECT_MODES.get("people", True)
-    detect_faces_mode = DETECT_MODES.get("faces", True)
-    # Режим «только люди»: СИЗ и лица выключены. Здесь нет смысла в статусах
-    # СИЗ/зоны/пропуска — просто выделяем людей рамкой. Без этого жест «ОК»
-    # (поза детектится независимо от режима) при пустом списке требуемых СИЗ
-    # выдавал «пропуск», который из-за нестабильных global_id (лица выкл.)
-    # разъезжался «на всех».
-    people_only = detect_people and not ppe_on and not detect_faces_mode
+    # detect_people / detect_faces_mode / people_only вычислены выше (нужны для
+    # clean_frame). Режим «только люди» (СИЗ и лица выключены): людей рисуем
+    # нейтральной рамкой без статусов/пропуска, а жест «ОК» не запускаем — иначе
+    # при пустом наборе требуемых СИЗ «пропуск» из-за нестабильных global_id
+    # (лица выкл.) разъезжался «на всех».
     if detected["persons"] and detect_people:
         msg_parts.append(f"Людей: {persons_count}")
         face_embeddings = None
@@ -476,9 +542,12 @@ def process_frame(frame, cam_id: str, face_worker=None, det_model=None, det_pose
             face_data = face_worker.get_faces()
             face_embeddings = match_faces_to_persons(detected["persons"], face_data)
         # Дескрипторы тел (одежда/силуэт) с ЧИСТОГО кадра — для опознания «со спины».
-        # Батчем: для OSNet это один инференс на кадр (а не на человека).
+        # Батчем: для OSNet это один инференс на кадр (а не на человека). clean_frame
+        # теперь берётся и ради жеста, поэтому body Re-ID гейтим явно (распознаватель
+        # активен и включены лица), а не по наличию clean_frame.
         body_embs = (body_recognizer.extract_batch(clean_frame, detected["persons"])
-                     if clean_frame is not None else None)
+                     if (body_recognizer is not None and detect_faces_mode
+                         and clean_frame is not None) else None)
         for idx, pbox in enumerate(detected["persons"]):
             track_id = person_track_ids[idx] if idx < len(person_track_ids) else -1
             if track_id < 0:
@@ -513,9 +582,15 @@ def process_frame(frame, cam_id: str, face_worker=None, det_model=None, det_pose
             # Pose-инференс жеста дорогой — запускаем только для неодобренных,
             # вне кулдауна И не чаще GESTURE_CHECK_INTERVAL на личность (троттлинг
             # должен идти ПОСЛЕДНИМ в конъюнкции — у него побочный эффект).
+            # global_id > 0: для неопознанной личности (gid=0 — общий sentinel)
+            # жест не проверяем, иначе выданный пропуск и кулдаун жеста делятся
+            # на ВСЕХ неопознанных. Детекция — по ЧИСТОМУ кадру (clean_frame),
+            # без рамок/заливки зоны, иначе контурный анализ кисти искажается.
             gesture_ok = (
-                detect_ok_gesture(frame, pbox, det_pose)
-                if (not people_only and not approved and state.can_gesture(global_id)
+                detect_ok_gesture(clean_frame if clean_frame is not None else frame,
+                                  pbox, det_pose)
+                if (not people_only and global_id > 0 and not approved
+                    and state.can_gesture(global_id)
                     and state.should_run_gesture(global_id))
                 else False
             )
@@ -616,12 +691,48 @@ def process_frame(frame, cam_id: str, face_worker=None, det_model=None, det_pose
     return frame, message, category, global_ids, statuses, voice_violators, voice_approved
 
 
+_NO_SIGNAL_CACHE: dict[tuple, bytes] = {}
+
+
+def _no_signal_jpeg(width: int = 1280, height: int = 720) -> bytes:
+    """JPEG-заставка «NO SIGNAL» (чёрный кадр с текстом). Кэшируется по размеру —
+    рисуем один раз на разрешение. Текст ASCII → cv2.putText (без PIL/кириллицы)."""
+    key = (width, height)
+    cached = _NO_SIGNAL_CACHE.get(key)
+    if cached is not None:
+        return cached
+    import numpy as np
+    frame = np.zeros((height, width, 3), dtype=np.uint8)
+    text = "NO SIGNAL"
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    scale = max(1.0, width / 640.0)
+    thickness = max(2, int(scale * 1.5))
+    (tw, th), _ = cv2.getTextSize(text, font, scale, thickness)
+    org = ((width - tw) // 2, (height + th) // 2)
+    cv2.putText(frame, text, org, font, scale, (60, 60, 200), thickness, cv2.LINE_AA)
+    ok, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+    data = buffer.tobytes() if ok else b""
+    _NO_SIGNAL_CACHE[key] = data
+    return data
+
+
 def generate_live_feed(cam_id: str = "cam1"):
     ann_buf = annotated_buffers.get(cam_id)
     if ann_buf is None:
         return
+    raw_buf = frame_buffers.get(cam_id)
     consecutive_errors = 0
+    last_dims = (1280, 720)
     while state.live_active:
+        # Камера «отвалилась» (capture не пишет новых кадров) — шлём «NO SIGNAL»
+        # вместо застывшего последнего кадра, как /video_frame отдаёт 204. Иначе
+        # MJPEG держал бы замороженный кадр, выдавая потерю связи за «живой» поток.
+        if raw_buf is not None and raw_buf.age() > STREAM_STALE_SEC:
+            yield (b'--frame\r\n'
+                   b'Content-Type: image/jpeg\r\n\r\n'
+                   + _no_signal_jpeg(*last_dims) + b'\r\n')
+            time.sleep(0.5)  # троттлинг заставки (не чаще 2 кадров/с)
+            continue
         ann_buf.wait(timeout=2.0)
         frame = ann_buf.read()
         if frame is None:
@@ -630,6 +741,7 @@ def generate_live_feed(cam_id: str = "cam1"):
             ret, buffer = cv2.imencode('.jpg', frame)
             if not ret:
                 continue
+            last_dims = (frame.shape[1], frame.shape[0])
             consecutive_errors = 0
             yield (b'--frame\r\n'
                    b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
@@ -643,6 +755,7 @@ def generate_live_feed(cam_id: str = "cam1"):
 
 
 def start_live():
+    global _batch_worker
     if state.live_active:
         stop_live()
         time.sleep(0.5)
@@ -651,6 +764,12 @@ def start_live():
     state.clear_notifications()
     _motion_detectors.clear()
     _voice_approved_seen.clear()
+    # Пер-сессионные буферы событий: иначе пред-буфер первого клипа новой сессии
+    # содержал бы застывшие кадры предыдущей (другая сцена/время), а счётчик
+    # событий не зафиксировал бы первую категорию.
+    _frame_prebuf.clear()
+    _event_recordings.clear()
+    _last_event_category.clear()
     for buf in annotated_buffers.values():
         buf.clear()
     state.live_active = True
@@ -658,6 +777,20 @@ def start_live():
         _init_camera_resources(cam_id, CAMERAS[cam_id])
         camera_captures[cam_id].start()
     start_face_workers()
+
+    # Батч-инференс: включаем при ≥2 камерах (или при BATCH_INFERENCE=1).
+    # Один model.track(batch) вместо N последовательных GPU-вызовов.
+    cam_count = len(CAMERAS)
+    if BATCH_INFERENCE_ENABLED and cam_count >= 2:
+        _batch_worker = BatchDetectionWorker(model)
+        _batch_worker.start()
+        for cam_id in CAMERAS:
+            _batch_worker.register_camera(cam_id)
+    else:
+        _batch_worker = None
+        if cam_count < 2:
+            print("[BatchInference] Одна камера — батчинг не нужен, используется прямой инференс")
+
     # Поток детекции на КАЖДУЮ камеру — параллельная обработка вместо
     # последовательного round-robin (см. _camera_detection_worker).
     for cam_id in list(CAMERAS.keys()):
@@ -669,13 +802,20 @@ def start_live():
     hb.start()
     if RECORD_ENABLED:
         get_recording_manager().start_all(dict(CAMERAS))
-    print(f"Детекция запущена на {len(CAMERAS)} камерах ({len(CAMERAS)} потоков)")
+    mode = "батч" if _batch_worker is not None else "прямой"
+    print(f"Детекция запущена на {cam_count} камерах (режим: {mode})")
 
 
 def stop_live():
+    global _batch_worker
     if not state.live_active:
         return
     state.live_active = False
+    # Останавливаем батч-воркер до join потоков детекции: потоки заблокированы
+    # на _batch_worker.submit() — stop() разблокирует их через _result_events.
+    if _batch_worker is not None:
+        _batch_worker.stop()
+        _batch_worker = None
     for cam_id in list(CAMERAS.keys()):
         if cam_id in camera_captures:
             camera_captures[cam_id].stop()
@@ -730,13 +870,39 @@ def _heartbeat_loop():
             slept += 0.5
 
 
+def _violator_global_id(global_ids: list, statuses: dict) -> int:
+    """global_id первого РЕАЛЬНОГО нарушителя, а не просто первого человека в кадре.
+
+    statuses и global_ids идут в одном порядке людей (оба строятся циклом по
+    detected["persons"]). Строчная буква в первых трёх символах компактного
+    статуса (КМЖ) = отсутствует требуемый СИЗ → это нарушитель. Фоллбэк, если
+    нарушитель не вычленён, — первый global_id (старое поведение)."""
+    status_list = list(statuses.values())
+    for i, gid in enumerate(global_ids):
+        st = status_list[i] if i < len(status_list) else ""
+        if len(st) >= 3 and any(c.islower() for c in st[:3]):
+            return gid
+    return global_ids[0] if global_ids else 0
+
+
 def _camera_detection_worker(cam_id: str):
-    """Поток детекции ОДНОЙ камеры. Запускается по экземпляру на камеру —
-    YOLO/InsightFace/OpenCV отпускают GIL на время вычислений, поэтому камеры
-    обрабатываются параллельно (на CPU — по ядрам, на GPU — с перекрытием),
-    без последовательного round-robin прежней единой петли."""
+    """Поток детекции ОДНОЙ камеры.
+
+    Два режима (выбираются при запуске по BATCH_INFERENCE_ENABLED):
+
+    Батч-режим (≥2 камеры, GPU): кадр сдаётся в BatchDetectionWorker,
+    поток блокируется до готового detection-словаря. Все камеры обрабатываются
+    одним model.track(batch) — GPU занят непрерывно, throughput ×N.
+
+    Одиночный режим (1 камера / CPU): каждый поток вызывает свою YOLO-модель
+    напрямую (ByteTrack изолирован на уровне экземпляра модели).
+    """
     metrics = get_metrics()
     publisher = get_publisher()
+    use_batch = _batch_worker is not None
+    # Per-camera модели: в батч-режиме YOLO для детекции не используется
+    # (батч-воркер делает это централизованно), но pose-модель нужна всегда
+    # для жестов (throttled predict на кроп, без ByteTrack).
     det_model, det_pose = _get_cam_models(cam_id)
     while state.live_active and cam_id in CAMERAS:
         if cam_id not in frame_buffers:
@@ -782,11 +948,19 @@ def _camera_detection_worker(cam_id: str):
 
         try:
             _t0 = time.time()
+            # Батч-режим: сдаём кадр в централизованный воркер и ждём detection-словарь.
+            # Одиночный режим: precomputed_detection=None → process_frame вызовет run_detection.
+            precomputed = _batch_worker.submit(cam_id, frame) if use_batch else None
             annotated, message, category, global_ids, statuses, voice_violators, voice_approved = process_frame(
                 frame, cam_id, face_worker=face_workers.get(cam_id),
-                det_model=det_model, det_pose=det_pose)
+                det_model=det_model, det_pose=det_pose,
+                precomputed_detection=precomputed)
             metrics.record_frame(cam_id, (time.time() - _t0) * 1000.0)
-            metrics.record_event(category)
+            # Считаем СОБЫТИЕ, а не кадр: инкремент только при смене категории для
+            # камеры (иначе frigate_events_total рос на каждом кадре «нормы»).
+            if _last_event_category.get(cam_id) != category:
+                metrics.record_event(category)
+                _last_event_category[cam_id] = category
             out_buf.write(annotated)
 
             if publisher is not None:
@@ -821,7 +995,7 @@ def _camera_detection_worker(cam_id: str):
             is_violation = category == "нарушение"
             rec = _event_recordings.get(cam_id)
             if is_violation:
-                gid = global_ids[0] if global_ids else 0
+                gid = _violator_global_id(global_ids, statuses)
                 person_name = state.get_person_name(gid, cam_id, has_face=True) if gid else ""
                 if rec is None or not rec.get('active'):
                     event_id = create_event_record(
@@ -856,7 +1030,9 @@ def _camera_detection_worker(cam_id: str):
                         rec['active'] = False
                         _finalize_recording(cam_id, rec)
 
-            any_changed = any(state.is_status_changed(cam_id, int(k.split(":")[1]), v) for k, v in statuses.items())
+            # rsplit по последнему ':' — track_id корректно извлекается, даже если
+            # имя камеры само содержит двоеточие (ключ = f"{cam_id}:{track_id}").
+            any_changed = any(state.is_status_changed(cam_id, int(k.rsplit(":", 1)[1]), v) for k, v in statuses.items())
             if any_changed:
                 gid = global_ids[0] if global_ids else 0
                 state.add_log(LogEntry(

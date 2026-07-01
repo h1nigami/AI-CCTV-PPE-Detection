@@ -28,6 +28,28 @@ x-common: &common
     retries: 3
     start_period: 60s
 
+# Kiosk-контейнер: Chromium, рисующий окно на X11-дисплее ХОСТА (не headless).
+# Только Linux-хост с физическим монитором и залогиненной X-сессией (обычная
+# рабочая станция/диспетчерская). ОДИН РАЗ перед первым запуском на хосте:
+#   xhost +local:docker
+# (разрешает локальным Docker-контейнерам подключаться к X-серверу; без этого
+# Chromium упадёт с "cannot open display"). Дальше просто
+# `docker compose --profile gpu up --build` поднимает бэкенд и киоск вместе.
+# На Windows этот подход НЕ работает (см. git-историю: пробовали через WSLg,
+# отказались из-за нестабильности) — там нужен нативный Chrome, см.
+# docs/kiosk-mode.md (kiosk/start_kiosk.ps1).
+x-kiosk-common: &kiosk-common
+  build:
+    context: ./kiosk
+    dockerfile: Dockerfile
+  restart: unless-stopped
+  environment:
+    - DISPLAY=${DISPLAY:-:0}
+    - XAUTHORITY=/root/.Xauthority
+  volumes:
+    - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    - ${XAUTHORITY:-${HOME}/.Xauthority}:/root/.Xauthority:ro
+
 services:
 
   # ─────────────────────────────────────────────────
@@ -42,6 +64,26 @@ services:
     depends_on:
       createbuckets:
         condition: service_completed_successfully
+
+  # Kiosk для CPU-профиля: полноэкранный Chromium на дисплее хоста,
+  # открывается автоматически вместе с бэкендом.
+  kiosk-cpu:
+    <<: *kiosk-common
+    profiles: ["cpu"]
+    container_name: kontroler-kiosk-cpu
+    depends_on:
+      app-cpu:
+        condition: service_healthy
+    environment:
+      - DISPLAY=${DISPLAY:-:0}
+      - XAUTHORITY=/root/.Xauthority
+      - KIOSK_URL=http://app-cpu:8000
+    volumes:
+      # volumes: (как и environment:) перекрывает x-kiosk-common целиком —
+      # дублируем X11-маунты явно, иначе Chromium не найдёт дисплей.
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${XAUTHORITY:-${HOME}/.Xauthority}:/root/.Xauthority:ro
+      - kiosk_profile_cpu:/data/chromium-profile
 
   # ─────────────────────────────────────────────────
   #  GPU profile (NVIDIA CUDA)
@@ -70,6 +112,27 @@ services:
       # не делает deep-merge), поэтому переменные из x-common дублируем здесь явно.
       - DISCOVERY_SUBNET=192.168.0
       - PPE_CONF_THRESH=0.35
+
+  # Kiosk для GPU-профиля: полноэкранный Chromium на дисплее хоста,
+  # открывается автоматически вместе с бэкендом (см. заголовок
+  # x-kiosk-common выше про требование `xhost +local:docker` на хосте).
+  kiosk-gpu:
+    <<: *kiosk-common
+    profiles: ["gpu"]
+    container_name: kontroler-kiosk-gpu
+    depends_on:
+      app-gpu:
+        condition: service_healthy
+    environment:
+      - DISPLAY=${DISPLAY:-:0}
+      - XAUTHORITY=/root/.Xauthority
+      - KIOSK_URL=http://app-gpu:8000
+    volumes:
+      # volumes: (как и environment:) перекрывает x-kiosk-common целиком —
+      # дублируем X11-маунты явно, иначе Chromium не найдёт дисплей.
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${XAUTHORITY:-${HOME}/.Xauthority}:/root/.Xauthority:ro
+      - kiosk_profile_gpu:/data/chromium-profile
 
   # ─────────────────────────────────────────────────
   #  MQTT broker (для будущей Frigate-архитектуры)
@@ -125,3 +188,5 @@ volumes:
   mosquitto_data:
   mosquitto_log:
   minio_data:
+  kiosk_profile_cpu:
+  kiosk_profile_gpu:

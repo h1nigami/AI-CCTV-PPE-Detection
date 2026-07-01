@@ -170,17 +170,27 @@ def name_for_ip(ip: str) -> str:
     return "cam_" + ip.replace(".", "_")
 
 
+def auth_candidate_urls(ip: str, username: str, password: str, port: int = 554,
+                        paths: list[str] = None) -> list[str]:
+    """RTSP-URL с логином/паролем для перебора путей. Логин и пароль
+    URL-кодируются (могут содержать '@', ':', '/' и др. спецсимволы — иначе URL
+    разберётся неверно). Без логина/пароля кредов в URL нет."""
+    from urllib.parse import quote
+    paths = paths if paths is not None else COMMON_RTSP_PATHS
+    cred = ""
+    if username or password:
+        cred = f"{quote(username or '', safe='')}:{quote(password or '', safe='')}@"
+    return [f"rtsp://{cred}{ip}:{port}{p}" for p in paths]
+
+
 # ── Сетевые операции ────────────────────────────────────────────────────────
 def local_ip() -> str | None:
-    """IP-адрес хоста в локальной сети (через UDP-сокет, без отправки данных)."""
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    try:
-        s.connect(("8.8.8.8", 80))
-        return s.getsockname()[0]
-    except Exception:
-        return None
-    finally:
-        s.close()
+    """Основной локальный LAN-адрес хоста (или None). Работает офлайн: берётся
+    первый приватный IPv4 из перечисления интерфейсов (см. netutil.lan_ipv4s),
+    а не только connect-трюк, который без маршрута по умолчанию даёт None."""
+    from backend.netutil import lan_ipv4s
+    ips = lan_ipv4s()
+    return ips[0] if ips else None
 
 
 def discover_onvif(timeout: float = 3.0) -> set[str]:
@@ -244,6 +254,40 @@ def _first_open_url(ip: str, paths: list[str] = None) -> str | None:
     return None
 
 
+def probe_rtsp_auth(ip: str, username: str, password: str, port: int = 554,
+                    paths: list[str] = None) -> str | None:
+    """Перебрать типовые RTSP-пути С логином/паролем; вернуть первый рабочий URL
+    или None. Используется для запароленных камер (поток без логина не открылся)."""
+    for url in auth_candidate_urls(ip, username, password, port, paths):
+        if probe_rtsp(url):
+            return url
+    return None
+
+
+def _probe_host(ip: str, paths: list[str] = None, onvif_ips=None) -> dict | None:
+    """Статус хоста как камеры:
+      • открытая  — поток открылся без логина (`requires_auth=False`, есть rtsp_url);
+      • запароленная — порт 554 открыт ИЛИ ответил ONVIF, но поток без логина не
+        открылся (`requires_auth=True`, rtsp_url=None) → UI предложит логин/пароль;
+      • не камера — None.
+    """
+    is_onvif = bool(onvif_ips and ip in onvif_ips)
+    port_open = _port_open(ip)
+    if not port_open and not is_onvif:
+        return None
+    rtsp_url = None
+    if port_open:
+        for url in candidate_urls(ip, paths=paths):
+            if probe_rtsp(url):
+                rtsp_url = url
+                break
+    if rtsp_url:
+        return {"ip": ip, "rtsp_url": rtsp_url, "name": name_for_ip(ip),
+                "requires_auth": False, "port": 554}
+    return {"ip": ip, "rtsp_url": None, "name": name_for_ip(ip),
+            "requires_auth": True, "port": 554}
+
+
 def scan_prefixes(extra_subnets=None, known_ips=None) -> set[str]:
     """/24-префиксы для скана: явные подсети + подсети известных камер + локальная.
 
@@ -255,9 +299,10 @@ def scan_prefixes(extra_subnets=None, known_ips=None) -> set[str]:
         prefixes |= normalize_subnets(extra_subnets)
     if known_ips:
         prefixes |= {p for p in (prefix_of(ip) for ip in known_ips) if p}
-    base = local_ip()
-    if base:
-        p = prefix_of(base)
+    # Подсети ВСЕХ локальных интерфейсов (работает офлайн, ловит несколько LAN).
+    from backend.netutil import lan_ipv4s
+    for ip in lan_ipv4s():
+        p = prefix_of(ip)
         if p:
             prefixes.add(p)
     return prefixes
@@ -277,6 +322,7 @@ def discover_streams(use_onvif: bool = True, use_scan: bool = True,
     — RTSP-пути уже добавленных камер (например `/stream1`): пробуются первыми,
     чтобы не перебирать по 4с десяток чужих путей до нужного."""
     ips: set[str] = set()
+    onvif_ips: set[str] = set()
     if use_onvif:
         onvif_ips = discover_onvif(onvif_timeout)
         ips |= onvif_ips
@@ -291,11 +337,14 @@ def discover_streams(use_onvif: bool = True, use_scan: bool = True,
         return []
     paths = merge_paths(known_paths or [])
     found: list[dict] = []
-    probe = lambda ip: _first_open_url(ip, paths)
+    probe = lambda ip: _probe_host(ip, paths, onvif_ips)
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
-        for ip, url in zip(ips, pool.map(probe, ips)):
-            if url:
-                found.append({"ip": ip, "rtsp_url": url, "name": name_for_ip(ip)})
-    found.sort(key=lambda d: d["ip"])
-    print(f"[Discovery] Открытых RTSP-потоков найдено: {len(found)}")
+        for ip, res in zip(ips, pool.map(probe, ips)):
+            if res:
+                found.append(res)
+    # Открытые камеры — первыми, затем запароленные; внутри — по IP.
+    found.sort(key=lambda d: (d["requires_auth"], d["ip"]))
+    n_open = sum(1 for f in found if not f["requires_auth"])
+    print(f"[Discovery] Найдено камер: {len(found)} "
+          f"(открытых {n_open}, под паролем {len(found) - n_open})")
     return found

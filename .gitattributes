@@ -1,0 +1,6 @@
+# Shell-скрипты идут в Docker-контейнеры (Linux) — CRLF в шебанге ломает exec
+# ("no such file or directory" вместо явной ошибки про формат строк).
+*.sh text eol=lf
+
+# PowerShell-скрипты только для Windows — там ожидается CRLF.
+*.ps1 text eol=crlf

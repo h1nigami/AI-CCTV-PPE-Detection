@@ -11,6 +11,7 @@ import type {
   RecordingSegment,
   Zone,
   ServerNotification,
+  DetectionSettingSpec,
 } from "../types"
 
 // ============================================================
@@ -140,9 +141,29 @@ export const api = {
     }),
   discoverCameras: (add = false) =>
     request<{
-      found: { ip: string; rtsp_url: string; name: string; status: string; added_as?: string }[]
+      found: {
+        ip: string
+        rtsp_url: string | null
+        name: string
+        status: string // new | added | exists | locked
+        requires_auth?: boolean
+        port?: number
+        added_as?: string
+      }[]
       added: string[]
     }>("/api/cameras/discover", { method: "POST", body: JSON.stringify({ add }) }),
+  // Добавить запароленную камеру: бэк подберёт рабочий RTSP-URL по логину/паролю.
+  discoverAuth: (params: {
+    ip: string
+    username: string
+    password: string
+    port?: number
+    name?: string
+  }) =>
+    request<{ ok: boolean; rtsp_url?: string; added_as?: string; error?: string }>(
+      "/api/cameras/discover/auth",
+      { method: "POST", body: JSON.stringify(params) },
+    ),
   toggleAnalytics: (id: string, detect_enabled: boolean) =>
     request<ApiStatus>(`/api/cameras/${id}/analytics`, {
       method: "PUT",
@@ -233,11 +254,28 @@ export const api = {
       body: JSON.stringify({ required }),
     }),
 
-  // ---- Голосовые предупреждения ----
-  getVoiceAlert: () =>
-    request<{ id?: string; cam_id?: string; text?: string; timestamp?: number }>(
-      "/api/voice_alert"
+  // ---- Рантайм-настройки детекции (Настройки → Детекция и логика) ----
+  // Бэк отдаёт И текущие значения, И спеку (label/desc/min/max/step/unit/group)
+  // — панель рендерится по спеке. PUT принимает частичный патч {settings:{...}}.
+  getDetectionSettings: () =>
+    request<{ settings: Record<string, number>; spec: DetectionSettingSpec[] }>(
+      "/api/detection-settings",
     ),
+  setDetectionSettings: (settings: Record<string, number>) =>
+    request<{ status: string; settings: Record<string, number> }>(
+      "/api/detection-settings",
+      { method: "PUT", body: JSON.stringify({ settings }) },
+    ),
+
+  // ---- Голосовые предупреждения ----
+  // Курсорная модель: ?after=<seq> отдаёт все алерты новее курсора (не извлекая
+  // их из общей очереди), без after — только текущий курсор. Несколько вкладок и
+  // камер обслуживаются независимо (раньше pop «съедал» алерт у других клиентов).
+  getVoiceAlerts: (after?: number) =>
+    request<{
+      alerts: { id: string; seq: number; cam_id: string; text: string; timestamp: number }[]
+      cursor: number
+    }>(`/api/voice_alert${after === undefined ? "" : `?after=${after}`}`),
   /** URL готового WAV с синтезированной на бэке (Piper) речью. 503 → фронт
    *  откатывается на Web Speech. Тот же origin (nginx/vite-proxy) → без CORS. */
   getVoiceAlertAudioUrl: (text: string) =>

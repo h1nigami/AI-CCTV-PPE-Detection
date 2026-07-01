@@ -1,10 +1,10 @@
 import os
 import uuid
 import cv2
-from flask import Flask, send_file, render_template, Response, request, jsonify, send_from_directory
+from flask import Flask, send_file, Response, request, jsonify, send_from_directory
 from backend.detection.engine import get_danger_zone, is_in_danger_zone
 from backend.visualization.renderer import draw_danger_zone, put_text
-from backend.config import CONF_THRESH
+from backend.config import CONF_THRESH, get_detection_setting
 
 
 def _get_boxes_by_class(boxes, classes, names, class_name: str):
@@ -156,14 +156,37 @@ def configure_detection_routes(app, state, annotated_buffers, generate_live_feed
         save_ppe_required()
         return jsonify({"status": "updated", "required": list(PPE_REQUIRED_DEFAULT)})
 
+    @app.route("/api/detection-settings", methods=["GET"])
+    def api_get_detection_settings():
+        # Возвращаем И текущие значения, И спеку (label/desc/min/max/step/unit/group)
+        # — фронт рендерит панель настроек генеративно по спеке.
+        from backend.config import DETECTION_SETTINGS, DETECTION_SETTINGS_SPEC
+        return jsonify({"settings": dict(DETECTION_SETTINGS),
+                        "spec": DETECTION_SETTINGS_SPEC})
+
+    @app.route("/api/detection-settings", methods=["PUT"])
+    def api_set_detection_settings():
+        # Частичное обновление: {"settings": {key: value, ...}} (или плоский dict).
+        # Валидация/clamp по спеке — на бэке (update_detection_settings). Значения
+        # читаются точками детекции живыми → применяются без рестарта.
+        from backend.config import update_detection_settings
+        data = request.get_json(silent=True) or {}
+        patch = data.get("settings") if isinstance(data.get("settings"), dict) else data
+        updated = update_detection_settings(patch)
+        return jsonify({"status": "updated", "settings": updated})
+
     @app.route("/api/status")
     def api_status():
         return jsonify({"running": state.live_active})
 
     @app.route("/api/voice_alert")
     def api_voice_alert():
-        alert = state.pop_voice_alert()
-        return jsonify(alert or {})
+        # Курсорная модель: клиент шлёт ?after=<seq> и получает все алерты новее
+        # курсора (не извлекая их из общей очереди). Без after — только текущий
+        # курсор (инициализация без переигрывания бэклога). Так несколько вкладок
+        # и несколько камер обслуживаются независимо, без «съедания» алертов.
+        after = request.args.get("after", type=int)
+        return jsonify(state.get_voice_alerts_since(after))
 
     @app.route("/api/notifications")
     def api_notifications():
@@ -215,7 +238,7 @@ def configure_detection_routes(app, state, annotated_buffers, generate_live_feed
             if img is None:
                 os.remove(path)
                 return "Invalid image file", 400
-            result = model(img, conf=CONF_THRESH)[0]
+            result = model(img, conf=get_detection_setting("person_conf"))[0]
             annotated = _annotate_with_zone(result, model.names)
             output = os.path.join(UPLOAD_FOLDER, f"result_{filename}")
             cv2.imwrite(output, annotated)
@@ -230,7 +253,7 @@ def configure_detection_routes(app, state, annotated_buffers, generate_live_feed
                 ret, frame = cap.read()
                 if not ret:
                     break
-                result = model(frame, conf=CONF_THRESH)[0]
+                result = model(frame, conf=get_detection_setting("person_conf"))[0]
                 annotated = _annotate_with_zone(result, model.names)
                 out.write(annotated)
             cap.release()

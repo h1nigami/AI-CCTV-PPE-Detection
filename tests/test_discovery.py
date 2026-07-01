@@ -2,7 +2,7 @@
 from backend.discovery import (
     ips_from_ws_responses, candidate_urls, subnet_hosts, name_for_ip,
     prefix_of, ips_from_sources, normalize_subnets, hosts_for_prefixes,
-    paths_from_sources, merge_paths,
+    paths_from_sources, merge_paths, auth_candidate_urls,
     COMMON_RTSP_PATHS,
 )
 
@@ -97,6 +97,29 @@ def test_paths_from_sources():
     assert paths_from_sources(sources) == [
         "/stream1", "/cam/realmonitor?channel=1&subtype=0",
     ]
+
+
+def test_auth_candidate_urls_basic():
+    urls = auth_candidate_urls("10.0.0.5", "admin", "1234", port=554, paths=["/stream1"])
+    assert urls == ["rtsp://admin:1234@10.0.0.5:554/stream1"]
+
+
+def test_auth_candidate_urls_encodes_special_chars():
+    # Пароль со спецсимволами (@ : /) обязан URL-кодироваться, иначе URL ломается.
+    urls = auth_candidate_urls("10.0.0.5", "user", "p@ss/w:rd", port=8554, paths=["/h"])
+    assert urls == ["rtsp://user:p%40ss%2Fw%3Ard@10.0.0.5:8554/h"]
+
+
+def test_auth_candidate_urls_no_credentials():
+    # Без логина/пароля кредов в URL нет (обычная анонимная попытка).
+    urls = auth_candidate_urls("10.0.0.5", "", "", port=554, paths=["/a", "/b"])
+    assert urls == ["rtsp://10.0.0.5:554/a", "rtsp://10.0.0.5:554/b"]
+
+
+def test_auth_candidate_urls_defaults_to_common_paths():
+    urls = auth_candidate_urls("1.2.3.4", "u", "p")
+    assert len(urls) == len(COMMON_RTSP_PATHS)
+    assert all(u.startswith("rtsp://u:p@1.2.3.4:554") for u in urls)
 
 
 def test_merge_paths_known_first_no_dupes():
