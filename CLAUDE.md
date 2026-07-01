@@ -52,10 +52,12 @@ docker compose --profile cpu logs -f app-cpu
 ```powershell
 cd kiosk
 .\start_kiosk.ps1                                    # Chrome --kiosk на http://localhost:8000, автоперезапуск при закрытии
+.\start_docker_gpu_kiosk.ps1                          # docker compose --profile gpu up -d --build (бэкенд+киоск на одной машине) + start_kiosk.ps1
 .\install_autostart.ps1 -User "PC\ppekiosk"           # задача планировщика: автозапуск при входе (нужны права администратора)
 .\stop_kiosk.ps1                                      # штатная остановка (стоп-флаг + закрытие Chrome)
 ```
 - Дашборд открывается как отдельное полноэкранное приложение (без адресной строки/вкладок), а не вкладка браузера. Изолированный профиль Chrome (`%LOCALAPPDATA%\PPEKiosk\ChromeProfile`) — JWT-сессия переживает перезапуск.
+- **`docker compose --profile gpu up --build` сам по себе Chrome НЕ открывает** — это только поднимает бэкенд-контейнер; в foreground-режиме терминал занят логами и до киоска дело не доходит. Если бэкенд и киоск — одна Windows-машина, используйте `start_docker_gpu_kiosk.ps1` (поднимает контейнер в фоне `-d`, затем сам вызывает `start_kiosk.ps1`, который дожидается `/health`).
 - Реализована блокировка только на уровне Chrome (флаги `--kiosk`, автоперезапуск при закрытии/падении). Более глубокая блокировка ОС (Alt+Tab, диспетчер задач) — штатный Windows Assigned Access, не автоматизирована в репо.
 - Полная инструкция (автологин, отключение спящего режима, установка на выделенный терминал) — `docs/kiosk-mode.md`.
 
