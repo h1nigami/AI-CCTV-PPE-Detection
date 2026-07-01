@@ -15,6 +15,14 @@ echo "Бэкенд готов. Запуск Chromium в режиме киоск�
 
 mkdir -p "$PROFILE_DIR"
 
+# Системная шина D-Bus: в минимальном образе её никто не поднимает, а WSLg
+# прокидывает только сессионную шину (не системную) — без неё Chromium пишет
+# "Failed to connect to the bus: ... system_bus_socket" в лог. Поднимаем свою,
+# локальную для контейнера, чтобы убрать причину целиком.
+[ -e /etc/machine-id ] || dbus-uuidgen --ensure 2>/dev/null || true
+mkdir -p /var/run/dbus
+[ -S /var/run/dbus/system_bus_socket ] || dbus-daemon --system --fork 2>/dev/null || true
+
 # --no-sandbox: chromium в контейнере без доп. capabilities не может поднять
 # свой sandbox (нужны user namespaces/seccomp, обычно урезанные в Docker);
 # это стандартный компромисс для контейнеризированного Chromium.
