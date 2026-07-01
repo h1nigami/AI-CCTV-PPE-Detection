@@ -48,6 +48,17 @@ docker compose --profile cpu logs -f app-cpu
 - Dockerfile'ы: `Dockerfile` (CPU multi-stage), `Dockerfile.gpu` (CUDA), `Dockerfile.jetson` (ARM/Jetson), `Dockerfile.frontend` (nginx как reverse-proxy для отдельного фронт-сервера, `docker-compose.frontend.yml`, env `BACKEND_URL`).
 - Полный чеклист деплоя бэка на GPU-сервер + фронта отдельным контейнером — `DEPLOY_FRONTEND_CHECKLIST.md`.
 
+### Киоск-режим (Windows, Chrome Kiosk)
+```powershell
+cd kiosk
+.\start_kiosk.ps1                                    # Chrome --kiosk на http://localhost:8000, автоперезапуск при закрытии
+.\install_autostart.ps1 -User "PC\ppekiosk"           # задача планировщика: автозапуск при входе (нужны права администратора)
+.\stop_kiosk.ps1                                      # штатная остановка (стоп-флаг + закрытие Chrome)
+```
+- Дашборд открывается как отдельное полноэкранное приложение (без адресной строки/вкладок), а не вкладка браузера. Изолированный профиль Chrome (`%LOCALAPPDATA%\PPEKiosk\ChromeProfile`) — JWT-сессия переживает перезапуск.
+- Реализована блокировка только на уровне Chrome (флаги `--kiosk`, автоперезапуск при закрытии/падении). Более глубокая блокировка ОС (Alt+Tab, диспетчер задач) — штатный Windows Assigned Access, не автоматизирована в репо.
+- Полная инструкция (автологин, отключение спящего режима, установка на выделенный терминал) — `docs/kiosk-mode.md`.
+
 ### Деплой на серверы (бэк + фронт раздельно)
 ```bash
 ./deploy.sh backend            # код бэка → бэк-сервер + restart app-gpu (bind-mount, быстро)
