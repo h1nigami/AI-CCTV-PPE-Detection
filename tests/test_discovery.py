@@ -1,9 +1,11 @@
 """Тесты чистых помощников автообнаружения камер (без сети)."""
+import backend.discovery as discovery
 from backend.discovery import (
     ips_from_ws_responses, candidate_urls, subnet_hosts, name_for_ip,
     prefix_of, ips_from_sources, normalize_subnets, hosts_for_prefixes,
     paths_from_sources, merge_paths, auth_candidate_urls,
-    COMMON_RTSP_PATHS,
+    parse_rtsp_status, prioritize_paths, describe_paths, _probe_host,
+    COMMON_RTSP_PATHS, DESCRIBE_MAX_SILENT,
 )
 
 
@@ -129,3 +131,79 @@ def test_merge_paths_known_first_no_dupes():
     assert merged.count("/stream1") == 1    # без дублей, хотя /stream1 есть и в common
     # все типовые тоже присутствуют
     assert set(COMMON_RTSP_PATHS).issubset(set(merged))
+
+
+def test_parse_rtsp_status():
+    assert parse_rtsp_status(b"RTSP/1.0 200 OK\r\nCSeq: 1\r\n\r\n") == 200
+    assert parse_rtsp_status(b"RTSP/1.0 401 Unauthorized\r\n") == 401
+    assert parse_rtsp_status(b"RTSP/2.0 404 Not Found\r\n") == 404
+    assert parse_rtsp_status(b"HTTP/1.1 200 OK\r\n") is None   # не RTSP
+    assert parse_rtsp_status(b"garbage") is None
+    assert parse_rtsp_status(b"") is None
+    assert parse_rtsp_status(None) is None
+
+
+def test_prioritize_paths_orders_by_status():
+    paths = ["/a", "/b", "/c", "/d", "/e"]
+    statuses = {"/a": 404, "/b": 401, "/c": None, "/d": 200, "/e": 454}
+    # существующие (200/401) — первыми в исходном порядке, потом молчавшие, потом 404+
+    assert prioritize_paths(paths, statuses) == ["/b", "/d", "/c", "/a", "/e"]
+
+
+def test_prioritize_paths_stable_without_statuses():
+    paths = ["/x", "/y", "/z"]
+    assert prioritize_paths(paths, {}) == paths
+
+
+def test_describe_paths_first_200_wins(monkeypatch):
+    codes = {"/a": 404, "/b": 200, "/c": 200}
+    called = []
+    monkeypatch.setattr(discovery, "rtsp_describe_status",
+                        lambda ip, p, port=554, timeout=None: (called.append(p), codes[p])[1])
+    open_path, saw_auth, responded = describe_paths("1.2.3.4", ["/a", "/b", "/c"])
+    assert open_path == "/b" and not saw_auth and responded
+    assert called == ["/a", "/b"]          # ранний выход, /c не пробовался
+
+
+def test_describe_paths_auth_detected(monkeypatch):
+    monkeypatch.setattr(discovery, "rtsp_describe_status",
+                        lambda *a, **k: 401)
+    open_path, saw_auth, responded = describe_paths("1.2.3.4", ["/a", "/b"])
+    assert open_path is None and saw_auth and responded
+
+
+def test_describe_paths_silent_host_aborts_early(monkeypatch):
+    called = []
+    monkeypatch.setattr(discovery, "rtsp_describe_status",
+                        lambda ip, p, port=554, timeout=None: (called.append(p), None)[1])
+    open_path, saw_auth, responded = describe_paths("1.2.3.4", COMMON_RTSP_PATHS)
+    assert open_path is None and not saw_auth and not responded
+    assert len(called) == DESCRIBE_MAX_SILENT  # не перебираем все пути впустую
+
+
+def test_probe_host_open_camera(monkeypatch):
+    monkeypatch.setattr(discovery, "describe_paths",
+                        lambda ip, paths, port=554: ("/stream1", False, True))
+    res = _probe_host("192.168.0.50", ["/stream1"], onvif_ips=set(), port_open=True)
+    assert res == {"ip": "192.168.0.50", "rtsp_url": "rtsp://192.168.0.50:554/stream1",
+                   "name": "cam_192_168_0_50", "requires_auth": False, "port": 554}
+
+
+def test_probe_host_locked_camera(monkeypatch):
+    monkeypatch.setattr(discovery, "describe_paths",
+                        lambda ip, paths, port=554: (None, True, True))
+    res = _probe_host("192.168.0.51", ["/stream1"], onvif_ips=set(), port_open=True)
+    assert res["requires_auth"] is True and res["rtsp_url"] is None
+
+
+def test_probe_host_not_a_camera():
+    # порт закрыт и ONVIF не отвечал — сеть не трогается (port_open передан)
+    assert _probe_host("192.168.0.52", ["/s"], onvif_ips=set(), port_open=False) is None
+
+
+def test_probe_host_onvif_only_is_locked(monkeypatch):
+    # ONVIF ответил, но 554 закрыт (нестандартный порт) → запароленная, DESCRIBE не зовётся
+    monkeypatch.setattr(discovery, "describe_paths",
+                        lambda *a, **k: (_ for _ in ()).throw(AssertionError("не должен зваться")))
+    res = _probe_host("192.168.0.53", ["/s"], onvif_ips={"192.168.0.53"}, port_open=False)
+    assert res["requires_auth"] is True and res["rtsp_url"] is None
