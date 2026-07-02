@@ -263,6 +263,22 @@ class TestHasItemOnPerson:
         item = [40, 0, 60, 2]      # center at (50, 1) — even very top
         assert has_item_on_person(person, item, top_ratio=0.0) is False
 
+    def test_item_far_above_person_not_counted(self):
+        # Каска на полке НАД человеком (центр целиком выше bbox с запасом) —
+        # не считается надетой (нижняя граница по y с допуском HEAD_MARGIN_RATIO).
+        from backend.detection.engine import has_item_on_person
+        person = [0, 100, 100, 300]   # рост 200, допуск сверху 20px (до y=80)
+        item = [40, 10, 60, 50]       # center (50, 30) — сильно выше головы
+        assert has_item_on_person(person, item) is False
+
+    def test_item_slightly_above_bbox_top_counted(self):
+        # Каска чуть выступает над рамкой человека (джиттер детекции) — в
+        # пределах допуска HEAD_MARGIN_RATIO засчитывается.
+        from backend.detection.engine import has_item_on_person
+        person = [0, 100, 100, 300]   # рост 200, допуск сверху до y=80
+        item = [40, 75, 60, 105]      # center (50, 90) — чуть выше py1=100
+        assert has_item_on_person(person, item) is True
+
 
 class TestGetDangerZonePolygon:
     """Зона — многоугольник: N вершин = N конусов (вершина = центр конуса)."""

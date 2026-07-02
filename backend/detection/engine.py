@@ -8,6 +8,12 @@ def get_boxes_by_class(boxes, classes, names, class_name: str) -> List:
     return [boxes[i] for i, c in enumerate(classes) if names[c] == class_name]
 
 
+# Допуск над верхом bbox человека для засчёта СИЗ (доля роста): каска на голове
+# может чуть выступать за рамку из-за джиттера детекции, но предмет ЦЕЛИКОМ выше
+# человека (на полке/крюке над ним) надетым считаться не должен.
+HEAD_MARGIN_RATIO = 0.1
+
+
 def has_item_on_person(person_box, item_box, top_ratio: float = None) -> bool:
     # top_ratio читается живым из рантайм-настроек (UI), если не передан явно.
     if top_ratio is None:
@@ -16,8 +22,9 @@ def has_item_on_person(person_box, item_box, top_ratio: float = None) -> bool:
     ix1, iy1, ix2, iy2 = item_box
     cx = (ix1 + ix2) / 2
     cy = (iy1 + iy2) / 2
-    upper_y = py1 + (py2 - py1) * top_ratio
-    return px1 <= cx <= px2 and cy <= upper_y
+    height = py2 - py1
+    upper_y = py1 + height * top_ratio
+    return px1 <= cx <= px2 and py1 - height * HEAD_MARGIN_RATIO <= cy <= upper_y
 
 
 def get_danger_zone(cone_boxes, min_cones: int = None,
