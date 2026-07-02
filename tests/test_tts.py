@@ -139,7 +139,7 @@ class TestBuildVoiceText:
 
     def test_violation_phrase_names_person(self):
         text = self._fn()([("Иван", ["каска"])])
-        assert "Иван" in text and "нарушение" in text and "ликвидации" in text
+        assert "Иван" in text and "нарушение" in text and "диспетчеру" in text
 
     def test_empty_is_silent(self):
         # Нет нарушителей в зоне (все экипированы или нарушители вне зоны) → пусто.

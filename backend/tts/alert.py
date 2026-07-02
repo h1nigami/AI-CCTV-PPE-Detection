@@ -23,11 +23,11 @@ def build_voice_text(voice_violators: list[tuple[str, list[str]]]) -> str:
     if not voice_violators:
         return ""
     name, _missing = voice_violators[0]
-    who = name if name else "Гость"
+    who = (name.replace("_", " ") if name else "Гость")
     more = len(voice_violators) - 1
     tail = f" и ещё {more}" if more > 0 else ""
     return (f"{who}{tail}, обнаружено нарушение. "
-            f"Информация передана отряду ликвидации")
+            f"Информация передана диспетчеру")
 
 
 def build_approved_voice_text(names: list[str]) -> str:
