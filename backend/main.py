@@ -905,10 +905,10 @@ def _camera_detection_worker(cam_id: str):
     # для жестов (throttled predict на кроп, без ByteTrack).
     det_model, det_pose = _get_cam_models(cam_id)
     while state.live_active and cam_id in CAMERAS:
-        if cam_id not in frame_buffers:
+        raw_buf = frame_buffers.get(cam_id)
+        out_buf = annotated_buffers.get(cam_id)
+        if raw_buf is None or out_buf is None:
             return
-        raw_buf = frame_buffers[cam_id]
-        out_buf = annotated_buffers[cam_id]
         # Блокируемся до нового кадра (без busy-loop); по таймауту проверяем флаги.
         raw_buf.wait(timeout=1.0)
         frame = raw_buf.read()
@@ -992,7 +992,11 @@ def _camera_detection_worker(cam_id: str):
                         state.push_voice_alert(cam_id, calm)
                 _voice_approved_seen[cam_id] = appr_ids
 
-            is_violation = category == "нарушение"
+            # Запись клипа триггерим ТОЛЬКО зонным нарушением (тем же условием,
+            # что наполняет voice_violators) — иначе нарушение ВНЕ зоны (голос
+            # молчит) непрерывно писало бы клипы, хотя система "молчит" голосом.
+            # category/логи/метрики/MQTT остаются на общей картине (has_any_violation).
+            is_violation = bool(voice_violators)
             rec = _event_recordings.get(cam_id)
             if is_violation:
                 gid = _violator_global_id(global_ids, statuses)
