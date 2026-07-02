@@ -139,6 +139,9 @@ export function useVoiceAlerts(enabled: boolean) {
         if (firstPoll) return // только инициализация курсора, без проигрывания бэклога
         if (alerts.length) {
           for (const a of alerts) if (a.text) queueRef.current.push(a.text)
+          // Ограничиваем очередь последними алертами — иначе при подвисании
+          // воспроизведения накапливается бэклог и проигрывается задним числом.
+          if (queueRef.current.length > 3) queueRef.current = queueRef.current.slice(-3)
           void drain()
         }
       } catch {

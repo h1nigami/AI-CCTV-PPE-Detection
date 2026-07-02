@@ -2,6 +2,7 @@ import os
 import uuid
 import cv2
 from flask import Flask, send_file, Response, request, jsonify, send_from_directory
+from werkzeug.utils import secure_filename
 from backend.detection.engine import get_danger_zone, is_in_danger_zone
 from backend.visualization.renderer import draw_danger_zone, put_text
 from backend.config import CONF_THRESH, get_detection_setting
@@ -230,35 +231,46 @@ def configure_detection_routes(app, state, annotated_buffers, generate_live_feed
         file = request.files.get("file")
         if file is None:
             return "No file uploaded", 400
-        filename = f"{uuid.uuid4().hex}_{file.filename}"
+        safe_name = secure_filename(file.filename) or "upload"
+        filename = f"{uuid.uuid4().hex}_{safe_name}"
         path = os.path.join(UPLOAD_FOLDER, filename)
-        file.save(path)
-        if filename.lower().endswith((".png", ".jpg", ".jpeg")):
-            img = cv2.imread(path)
-            if img is None:
-                os.remove(path)
-                return "Invalid image file", 400
-            result = model(img, conf=get_detection_setting("person_conf"))[0]
-            annotated = _annotate_with_zone(result, model.names)
-            output = os.path.join(UPLOAD_FOLDER, f"result_{filename}")
-            cv2.imwrite(output, annotated)
-            return send_file(output, mimetype="image/jpeg")
-        elif filename.lower().endswith((".mp4", ".avi", ".mov")):
-            cap = cv2.VideoCapture(path)
-            output = os.path.join(UPLOAD_FOLDER, f"result_{filename}")
-            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-            out = cv2.VideoWriter(output, fourcc, 20.0,
-                                  (int(cap.get(3)), int(cap.get(4))))
-            while cap.isOpened():
-                ret, frame = cap.read()
-                if not ret:
-                    break
-                result = model(frame, conf=get_detection_setting("person_conf"))[0]
+        output = os.path.join(UPLOAD_FOLDER, f"result_{filename}")
+        try:
+            file.save(path)
+            if filename.lower().endswith((".png", ".jpg", ".jpeg")):
+                img = cv2.imread(path)
+                if img is None:
+                    return "Invalid image file", 400
+                result = model(img, conf=get_detection_setting("person_conf"))[0]
                 annotated = _annotate_with_zone(result, model.names)
-                out.write(annotated)
-            cap.release()
-            out.release()
-            return send_file(output, mimetype="video/mp4")
-        return "Unsupported file type", 400
+                cv2.imwrite(output, annotated)
+                with open(output, "rb") as f:
+                    data = f.read()
+                return Response(data, mimetype="image/jpeg")
+            elif filename.lower().endswith((".mp4", ".avi", ".mov")):
+                cap = cv2.VideoCapture(path)
+                fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+                out = cv2.VideoWriter(output, fourcc, 20.0,
+                                      (int(cap.get(3)), int(cap.get(4))))
+                while cap.isOpened():
+                    ret, frame = cap.read()
+                    if not ret:
+                        break
+                    result = model(frame, conf=get_detection_setting("person_conf"))[0]
+                    annotated = _annotate_with_zone(result, model.names)
+                    out.write(annotated)
+                cap.release()
+                out.release()
+                with open(output, "rb") as f:
+                    data = f.read()
+                return Response(data, mimetype="video/mp4")
+            return "Unsupported file type", 400
+        finally:
+            for p in (path, output):
+                try:
+                    if os.path.exists(p):
+                        os.remove(p)
+                except OSError:
+                    pass
 
     return app
