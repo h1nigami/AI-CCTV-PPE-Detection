@@ -171,11 +171,10 @@ class TestPersonName:
         name = state.get_person_name(gid, "cam01")
         assert name == "Иван"
 
-    def test_fallback_name_fallback_dict(self, state):
-        gid = 999
-        state._fallback_names[gid] = "Тестовый"
-        name = state.get_person_name(gid, "cam01")
-        assert name == "Тестовый"
+    def test_unknown_gallery_id_short_hash_name(self, state):
+        # Личности нет в галерее → короткое псевдо-имя "#NNN" (не пустое).
+        name = state.get_person_name(999, "cam01")
+        assert name == "#999"
 
 
 class TestLog:
@@ -239,11 +238,11 @@ class TestClearTracks:
         assert gid2b is not None
         assert gid1b != gid2b
 
-    def test_clear_tracks_removes_fallback_names(self, state):
-        state._fallback_names[42] = "Тестовый"
-        assert 42 in state._fallback_names
+    def test_clear_tracks_removes_track_mapping(self, state):
+        state._track_to_global[("cam01", 7)] = 42
+        state._track_last_seen[("cam01", 7)] = 0.0
         state.clear_tracks()
-        assert 42 not in state._fallback_names
+        assert ("cam01", 7) not in state._track_to_global
 
 
 # ── Approval methods ──────────────────────────────────────────────────────────

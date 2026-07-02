@@ -179,6 +179,11 @@ def match_faces_to_persons(
                 if ix2 > ix1 and iy2 > iy1:
                     inter = (ix2 - ix1) * (iy2 - iy1)
                     overlap = inter / face_area
+                # Лицо ВНЕ bbox человека не рассматривается: иначе человеку без
+                # видимого лица (спиной) доставалось бы ближайшее ЧУЖОЕ лицо из
+                # кадра — а с ним чужая личность и её активный пропуск.
+                if overlap <= 0.0:
+                    continue
                 fcx = (fx1 + fx2) / 2.0
                 fcy = (fy1 + fy2) / 2.0
                 center_dist = ((fcx - pcx) ** 2 + (fcy - pcy) ** 2) ** 0.5

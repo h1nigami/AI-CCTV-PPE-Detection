@@ -40,7 +40,6 @@ class DetectionState:
         # Порог опознания по телу — зависит от активного бэкенда body Re-ID
         # (deep OSNet vs цветовой fallback). Переопределяется configure_body().
         self._body_match_threshold = REID_BODY_MATCH_THRESHOLD
-        self._fallback_names: Dict[int, str] = {}
 
         # Статусы последнего залогированного события (cam_id+track_id → compact_status)
         self._last_logged_status: Dict[Tuple[str, int], str] = {}
@@ -104,9 +103,6 @@ class DetectionState:
         cx = int((person_box[0] + person_box[2]) / 2)
         cy = int((person_box[1] + person_box[3]) / 2)
         return (cam_id, cx // PERSON_ID_GRID, cy // PERSON_ID_GRID)
-
-    def _assign_fallback_name(self) -> str:
-        return f"Гость_{len(self._fallback_names) + 1}"
 
     def _gid_active_on_other_track(self, gid: int, key: Tuple[str, int], now: float,
                                    window: float = 2.0) -> bool:
@@ -173,26 +169,14 @@ class DetectionState:
                 if should_store:
                     self._last_emb_store[key] = now
                 if old_id is not None and old_id != gallery_id:
-                    old_name = self._fallback_names.pop(old_id, None)
-                    if old_name is not None:
-                        info = self._gallery.get_info(gallery_id)
-                        is_new = info and info['embedding_count'] <= 1
-                        if is_new:
-                            self._gallery.rename(gallery_id, old_name)
-                            print(f"[ReID] Имя '{old_name}' перенесено с fallback {old_id} "
-                                  f"на gallery {gallery_id} для трека {key}")
-                        else:
-                            print(f"[ReID] Track {key}: fallback {old_id} -> gallery {gallery_id}, "
-                                  f"имя gallery '{info['name'] if info else '?'}' сохранено (existing)")
+                    old_info = self._gallery.get_info(old_id)
+                    if old_info and old_info['embedding_count'] <= 1:
+                        old_name = old_info['name']
+                        self._gallery.merge_entries(old_id, gallery_id)
+                        print(f"[ReID] Слит gallery {old_id} ({old_name}) -> "
+                              f"{gallery_id} для трека {key}")
                     else:
-                        old_info = self._gallery.get_info(old_id)
-                        if old_info and old_info['embedding_count'] <= 1:
-                            old_name = old_info['name']
-                            self._gallery.merge_entries(old_id, gallery_id)
-                            print(f"[ReID] Слит gallery {old_id} ({old_name}) -> "
-                                  f"{gallery_id} для трека {key}")
-                        else:
-                            print(f"[ReID] Track {key}: global_id {old_id} -> {gallery_id}")
+                        print(f"[ReID] Track {key}: global_id {old_id} -> {gallery_id}")
                 self._track_to_global[key] = gallery_id
                 self._track_last_seen[key] = now
                 # Привязываем внешний вид (тело/одежду) к личности с известным лицом.
@@ -240,16 +224,12 @@ class DetectionState:
             self._track_last_seen.clear()
             self._last_emb_store.clear()
             self._last_body_store.clear()
-            self._fallback_names.clear()
             self._last_logged_status.clear()
             self._last_gesture_check.clear()
 
     def get_person_name(self, global_id: int, cam_id: str, has_face: bool = False) -> str:
         if global_id <= 0:
             return ""
-        name = self._fallback_names.get(global_id)
-        if name:
-            return name
         if self._gallery is not None:
             name = self._gallery.get_name(global_id)
             if not name.startswith("ID"):

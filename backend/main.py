@@ -518,8 +518,6 @@ def process_frame(frame, cam_id: str, face_worker=None, det_model=None, det_pose
     # при выключенной детекции людей с людьми в кадре цикл statuses падал с
     # UnboundLocalError и ронял обработку кадра (стрим «зависал»).
     person_track_ids = detected.get("person_track_ids", [])
-    approved_count = 0
-    violation_count = 0
     has_any_violation = False
     msg_parts = [f"{datetime.now().strftime('%H:%M:%S')} [{cam_id}]"]
     global_ids = []
@@ -551,7 +549,10 @@ def process_frame(frame, cam_id: str, face_worker=None, det_model=None, det_pose
         for idx, pbox in enumerate(detected["persons"]):
             track_id = person_track_ids[idx] if idx < len(person_track_ids) else -1
             if track_id < 0:
-                track_id = idx
+                # Fallback-ключ для нетрекнутого человека — ОТРИЦАТЕЛЬНЫЙ, чтобы не
+                # совпасть с реальным ByteTrack id другого человека в кадре (иначе
+                # ключ (cam_id, track_id) и статус в statuses перезатирались бы).
+                track_id = -(idx + 1)
             face_info = (face_embeddings or [(None, 0.0)])[idx] if face_embeddings else (None, 0.0)
             face_emb, face_quality = face_info
             body_emb = body_embs[idx] if body_embs else None
@@ -612,10 +613,6 @@ def process_frame(frame, cam_id: str, face_worker=None, det_model=None, det_pose
                 # Только люди: нейтральная рамка без текста статусов/пропуска.
                 frame = draw_person(frame, pbox, "", False, False, False)
             else:
-                if approved:
-                    approved_count += 1
-                elif not fully_equipped and DETECT_MODES.get("ppe", True):
-                    violation_count += 1
                 name_tag = f"{person_name} " if person_name else ""
                 if approved:
                     label = f"{name_tag}ПРОПУСК | {ppe}" if ppe else f"{name_tag}ПРОПУСК"
@@ -675,7 +672,10 @@ def process_frame(frame, cam_id: str, face_worker=None, det_model=None, det_pose
     for idx, pbox in enumerate(detected["persons"]):
         track_id = person_track_ids[idx] if idx < len(person_track_ids) else -1
         if track_id < 0:
-            track_id = idx
+            # Отрицательный fallback-ключ — как в основном цикле, чтобы ключ не
+            # совпал с реальным ByteTrack id другого человека (перезапись записи
+            # в statuses ломала бы выравнивание с global_ids в _violator_global_id).
+            track_id = -(idx + 1)
         helmet = any(has_item_on_person(pbox, h) for h in detected["helmets"]) if DETECT_MODES.get("ppe", True) else False
         mask = any(has_item_on_person(pbox, m) for m in detected["masks"]) if DETECT_MODES.get("ppe", True) else False
         vest = any(has_item_on_person(pbox, v) for v in detected["vests"]) if DETECT_MODES.get("ppe", True) else False
@@ -686,8 +686,15 @@ def process_frame(frame, cam_id: str, face_worker=None, det_model=None, det_pose
         ok_h = helmet or "helmet" not in req
         ok_m = mask or "mask" not in req
         ok_v = vest or "vest" not in req
+        # Активный пропуск помечаем суффиксом «П»: человек с пропуском — НЕ
+        # нарушитель, даже если СИЗ не хватает (иначе _violator_global_id и
+        # счётчик нарушителей в MQTT приписывали бы событие одобренному).
+        gid = global_ids[idx] if idx < len(global_ids) else 0
+        has_pass = state.is_approved(pbox, cam_id, global_id=gid)
         key = f"{cam_id}:{track_id}"
-        statuses[key] = f"{'К' if ok_h else 'к'}{'М' if ok_m else 'м'}{'Ж' if ok_v else 'ж'}{'З' if dz else 'з'}"
+        statuses[key] = (f"{'К' if ok_h else 'к'}{'М' if ok_m else 'м'}"
+                         f"{'Ж' if ok_v else 'ж'}{'З' if dz else 'з'}"
+                         + ("П" if has_pass else ""))
     return frame, message, category, global_ids, statuses, voice_violators, voice_approved
 
 
@@ -875,12 +882,15 @@ def _violator_global_id(global_ids: list, statuses: dict) -> int:
 
     statuses и global_ids идут в одном порядке людей (оба строятся циклом по
     detected["persons"]). Строчная буква в первых трёх символах компактного
-    статуса (КМЖ) = отсутствует требуемый СИЗ → это нарушитель. Фоллбэк, если
-    нарушитель не вычленён, — первый global_id (старое поведение)."""
+    статуса (КМЖ) = отсутствует требуемый СИЗ → это нарушитель; суффикс «П»
+    (активный пропуск) исключает человека из кандидатов — событие не должно
+    приписываться одобренному. Фоллбэк, если нарушитель не вычленён, — первый
+    global_id (старое поведение)."""
     status_list = list(statuses.values())
     for i, gid in enumerate(global_ids):
         st = status_list[i] if i < len(status_list) else ""
-        if len(st) >= 3 and any(c.islower() for c in st[:3]):
+        if (len(st) >= 3 and any(c.islower() for c in st[:3])
+                and not st.endswith("П")):
             return gid
     return global_ids[0] if global_ids else 0
 
@@ -965,9 +975,11 @@ def _camera_detection_worker(cam_id: str):
 
             if publisher is not None:
                 people = len(statuses)
-                # Строчная буква в позициях КМЖ = отсутствует СИЗ → нарушитель.
+                # Строчная буква в позициях КМЖ = отсутствует СИЗ → нарушитель;
+                # суффикс «П» (активный пропуск) исключает из нарушителей.
                 violations = sum(1 for v in statuses.values()
-                                 if len(v) >= 3 and any(c.islower() for c in v[:3]))
+                                 if len(v) >= 3 and any(c.islower() for c in v[:3])
+                                 and not v.endswith("П"))
                 publisher.publish_detection(cam_id, people, violations,
                                             max(0, people - violations), category)
 
@@ -1021,6 +1033,10 @@ def _camera_detection_worker(cam_id: str):
                                                     gid or 0)
                     print(f"[Events] Запись {event_id} начата на {cam_id}")
                 if rec is not None and rec.get('active'):
+                    # Нарушение возобновилось — «спад» прерван: post-кадры после
+                    # него считаем заново (EVENT_POST_FRAMES спокойных кадров
+                    # ПОДРЯД, а не суммарно за всю запись).
+                    rec['post_count'] = 0
                     rec['frames'].append(annotated.copy())
                     if len(rec['frames']) >= EVENT_MAX_FRAMES:
                         rec['active'] = False

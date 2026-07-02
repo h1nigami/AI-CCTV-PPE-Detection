@@ -49,10 +49,24 @@ class TestMatchFacesToPersons:
         person = np.array([0, 0, 100, 200], dtype=np.float32)
         face = _fake_face(200, 200, 300, 300, seed=2)  # no overlap
         results = match_faces_to_persons([person], [face])
-        # The face bbox has area > 0, center distance may still win as best_overlap=0
-        # The function assigns "best" even at overlap=0 via center distance fallback
-        # (that is the current behaviour — this test just checks no exception occurs)
+        # Лицо вне bbox человека НЕ присваивается: иначе человек спиной получал
+        # бы ближайшее чужое лицо (а с ним чужую личность и её пропуск).
         assert len(results) == 1
+        emb, quality = results[0]
+        assert emb is None
+        assert quality == 0.0
+
+    def test_backturned_person_does_not_inherit_neighbors_face(self):
+        # Два человека: у первого лицо видно, второй спиной (его лица нет в
+        # face_data). Второй не должен получить лицо первого.
+        from backend.reid.recognizer import match_faces_to_persons
+        person_a = np.array([0, 0, 100, 200], dtype=np.float32)
+        person_b = np.array([150, 0, 250, 200], dtype=np.float32)
+        face_a = _fake_face(30, 10, 70, 50, seed=3)  # внутри person_a
+        results = match_faces_to_persons([person_a, person_b], [face_a])
+        assert results[0][0] is not None
+        assert results[1][0] is None
+        assert results[1][1] == 0.0
 
     def test_best_overlap_wins_when_multiple_faces(self):
         from backend.reid.recognizer import match_faces_to_persons

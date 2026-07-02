@@ -129,10 +129,11 @@
 
 Намеренно ОСТАВЛЕНО (вопреки первому впечатлению — это не мёртвый код, а покрытые
 тестами утилиты/API-поверхность; удаление снесло бы проходящие тесты):
-- `DetectionState._fallback_names` / `get_person_name`-чтение из него — покрыто
-  `tests/test_state.py` (`test_fallback_name_fallback_dict`,
-  `test_clear_tracks_removes_fallback_names`): это рабочий путь ручного fallback-имени
-  (просто живой пайплайн в него не пишет). Ветку чистить нельзя без потери фичи.
+- ~~`DetectionState._fallback_names`~~ — ВЫЧИЩЕНО позже: в него не писал ни живой
+  пайплайн, ни какой-либо API (единственная «запись» — тесты, мутировавшие приватный
+  dict напрямую), т.е. фичей это не было. Удалены сам dict, `_assign_fallback_name`,
+  мёртвая ветка переноса имени в `get_global_id` и приоритетный lookup в
+  `get_person_name`; тесты переписаны на реальные пути.
 - `detect_raised_hand` (`backend/gestures/detector.py`) — 12 тестов в
   `tests/test_gesture_detector.py`; готовая утилита жеста, просто не подключена к
   решающей логике.
