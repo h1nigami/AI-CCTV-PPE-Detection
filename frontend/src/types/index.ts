@@ -187,6 +187,9 @@ export interface CameraCardInfo {
  *  Приходит с /api/movement (пишется в process_frame на каждом кадре). */
 export interface MovementPerson {
   key: string
+  /** Глобальный id личности (Re-ID); 0 — не опознан. Один и тот же человек несёт
+   *  один global_id на всех камерах → строки можно сшивать между камерами. */
+  global_id: number
   name: string
   state: "sitting" | "moving"
   seated_seconds: number

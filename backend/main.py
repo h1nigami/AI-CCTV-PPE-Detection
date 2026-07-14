@@ -605,9 +605,15 @@ def process_frame(frame, cam_id: str, face_worker=None, det_model=None, det_pose
             if movement_on:
                 # Ключ траектории: global_id (переживает переинициализацию трека и
                 # узнавание «со спины»), иначе track_id (режим «только люди»).
+                # track_id передаём отдельно — трекер по нему мигрирует состояние
+                # при распознавании личности (t→g), чтобы таймер «сидит» не
+                # сбрасывался. Дедуп по ключу: два трека с одним global_id в одном
+                # кадре (редко) не должны плодить дубли строк/зигзаг следа.
                 mkey = f"g{global_id}" if global_id > 0 else f"t{track_id}"
-                movement_inputs.append({"key": mkey, "box": pbox, "name": person_name})
-                movement_boxes[mkey] = pbox
+                if mkey not in movement_boxes:
+                    movement_inputs.append({"key": mkey, "track_id": track_id,
+                                            "box": pbox, "name": person_name})
+                    movement_boxes[mkey] = pbox
             # Pose-инференс жеста дорогой — запускаем только для неодобренных,
             # вне кулдауна И не чаще GESTURE_CHECK_INTERVAL на личность (троттлинг
             # должен идти ПОСЛЕДНИМ в конъюнкции — у него побочный эффект).
@@ -711,8 +717,12 @@ def process_frame(frame, cam_id: str, face_worker=None, det_model=None, det_pose
                     badge = "Встал • идёт" if info.just_stood_up else "Идёт"
                     badge_color = COLOR_ORANGE
                 frame = draw_movement_badge(frame, box, badge, badge_color)
+            # global_id из ключа (g{gid}); 0 — личность не опознана (ключ t{tid}).
+            # Позволяет фронту СШИТЬ одного человека между камерами (мультикамерность).
+            gid = int(info.key[1:]) if info.key.startswith("g") else 0
             movement_snapshot.append({
                 "key": info.key,
+                "global_id": gid,
                 "name": info.name,
                 "state": info.state,
                 "seated_seconds": round(info.seated_seconds, 1),
@@ -898,6 +908,10 @@ def stop_live():
             _finalize_recording(cam_id, rec)
     for buf in annotated_buffers.values():
         buf.clear()
+    # Снимаем последний снапшот перемещений, чтобы /api/movement не отдавал
+    # устаревший кадр остановленной сессии.
+    state.clear_movement()
+    _movement_trackers.clear()
     # Гарантированный сброс выученного за сессию на диск при остановке.
     if state.gallery is not None:
         state.gallery.flush()

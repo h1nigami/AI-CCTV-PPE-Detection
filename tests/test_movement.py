@@ -172,6 +172,62 @@ class TestFormatSeated:
         assert format_seated(-5) == "00:00"
 
 
+class TestIdentityMigration:
+    """При распознавании личности ключ трека меняется t{track_id}→g{global_id};
+    накопленное состояние (место, время «сидит», след) должно переноситься, а не
+    сбрасываться (иначе таймер обнулялся бы в момент, когда поймали лицо)."""
+
+    def test_t_to_g_preserves_seated_time(self):
+        tr = _tracker()
+        # Человек сидит спиной (лица нет) → ключ t7, track_id=7.
+        info = None
+        for t in [0.0, 0.5, 1.0, 1.5, 2.0, 2.5]:
+            info = tr.update([{"key": "t7", "track_id": 7, "box": _box(200)}], now=t)[0]
+        assert info.state == "sitting"
+        assert info.seated_seconds == pytest.approx(2.5, abs=0.05)
+        # Повернулся — лицо распозналось: тот же track_id 7, ключ стал g5.
+        info = tr.update([{"key": "g5", "track_id": 7, "box": _box(200)}], now=3.0)[0]
+        assert info.state == "sitting"                 # не сбросилось в moving
+        assert info.seated_seconds == pytest.approx(3.0, abs=0.05)  # таймер продолжился
+        assert "g5" in tr._tracks and "t7" not in tr._tracks
+
+    def test_g_to_g_correction_migrates(self):
+        tr = _tracker()
+        for t in [0.0, 0.5, 1.0, 1.5, 2.0]:
+            tr.update([{"key": "g5", "track_id": 7, "box": _box(200)}], now=t)
+        info = tr.update([{"key": "g8", "track_id": 7, "box": _box(200)}], now=2.5)[0]
+        assert info.state == "sitting"
+        assert info.seated_seconds == pytest.approx(2.5, abs=0.05)
+        assert "g8" in tr._tracks and "g5" not in tr._tracks
+
+    def test_track_id_reuse_does_not_steal_seat(self):
+        # g5 сидит на track 7. Затем track 7 переиспользован ByteTrack под НОВОГО
+        # неопознанного человека (ключ t7) — он НЕ должен украсть место g5.
+        tr = _tracker()
+        for t in [0.0, 0.5, 1.0, 1.5, 2.0]:
+            tr.update([{"key": "g5", "track_id": 7, "box": _box(200)}], now=t)
+        info = tr.update([{"key": "t7", "track_id": 7, "box": _box(900)}], now=2.5)[0]
+        assert info.key == "t7"
+        assert info.state == "moving"          # свежий трек, места ещё нет
+        assert "g5" in tr._tracks              # место g5 не украдено
+
+    def test_cross_occlusion_same_gid_continues(self):
+        # Один global_id на РАЗНЫХ track_id (окклюзия сменила id) → та же личность,
+        # время «сидит» продолжается (ключ g5 общий).
+        tr = _tracker()
+        for t in [0.0, 0.5, 1.0, 1.5, 2.0]:
+            tr.update([{"key": "g5", "track_id": 7, "box": _box(200)}], now=t)
+        info = tr.update([{"key": "g5", "track_id": 12, "box": _box(200)}], now=2.5)[0]
+        assert info.state == "sitting"
+        assert info.seated_seconds == pytest.approx(2.5, abs=0.05)
+
+    def test_negative_track_id_not_migrated(self):
+        # Отрицательный track_id (нетрекнутый fallback) не участвует в миграции.
+        tr = _tracker()
+        tr.update([{"key": "t-1", "track_id": -1, "box": _box(200)}], now=0.0)
+        assert -1 not in tr._track_key
+
+
 class TestName:
     def test_name_retained_when_missing_later(self):
         tr = _tracker()

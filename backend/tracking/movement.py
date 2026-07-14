@@ -89,6 +89,10 @@ class MovementTracker:
         self._trail_sec = trail_sec
         self._expiry_sec = expiry_sec
         self._tracks: Dict[str, _PersonTrack] = {}
+        # (camera-local) track_id → текущий ключ движения. Нужен, чтобы при
+        # РАСПОЗНАВАНИИ личности (ключ трека t{track_id} → g{global_id}) перенести
+        # накопленное состояние на новый ключ, а не сбросить таймер «сидит».
+        self._track_key: Dict[int, str] = {}
 
     @staticmethod
     def _setting(override: Optional[float], key: str, default: float) -> float:
@@ -111,9 +115,28 @@ class MovementTracker:
         self.cleanup(now)
         return results
 
+    def _migrate_identity(self, track_id: Optional[int], key: str):
+        """Перенести состояние движения при смене идентификатора трека.
+
+        Когда лицо распозналось, ключ трека меняется t{track_id} → g{global_id}
+        (или g{a} → g{b} при коррекции Re-ID). Переносим накопленный якорь места,
+        время и след на новый ключ — иначе таймер «сидит» сбрасывался бы в момент
+        распознавания. Мигрируем ТОЛЬКО в глобальный ключ (`g…`): переход в
+        провизорный `t…` означает переиспользование track_id под НОВОГО человека
+        (ByteTrack), и красть чужое место нельзя. Только положительные track_id
+        (отрицательные — эфемерный fallback для нетрекнутых, идентичности нет)."""
+        if track_id is None or track_id < 0:
+            return
+        prev = self._track_key.get(track_id)
+        if (prev is not None and prev != key and key.startswith("g")
+                and prev in self._tracks and key not in self._tracks):
+            self._tracks[key] = self._tracks.pop(prev)
+        self._track_key[track_id] = key
+
     def _update_one(self, p: dict, now: float, still_frac: float, move_frac: float,
                     settle_sec: float, trail_sec: float) -> MovementInfo:
         key = p["key"]
+        self._migrate_identity(p.get("track_id"), key)
         x1, y1, x2, y2 = p["box"]
         name = p.get("name", "") or ""
         foot_x = (float(x1) + float(x2)) / 2.0   # точка ног: низ-центр bbox
@@ -217,6 +240,11 @@ class MovementTracker:
                  if now - tr.last_update > self._expiry_sec]
         for k in stale:
             del self._tracks[k]
+        # Снимаем указатели track_id → ключ на удалённые/мигрированные треки
+        # (в т.ч. эфемерные записи для переиспользованных ByteTrack id).
+        if stale:
+            self._track_key = {tid: key for tid, key in self._track_key.items()
+                               if key in self._tracks}
         return len(stale)
 
 
