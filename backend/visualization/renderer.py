@@ -78,3 +78,31 @@ def draw_legend(frame):
     return put_text(frame, legend,
                     (10, frame.shape[0] - 25),
                     color=COLOR_WHITE, font=FONT_SMALL)
+
+
+def draw_trajectory(frame, points, color=COLOR_YELLOW, thickness=2):
+    """След траектории движения (полилиния по точкам ног). points — [(x, y), ...]."""
+    if points is None or len(points) < 2:
+        return frame
+    pts = np.asarray(points, dtype=np.int32).reshape(-1, 1, 2)
+    cv2.polylines(frame, [pts], isClosed=False, color=color,
+                  thickness=thickness, lineType=cv2.LINE_AA)
+    return frame
+
+
+def draw_seat_marker(frame, anchor, color=COLOR_GREEN):
+    """Отметка «место человека» (якорь), у которого считается время сидения."""
+    if anchor is None:
+        return frame
+    x, y = int(anchor[0]), int(anchor[1])
+    cv2.drawMarker(frame, (x, y), color, markerType=cv2.MARKER_TILTED_CROSS,
+                   markerSize=14, thickness=2)
+    cv2.circle(frame, (x, y), 6, color, 1, lineType=cv2.LINE_AA)
+    return frame
+
+
+def draw_movement_badge(frame, person_box, text, color):
+    """Бейдж статуса перемещения под рамкой человека («Сидит MM:SS» / «Идёт»)."""
+    x1, _, _, y2 = map(int, person_box)
+    y = min(frame.shape[0] - 18, y2 + 2)
+    return put_text(frame, text, (x1, y), color=color, font=FONT_SMALL)

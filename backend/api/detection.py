@@ -120,12 +120,14 @@ def configure_detection_routes(app, state, annotated_buffers, generate_live_feed
         from backend.config import DETECT_MODES, save_detect_modes
         data = request.get_json() or {}
         old_faces = DETECT_MODES.get("faces", True)
-        for key in ("people", "ppe", "faces"):
+        for key in ("people", "ppe", "faces", "movement"):
             if key in data:
                 DETECT_MODES[key] = bool(data[key])
         if not DETECT_MODES["people"]:
             DETECT_MODES["ppe"] = False
             DETECT_MODES["faces"] = False
+            # Перемещения строятся поверх детекции людей — гасим вслед за ней.
+            DETECT_MODES["movement"] = False
         save_detect_modes()
         new_faces = DETECT_MODES.get("faces", True)
         if new_faces != old_faces:
@@ -192,6 +194,14 @@ def configure_detection_routes(app, state, annotated_buffers, generate_live_feed
     @app.route("/api/notifications")
     def api_notifications():
         return jsonify({"notifications": state.pop_notifications()})
+
+    @app.route("/api/movement")
+    def api_movement():
+        # Снапшот перемещений: кто сидит на месте (и сколько), кто встал и идёт.
+        # ?cam_id=<id> — по одной камере, иначе по всем. Данные пишутся в
+        # process_frame на каждом кадре (эфемерные, последний кадр камеры).
+        cam_id = request.args.get("cam_id")
+        return jsonify({"movement": state.get_movement(cam_id)})
 
     @app.route("/detection_log")
     def detection_log():

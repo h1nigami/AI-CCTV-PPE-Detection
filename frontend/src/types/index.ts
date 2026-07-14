@@ -182,3 +182,13 @@ export interface CameraCardInfo {
   status: CameraStatus
   streamMode: StreamMode
 }
+
+/** Строка снапшота перемещений: человек, его статус и время на месте.
+ *  Приходит с /api/movement (пишется в process_frame на каждом кадре). */
+export interface MovementPerson {
+  key: string
+  name: string
+  state: "sitting" | "moving"
+  seated_seconds: number
+  seated_text: string
+}

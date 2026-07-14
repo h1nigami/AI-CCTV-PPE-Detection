@@ -58,6 +58,11 @@ class DetectionState:
         # sub), не парсятся из текста лога → корректны и не зависят от дедупа логов.
         self._notifications: deque = deque(maxlen=50)
 
+        # Снапшот перемещений по камере (cam_id → список людей: имя, статус
+        # sitting/moving, время на месте). Пишется в process_frame на каждом
+        # кадре, читается фронтом через /api/movement. Эфемерный (последний кадр).
+        self._movement: Dict[str, list] = {}
+
     def init_gallery(self, gallery_path: Optional[Path] = None):
         from backend.reid.gallery import FaceGallery
         path = gallery_path or REID_GALLERY_PATH
@@ -405,3 +410,19 @@ class DetectionState:
     def clear_notifications(self):
         with self._lock:
             self._notifications.clear()
+
+    def set_movement(self, cam_id: str, persons: list):
+        """Записать снапшот перемещений камеры (перезаписывает предыдущий кадр)."""
+        with self._lock:
+            self._movement[cam_id] = list(persons)
+
+    def get_movement(self, cam_id: Optional[str] = None) -> dict:
+        """Снапшот перемещений: {cam_id: [люди...]}. Без cam_id — по всем камерам."""
+        with self._lock:
+            if cam_id is not None:
+                return {cam_id: list(self._movement.get(cam_id, []))}
+            return {k: list(v) for k, v in self._movement.items()}
+
+    def clear_movement(self):
+        with self._lock:
+            self._movement.clear()

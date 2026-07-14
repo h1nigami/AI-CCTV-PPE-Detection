@@ -1,11 +1,38 @@
-import { useMemo } from "react"
+import { useMemo, useState, useEffect } from "react"
 import { useCamerasContext } from "../contexts/CameraContext"
-import type { PpeStatus, PersonSummary } from "../types"
+import { api } from "../api/client"
+import type { PpeStatus, PersonSummary, MovementPerson } from "../types"
 import { parsePpeFromMessage, parsePersonsFromMessage } from "../utils/ppeParse"
 
 export function DispatcherPanel() {
-  const { dispatcher, closeDispatcher, cameras, logs: allLogs, detectModes, ppeRequired } = useCamerasContext()
+  const { dispatcher, closeDispatcher, cameras, logs: allLogs, detectModes, ppeRequired, isRunning } = useCamerasContext()
   const { cameraName } = dispatcher
+
+  // Перемещения камеры: лёгкий поллинг /api/movement, только пока панель открыта
+  // и детекция запущена (иначе данных нет). Отдельный интервал — снапшот
+  // эфемерный (последний кадр), в контекст его тянуть незачем.
+  const [movement, setMovement] = useState<MovementPerson[]>([])
+  useEffect(() => {
+    if (!dispatcher.open || !cameraName || !isRunning || detectModes?.movement === false) {
+      setMovement([])
+      return
+    }
+    let alive = true
+    const fetchMovement = async () => {
+      try {
+        const data = await api.getMovement(cameraName)
+        if (alive) setMovement(data.movement[cameraName] || [])
+      } catch {
+        // ignore
+      }
+    }
+    fetchMovement()
+    const id = setInterval(fetchMovement, 1500)
+    return () => {
+      alive = false
+      clearInterval(id)
+    }
+  }, [dispatcher.open, cameraName, isRunning, detectModes?.movement])
 
   const camera = useMemo(
     () => cameras.find((c) => c.name === cameraName) || null,
@@ -119,6 +146,33 @@ export function DispatcherPanel() {
           </div>
         )}
       </div>
+
+      {detectModes?.movement !== false && (
+        <div style={styles.section}>
+          <div style={styles.sectionTitle}>
+            ПЕРЕМЕЩЕНИЯ
+            <span style={styles.sectionCount}>{movement.length}</span>
+          </div>
+          {movement.length === 0 ? (
+            <div style={styles.empty}>Нет данных</div>
+          ) : (
+            <div style={styles.personList}>
+              {movement.map((m) => {
+                const sitting = m.state === "sitting"
+                return (
+                  <div key={m.key} style={styles.personRow}>
+                    <div style={styles.personName}>{m.name || "—"}</div>
+                    <div style={{ ...styles.personPpe, color: sitting ? "#00e676" : "#ffa726" }}>
+                      {sitting ? `сидит ${m.seated_text}` : "встал • идёт"}
+                    </div>
+                    <div style={{ fontSize: "0.85rem" }}>{sitting ? "🪑" : "🚶"}</div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       <div style={styles.section}>
         <div style={styles.sectionTitle}>

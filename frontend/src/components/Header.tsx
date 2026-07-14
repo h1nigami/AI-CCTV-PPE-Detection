@@ -10,9 +10,12 @@ const MODE_LABELS: Record<string, string> = {
   people: "Люди",
   ppe: "СИЗ",
   faces: "Лица",
+  movement: "Перемещения",
 }
 
-const DEFAULT_MODES: Record<string, boolean> = { people: true, ppe: true, faces: true }
+const DEFAULT_MODES: Record<string, boolean> = {
+  people: true, ppe: true, faces: true, movement: true,
+}
 
 export function Header() {
   const now = useClock()
@@ -48,6 +51,7 @@ export function Header() {
     if (key === "people" && !next.people) {
       next.ppe = false
       next.faces = false
+      next.movement = false
     }
     updateDetectModes(next) // оптимистично + сохранение через контекст
   }, [modes, updateDetectModes])

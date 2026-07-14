@@ -25,6 +25,7 @@ from backend.config import (
     MOTION_DETECTION_ENABLED, MOTION_THRESHOLD, MOTION_MIN_AREA,
     MOTION_COOLDOWN_FRAMES, MQTT_HEARTBEAT_INTERVAL,
     RECORD_ENABLED, RECORD_MODE, PPE_REQUIRED_DEFAULT, STREAM_STALE_SEC,
+    COLOR_GREEN, COLOR_ORANGE, COLOR_YELLOW,
 )
 from backend.core.metrics import get_metrics
 from backend.detection.motion import MotionDetector
@@ -40,8 +41,9 @@ from backend.tts.alert import (build_voice_text as _build_voice_text,
                                build_approved_voice_text as _build_approved_voice_text)
 from backend.visualization.renderer import (
     draw_danger_zone, draw_person, draw_hint,
-    draw_legend, put_text
+    draw_legend, put_text, draw_trajectory, draw_seat_marker, draw_movement_badge
 )
+from backend.tracking.movement import MovementTracker, format_seated
 from backend.core.state import DetectionState, LogEntry
 from backend.api.events import create_event_record, update_event_clip, update_event_snapshot
 from backend.db.models import EventLabel
@@ -247,6 +249,7 @@ def remove_camera(cam_id: str):
     if _batch_worker is not None:
         _batch_worker.unregister_camera(cam_id)
     _motion_detectors.pop(cam_id, None)
+    _movement_trackers.pop(cam_id, None)
     if RECORD_ENABLED:
         get_recording_manager().remove_camera(cam_id)
     save_cameras()
@@ -264,7 +267,7 @@ def rename_camera(old_id: str, new_id: str) -> bool:
     source = CAMERAS.pop(old_id)
     CAMERAS[new_id] = source
     for dct in (frame_buffers, annotated_buffers, camera_captures, face_workers,
-                _motion_detectors):
+                _motion_detectors, _movement_trackers):
         if old_id in dct:
             dct[new_id] = dct.pop(old_id)
     with _cam_models_lock:
@@ -378,6 +381,19 @@ _voice_approved_seen: dict[str, set] = {}
 
 # ── Motion detection (MOG2) — по экземпляру на камеру ──
 _motion_detectors: dict[str, MotionDetector] = {}
+
+# ── Трекер перемещений — по экземпляру на камеру ──
+# Хранит траектории/якоря мест НА КАМЕРУ (как motion-детектор). Создаётся лениво,
+# сбрасывается в start_live. Логика — backend/tracking/movement.py.
+_movement_trackers: dict[str, MovementTracker] = {}
+
+
+def _get_movement_tracker(cam_id: str) -> MovementTracker:
+    tr = _movement_trackers.get(cam_id)
+    if tr is None:
+        tr = MovementTracker()  # пороги — живыми из рантайм-настроек (UI)
+        _movement_trackers[cam_id] = tr
+    return tr
 
 # ── Модели YOLO по экземпляру на камеру ──────────────────────
 # Каждой камере — свой экземпляр YOLO: ByteTrack хранит состояние трекера ВНУТРИ
@@ -528,6 +544,12 @@ def process_frame(frame, cam_id: str, face_worker=None, det_model=None, det_pose
     # Люди с активным пропуском, стоящие в зоне: (global_id, имя). Для спокойной
     # голосовой отметки «в СИЗ, причин для внимания нет» (озвучивается при входе).
     voice_approved: list[tuple[int, str]] = []
+    # Отслеживание перемещений (траектория + время на месте). Собираем вход
+    # ПОПЕРСОННО в основном цикле, обрабатываем после него. Работает и в режиме
+    # «только люди» (зависит лишь от детекции людей).
+    movement_on = detect_people and DETECT_MODES.get("movement", True)
+    movement_inputs: list[dict] = []
+    movement_boxes: dict[str, Any] = {}
     # detect_people / detect_faces_mode / people_only вычислены выше (нужны для
     # clean_frame). Режим «только люди» (СИЗ и лица выключены): людей рисуем
     # нейтральной рамкой без статусов/пропуска, а жест «ОК» не запускаем — иначе
@@ -580,6 +602,12 @@ def process_frame(frame, cam_id: str, face_worker=None, det_model=None, det_pose
             ppe = " ".join(f"{_letters[i]}" if _present[i] else f"!{_letters[i]}"
                            for i in ("helmet", "mask", "vest") if i in required)
             person_name = state.get_person_name(global_id, cam_id, face_emb is not None and detect_faces_mode) if detect_faces_mode else ""
+            if movement_on:
+                # Ключ траектории: global_id (переживает переинициализацию трека и
+                # узнавание «со спины»), иначе track_id (режим «только люди»).
+                mkey = f"g{global_id}" if global_id > 0 else f"t{track_id}"
+                movement_inputs.append({"key": mkey, "box": pbox, "name": person_name})
+                movement_boxes[mkey] = pbox
             # Pose-инференс жеста дорогой — запускаем только для неодобренных,
             # вне кулдауна И не чаще GESTURE_CHECK_INTERVAL на личность (троттлинг
             # должен идти ПОСЛЕДНИМ в конъюнкции — у него побочный эффект).
@@ -662,6 +690,35 @@ def process_frame(frame, cam_id: str, face_worker=None, det_model=None, det_pose
         msg_parts.append("Людей не обнаружено")
     if danger_zone is not None:
         msg_parts.append(f"Зона активна ({len(detected['cones'])} конуса)")
+    # ── Перемещения: траектория движения + время на месте ─────────────────
+    # Отдельным проходом после цикла людей: трекеру нужен весь список видимых
+    # людей за кадр (он же чистит ушедших по TTL). Рисуем след/якорь места (cv2,
+    # без PIL) и бейдж статуса; снапшот кладём в state для /api/movement.
+    if movement_on:
+        infos = _get_movement_tracker(cam_id).update(movement_inputs)
+        movement_snapshot = []
+        for info in infos:
+            sitting = info.state == "sitting"
+            trail_color = (0, 180, 0) if sitting else COLOR_YELLOW  # BGR
+            frame = draw_trajectory(frame, info.trail, color=trail_color)
+            if info.anchor is not None:
+                frame = draw_seat_marker(frame, info.anchor)
+            box = movement_boxes.get(info.key)
+            if box is not None:
+                if sitting:
+                    badge, badge_color = f"Сидит {format_seated(info.seated_seconds)}", COLOR_GREEN
+                else:
+                    badge = "Встал • идёт" if info.just_stood_up else "Идёт"
+                    badge_color = COLOR_ORANGE
+                frame = draw_movement_badge(frame, box, badge, badge_color)
+            movement_snapshot.append({
+                "key": info.key,
+                "name": info.name,
+                "state": info.state,
+                "seated_seconds": round(info.seated_seconds, 1),
+                "seated_text": format_seated(info.seated_seconds),
+            })
+        state.set_movement(cam_id, movement_snapshot)
     # Легенда описывает СИЗ/зоны/пропуск — в режиме «только люди» не нужна.
     if not people_only:
         frame = draw_legend(frame)
@@ -769,7 +826,9 @@ def start_live():
     state.clear_log()
     state.clear_tracks()
     state.clear_notifications()
+    state.clear_movement()
     _motion_detectors.clear()
+    _movement_trackers.clear()
     _voice_approved_seen.clear()
     # Пер-сессионные буферы событий: иначе пред-буфер первого клипа новой сессии
     # содержал бы застывшие кадры предыдущей (другая сцена/время), а счётчик

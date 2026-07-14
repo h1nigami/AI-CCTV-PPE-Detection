@@ -445,3 +445,39 @@ class TestConcurrency:
 
         assert errors == []
         assert len(state.get_log()) == 20
+
+
+# ── Movement snapshot ─────────────────────────────────────────────────────────
+
+class TestMovementSnapshot:
+    def test_empty_by_default(self, state):
+        assert state.get_movement() == {}
+        assert state.get_movement("cam01") == {"cam01": []}
+
+    def test_set_and_get_per_camera(self, state):
+        people = [{"key": "g1", "name": "Иван", "state": "sitting", "seated_seconds": 12.0}]
+        state.set_movement("cam01", people)
+        assert state.get_movement("cam01") == {"cam01": people}
+
+    def test_get_all_cameras(self, state):
+        state.set_movement("cam01", [{"key": "g1", "state": "sitting"}])
+        state.set_movement("cam02", [{"key": "g2", "state": "moving"}])
+        allm = state.get_movement()
+        assert set(allm.keys()) == {"cam01", "cam02"}
+
+    def test_set_overwrites_previous_frame(self, state):
+        state.set_movement("cam01", [{"key": "g1", "state": "moving"}])
+        state.set_movement("cam01", [{"key": "g1", "state": "sitting"}])
+        assert state.get_movement("cam01")["cam01"][0]["state"] == "sitting"
+
+    def test_get_returns_copy(self, state):
+        state.set_movement("cam01", [{"key": "g1"}])
+        snap = state.get_movement("cam01")
+        snap["cam01"].append({"key": "x"})
+        # мутация возвращённого списка не портит внутренний снапшот
+        assert len(state.get_movement("cam01")["cam01"]) == 1
+
+    def test_clear_movement(self, state):
+        state.set_movement("cam01", [{"key": "g1"}])
+        state.clear_movement()
+        assert state.get_movement() == {}

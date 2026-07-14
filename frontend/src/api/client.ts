@@ -12,6 +12,7 @@ import type {
   Zone,
   ServerNotification,
   DetectionSettingSpec,
+  MovementPerson,
 } from "../types"
 
 // ============================================================
@@ -284,6 +285,13 @@ export const api = {
   // ---- UI-уведомления (жест ОК / нехватка СИЗ) ----
   getNotifications: () =>
     request<{ notifications: ServerNotification[] }>("/api/notifications"),
+
+  // ---- Перемещения (кто сидит на месте / кто встал и идёт) ----
+  // ?cam_id=<id> — по одной камере. Данные эфемерные (последний кадр камеры).
+  getMovement: (camId?: string) => {
+    const params = camId ? `?cam_id=${camId}` : ""
+    return request<{ movement: Record<string, MovementPerson[]> }>(`/api/movement${params}`)
+  },
 
   // ---- Вспомогательные URL ----
   /** URL одиночного JPEG-кадра для load-driven поллинга (см. CameraCard).
