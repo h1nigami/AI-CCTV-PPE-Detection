@@ -8,6 +8,7 @@ import DashboardPage from "./pages/Dashboard"
 import EventsPage from "./pages/EventsPage"
 import ArchivePage from "./pages/ArchivePage"
 import ZonesPage from "./pages/ZonesPage"
+import MapPage from "./pages/MapPage"
 import SettingsPage from "./pages/SettingsPage"
 import { useVoiceAlerts } from "./hooks/useVoiceAlerts"
 
@@ -61,6 +62,7 @@ export default function App() {
             <Route path="/events" element={<EventsPage />} />
             <Route path="/archive" element={<ArchivePage />} />
             <Route path="/zones" element={<ZonesPage />} />
+            <Route path="/map" element={<MapPage />} />
             <Route path="/settings" element={<SettingsPage />} />
           </Route>
 

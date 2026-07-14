@@ -83,5 +83,24 @@ GPU (как `MotionDetector`/`DetectionState`).
 - [x] Дедуп `mkey` в кадре (два трека с одним global_id не плодят дубли/зигзаг).
 - [x] Тесты: `TestIdentityMigration` (t→g перенос, g→g′, защита от reuse,
       кросс-окклюзия, отрицательный track_id).
+
+## Кросс-камерный пространственный стич (cam1→cam2 одной линией)
+- [x] `backend/tracking/floorplan.py`: гомография `homography_from_points`/
+      `project_point` (чистый numpy DLT), `CameraProjector`, `validate_mapping`,
+      `get_mapping`/`set_mapping` (калибровка в конфиге камеры, ключ `map_points`).
+- [x] `state.py`: реестр треков карты `add_map_point`/`get_map_tracks`/
+      `clear_map_tracks` по `global_id`, свой `_map_lock`.
+- [x] `main.py`: кэш `_projectors` + `_get_projector`/`invalidate_projector`;
+      проекция точки ног опознанных людей в координаты карты в `process_frame`
+      (отброс точек за планом); очистка в start/stop.
+- [x] `config.py`: настройка `movement_map_trail_sec`.
+- [x] API: `GET/PUT /api/cameras/<id>/mapping` (cameras.py),
+      `GET /api/movement/tracks` (detection.py).
+- [x] Фронт: `MapPage` (`/map`) — живая мини-карта со сшитыми линиями +
+      калибратор (≥4 пар «кадр↔карта»); навигация «КАРТА» в Header; типы+client.
+- [x] Тесты: `test_floorplan.py` (гомография, **кросс-камерная согласованность**:
+      одна физическая точка с двух камер → одна точка карты, валидация,
+      проектор) + `TestMapTracks` в `test_state.py`.
+- [x] Итог: 515 passed, фронт собирается; CLAUDE.md §2.6.1/2.9/2.12/3.
 </content>
 </invoke>

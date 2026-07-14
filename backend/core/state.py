@@ -63,6 +63,15 @@ class DetectionState:
         # кадре, читается фронтом через /api/movement. Эфемерный (последний кадр).
         self._movement: Dict[str, list] = {}
 
+        # ── Кросс-камерные треки на «карте» (общий план помещения) ──
+        # Точки ног людей, спроецированные гомографией в единые координаты карты,
+        # копятся ПО global_id (одна личность = одна линия через все камеры). Свой
+        # лок, чтобы не конкурировать с _lock (пишут N потоков детекции). Читается
+        # фронтом через /api/movement/tracks и рисуется мини-картой одной линией.
+        self._map_lock = threading.Lock()
+        self._map_tracks: Dict[int, deque] = {}   # global_id → deque точек
+        self._map_names: Dict[int, str] = {}
+
     def init_gallery(self, gallery_path: Optional[Path] = None):
         from backend.reid.gallery import FaceGallery
         path = gallery_path or REID_GALLERY_PATH
@@ -426,3 +435,55 @@ class DetectionState:
     def clear_movement(self):
         with self._lock:
             self._movement.clear()
+
+    # ── Кросс-камерные треки на карте (стич траекторий) ──────────────────────
+    def add_map_point(self, global_id: int, cam_id: str, x: float, y: float,
+                      name: str = "", now: Optional[float] = None):
+        """Добавить точку карты (нормализованную) в трек личности global_id.
+        Только опознанные (global_id>0) — стич без идентичности невозможен."""
+        if global_id <= 0:
+            return
+        if now is None:
+            now = time.time()
+        with self._map_lock:
+            dq = self._map_tracks.get(global_id)
+            if dq is None:
+                dq = deque(maxlen=600)
+                self._map_tracks[global_id] = dq
+            dq.append({"t": now, "x": float(x), "y": float(y), "cam": cam_id})
+            if name:
+                self._map_names[global_id] = name
+
+    def get_map_tracks(self, now: Optional[float] = None,
+                       trail_sec: float = 60.0) -> list:
+        """Кросс-камерные треки за последние trail_sec: по личности — список точек
+        карты (x,y,cam), имя, последняя камера. Пустые/старые треки чистятся."""
+        if now is None:
+            now = time.time()
+        with self._map_lock:
+            result = []
+            drop = []
+            for gid, dq in self._map_tracks.items():
+                pts = [{"x": p["x"], "y": p["y"], "cam": p["cam"]}
+                       for p in dq if now - p["t"] <= trail_sec]
+                if not pts:
+                    if not dq or now - dq[-1]["t"] > max(trail_sec * 2, 120.0):
+                        drop.append(gid)
+                    continue
+                last = dq[-1]
+                result.append({
+                    "global_id": gid,
+                    "name": self._map_names.get(gid, ""),
+                    "last_cam": last["cam"],
+                    "last_seen": last["t"],
+                    "points": pts,
+                })
+            for gid in drop:
+                self._map_tracks.pop(gid, None)
+                self._map_names.pop(gid, None)
+            return result
+
+    def clear_map_tracks(self):
+        with self._map_lock:
+            self._map_tracks.clear()
+            self._map_names.clear()

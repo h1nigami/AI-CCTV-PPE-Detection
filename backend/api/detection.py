@@ -203,6 +203,14 @@ def configure_detection_routes(app, state, annotated_buffers, generate_live_feed
         cam_id = request.args.get("cam_id")
         return jsonify({"movement": state.get_movement(cam_id)})
 
+    @app.route("/api/movement/tracks")
+    def api_movement_tracks():
+        # Кросс-камерные треки на карте: по личности (global_id) — единая линия
+        # пути через все камеры (точки ног, спроецированные гомографией в общие
+        # координаты плана). Длина следа — рантайм-настройка movement_map_trail_sec.
+        trail = get_detection_setting("movement_map_trail_sec") or 60.0
+        return jsonify({"tracks": state.get_map_tracks(trail_sec=float(trail))})
+
     @app.route("/detection_log")
     def detection_log():
         cam_id = request.args.get("cam_id")

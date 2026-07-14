@@ -13,6 +13,8 @@ import type {
   ServerNotification,
   DetectionSettingSpec,
   MovementPerson,
+  MovementTrack,
+  CameraMappingPoint,
 } from "../types"
 
 // ============================================================
@@ -292,6 +294,18 @@ export const api = {
     const params = camId ? `?cam_id=${camId}` : ""
     return request<{ movement: Record<string, MovementPerson[]> }>(`/api/movement${params}`)
   },
+  // Кросс-камерные треки на карте: по личности — единая линия через все камеры.
+  getMovementTracks: () =>
+    request<{ tracks: MovementTrack[] }>("/api/movement/tracks"),
+
+  // ---- Калибровка карты (гомография кадр→карта) ----
+  getCameraMapping: (camId: string) =>
+    request<{ map_points: CameraMappingPoint[] }>(`/api/cameras/${camId}/mapping`),
+  saveCameraMapping: (camId: string, mapPoints: CameraMappingPoint[]) =>
+    request<{ status: string; map_points: CameraMappingPoint[] }>(
+      `/api/cameras/${camId}/mapping`,
+      { method: "PUT", body: JSON.stringify({ map_points: mapPoints }) },
+    ),
 
   // ---- Вспомогательные URL ----
   /** URL одиночного JPEG-кадра для load-driven поллинга (см. CameraCard).

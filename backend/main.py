@@ -250,6 +250,7 @@ def remove_camera(cam_id: str):
         _batch_worker.unregister_camera(cam_id)
     _motion_detectors.pop(cam_id, None)
     _movement_trackers.pop(cam_id, None)
+    _projectors.pop(cam_id, None)
     if RECORD_ENABLED:
         get_recording_manager().remove_camera(cam_id)
     save_cameras()
@@ -394,6 +395,26 @@ def _get_movement_tracker(cam_id: str) -> MovementTracker:
         tr = MovementTracker()  # пороги — живыми из рантайм-настроек (UI)
         _movement_trackers[cam_id] = tr
     return tr
+
+
+# ── Проекторы кадр→карта (гомография) по камере — для кросс-камерного стича ──
+# Строятся из калибровки в конфиге камеры (map_points), кэшируются; сбрасываются
+# при изменении калибровки (invalidate_projector из API) и в start_live.
+_projectors: dict = {}
+
+
+def _get_projector(cam_id: str):
+    proj = _projectors.get(cam_id)
+    if proj is None:
+        from backend.tracking.floorplan import CameraProjector, get_mapping
+        proj = CameraProjector(get_mapping(cam_id))
+        _projectors[cam_id] = proj
+    return proj
+
+
+def invalidate_projector(cam_id: str):
+    """Сбросить кэш проектора камеры (после правки калибровки из UI)."""
+    _projectors.pop(cam_id, None)
 
 # ── Модели YOLO по экземпляру на камеру ──────────────────────
 # Каждой камере — свой экземпляр YOLO: ByteTrack хранит состояние трекера ВНУТРИ
@@ -702,6 +723,9 @@ def process_frame(frame, cam_id: str, face_worker=None, det_model=None, det_pose
     # без PIL) и бейдж статуса; снапшот кладём в state для /api/movement.
     if movement_on:
         infos = _get_movement_tracker(cam_id).update(movement_inputs)
+        # Проектор кадр→карта: есть калибровка → проецируем точки ног опознанных
+        # людей в общие координаты карты (кросс-камерный стич по global_id).
+        projector = _get_projector(cam_id)
         movement_snapshot = []
         for info in infos:
             sitting = info.state == "sitting"
@@ -720,6 +744,16 @@ def process_frame(frame, cam_id: str, face_worker=None, det_model=None, det_pose
             # global_id из ключа (g{gid}); 0 — личность не опознана (ключ t{tid}).
             # Позволяет фронту СШИТЬ одного человека между камерами (мультикамерность).
             gid = int(info.key[1:]) if info.key.startswith("g") else 0
+            # Кросс-камерный стич: точку ног опознанного человека проецируем в
+            # координаты карты и копим по global_id (одна линия через все камеры).
+            if projector.valid and gid > 0 and box is not None:
+                fxn = ((float(box[0]) + float(box[2])) / 2.0) / fw
+                fyn = float(box[3]) / fh
+                mp = projector.project(fxn, fyn)
+                # Отбрасываем точки далеко за пределами плана (гомография у
+                # «горизонта» камеры взрывается) — иначе линия рвётся к краю.
+                if mp is not None and -0.2 <= mp[0] <= 1.2 and -0.2 <= mp[1] <= 1.2:
+                    state.add_map_point(gid, cam_id, mp[0], mp[1], info.name)
             movement_snapshot.append({
                 "key": info.key,
                 "global_id": gid,
@@ -837,8 +871,10 @@ def start_live():
     state.clear_tracks()
     state.clear_notifications()
     state.clear_movement()
+    state.clear_map_tracks()
     _motion_detectors.clear()
     _movement_trackers.clear()
+    _projectors.clear()  # перечитать калибровку камер на старте сессии
     _voice_approved_seen.clear()
     # Пер-сессионные буферы событий: иначе пред-буфер первого клипа новой сессии
     # содержал бы застывшие кадры предыдущей (другая сцена/время), а счётчик
@@ -911,6 +947,7 @@ def stop_live():
     # Снимаем последний снапшот перемещений, чтобы /api/movement не отдавал
     # устаревший кадр остановленной сессии.
     state.clear_movement()
+    state.clear_map_tracks()
     _movement_trackers.clear()
     # Гарантированный сброс выученного за сессию на диск при остановке.
     if state.gallery is not None:

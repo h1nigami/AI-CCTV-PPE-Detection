@@ -183,4 +183,30 @@ def configure_camera_routes(app, state, camera_captures):
             return jsonify({"error": "Зона не найдена"}), 404
         return jsonify({"status": "deleted", "id": zone_id})
 
+    # ── Калибровка карты (гомография кадр→карта, кросс-камерный стич) ──────────
+    @app.route("/api/cameras/<cam_id>/mapping", methods=["GET"])
+    def api_get_mapping(cam_id):
+        from backend.config import CAMERAS
+        from backend.tracking.floorplan import get_mapping
+        if cam_id not in CAMERAS:
+            return jsonify({"error": "Камера не найдена"}), 404
+        return jsonify({"map_points": get_mapping(cam_id)})
+
+    @app.route("/api/cameras/<cam_id>/mapping", methods=["PUT"])
+    def api_set_mapping(cam_id):
+        """Сохранить точки соответствия «кадр↔карта» (≥4 пары или пусто).
+        Сбрасывает кэш проектора — калибровка применяется без рестарта."""
+        from backend.config import CAMERAS
+        from backend.tracking.floorplan import set_mapping
+        from backend.main import invalidate_projector
+        if cam_id not in CAMERAS:
+            return jsonify({"error": "Камера не найдена"}), 404
+        data = request.get_json() or {}
+        try:
+            mp = set_mapping(cam_id, data.get("map_points", []))
+        except (ValueError, TypeError) as exc:
+            return jsonify({"error": f"Некорректная калибровка: {exc}"}), 400
+        invalidate_projector(cam_id)
+        return jsonify({"status": "updated", "map_points": mp})
+
     return app

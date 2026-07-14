@@ -481,3 +481,54 @@ class TestMovementSnapshot:
         state.set_movement("cam01", [{"key": "g1"}])
         state.clear_movement()
         assert state.get_movement() == {}
+
+
+# ── Cross-camera map tracks (стич траекторий) ─────────────────────────────────
+
+class TestMapTracks:
+    def test_empty_by_default(self, state):
+        assert state.get_map_tracks() == []
+
+    def test_add_and_get(self, state):
+        state.add_map_point(5, "cam01", 0.3, 0.7, name="Иван", now=100.0)
+        tracks = state.get_map_tracks(now=100.0, trail_sec=60.0)
+        assert len(tracks) == 1
+        t = tracks[0]
+        assert t["global_id"] == 5 and t["name"] == "Иван"
+        assert t["last_cam"] == "cam01"
+        assert t["points"] == [{"x": 0.3, "y": 0.7, "cam": "cam01"}]
+
+    def test_unidentified_ignored(self, state):
+        state.add_map_point(0, "cam01", 0.5, 0.5, now=100.0)
+        state.add_map_point(-3, "cam01", 0.5, 0.5, now=100.0)
+        assert state.get_map_tracks(now=100.0) == []
+
+    def test_cross_camera_single_track(self, state):
+        # Один global_id, точки с РАЗНЫХ камер → одна линия (стич).
+        state.add_map_point(5, "cam01", 0.2, 0.2, now=100.0)
+        state.add_map_point(5, "cam02", 0.6, 0.6, now=101.0)
+        tracks = state.get_map_tracks(now=101.0, trail_sec=60.0)
+        assert len(tracks) == 1
+        pts = tracks[0]["points"]
+        assert len(pts) == 2
+        assert {p["cam"] for p in pts} == {"cam01", "cam02"}
+        assert tracks[0]["last_cam"] == "cam02"
+
+    def test_trail_window_filters_old_points(self, state):
+        state.add_map_point(5, "cam01", 0.1, 0.1, now=0.0)
+        state.add_map_point(5, "cam01", 0.2, 0.2, now=100.0)
+        tracks = state.get_map_tracks(now=100.0, trail_sec=60.0)
+        # Точка на t=0 (старше 60с) отфильтрована, свежая осталась.
+        assert len(tracks[0]["points"]) == 1
+        assert tracks[0]["points"][0]["x"] == 0.2
+
+    def test_stale_track_pruned(self, state):
+        state.add_map_point(5, "cam01", 0.1, 0.1, now=0.0)
+        # Спустя долгое время (> max(trail*2,120)) трек целиком удаляется.
+        assert state.get_map_tracks(now=1000.0, trail_sec=60.0) == []
+        assert state.get_map_tracks(now=1001.0) == []  # уже вычищен
+
+    def test_clear_map_tracks(self, state):
+        state.add_map_point(5, "cam01", 0.1, 0.1, now=100.0)
+        state.clear_map_tracks()
+        assert state.get_map_tracks(now=100.0) == []

@@ -195,3 +195,25 @@ export interface MovementPerson {
   seated_seconds: number
   seated_text: string
 }
+
+/** Точка кросс-камерного трека на карте (нормализованные координаты плана). */
+export interface MapTrackPoint {
+  x: number
+  y: number
+  cam: string
+}
+
+/** Кросс-камерный трек личности: единая линия пути через все камеры. */
+export interface MovementTrack {
+  global_id: number
+  name: string
+  last_cam: string
+  last_seen: number
+  points: MapTrackPoint[]
+}
+
+/** Пара соответствия «точка в кадре ↔ точка на карте» (нормализованные [0..1]). */
+export interface CameraMappingPoint {
+  image: [number, number]
+  map: [number, number]
+}
