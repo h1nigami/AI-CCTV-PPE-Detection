@@ -1,11 +1,32 @@
 import os
+import glob
 import uuid
 import cv2
 from flask import Flask, send_file, Response, request, jsonify, send_from_directory
 from werkzeug.utils import secure_filename
 from backend.detection.engine import get_danger_zone, is_in_danger_zone
 from backend.visualization.renderer import draw_danger_zone, put_text
-from backend.config import CONF_THRESH, get_detection_setting
+from backend.config import CONF_THRESH, get_detection_setting, BASE_DIR
+
+# ── План здания (подложка карты перемещений) ──────────────────────────────────
+# Единый план на установку (все камеры проецируются на него же). Файл хранится в
+# data/floorplan/plan.<ext> (переживает перезапуск вместе с остальным data/).
+_FLOORPLAN_DIR = BASE_DIR / "data" / "floorplan"
+_FLOORPLAN_EXT = {".png", ".jpg", ".jpeg", ".webp"}
+_FLOORPLAN_MAX_BYTES = 20 * 1024 * 1024  # 20 МБ
+
+
+def _floorplan_path():
+    files = sorted(glob.glob(str(_FLOORPLAN_DIR / "plan.*")))
+    return files[0] if files else None
+
+
+def _clear_floorplan():
+    for old in glob.glob(str(_FLOORPLAN_DIR / "plan.*")):
+        try:
+            os.remove(old)
+        except OSError:
+            pass
 
 
 def _get_boxes_by_class(boxes, classes, names, class_name: str):
@@ -210,6 +231,38 @@ def configure_detection_routes(app, state, annotated_buffers, generate_live_feed
         # координаты плана). Длина следа — рантайм-настройка movement_map_trail_sec.
         trail = get_detection_setting("movement_map_trail_sec") or 60.0
         return jsonify({"tracks": state.get_map_tracks(trail_sec=float(trail))})
+
+    @app.route("/api/floorplan", methods=["GET"])
+    def api_get_floorplan():
+        # Подложка карты (план здания). 404 → фронт рисует сетку. Без авторизации
+        # (как /video_frame) — грузится тегом <img>.
+        p = _floorplan_path()
+        if not p:
+            return b"", 404
+        resp = send_file(p)
+        resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        return resp
+
+    @app.route("/api/floorplan", methods=["POST"])
+    def api_upload_floorplan():
+        # Загрузка плана здания (PNG/JPG/WEBP). Заменяет предыдущий (один на установку).
+        file = request.files.get("file")
+        if file is None:
+            return jsonify({"error": "Файл не загружен"}), 400
+        ext = os.path.splitext(secure_filename(file.filename or ""))[1].lower()
+        if ext not in _FLOORPLAN_EXT:
+            return jsonify({"error": "Только PNG, JPG или WEBP"}), 400
+        if request.content_length and request.content_length > _FLOORPLAN_MAX_BYTES:
+            return jsonify({"error": "Файл больше 20 МБ"}), 400
+        _FLOORPLAN_DIR.mkdir(parents=True, exist_ok=True)
+        _clear_floorplan()
+        file.save(str(_FLOORPLAN_DIR / f"plan{ext}"))
+        return jsonify({"status": "uploaded"})
+
+    @app.route("/api/floorplan", methods=["DELETE"])
+    def api_delete_floorplan():
+        _clear_floorplan()
+        return jsonify({"status": "deleted"})
 
     @app.route("/detection_log")
     def detection_log():

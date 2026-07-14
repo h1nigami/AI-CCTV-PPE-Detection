@@ -102,5 +102,14 @@ GPU (как `MotionDetector`/`DetectionState`).
       одна физическая точка с двух камер → одна точка карты, валидация,
       проектор) + `TestMapTracks` в `test_state.py`.
 - [x] Итог: 515 passed, фронт собирается; CLAUDE.md §2.6.1/2.9/2.12/3.
+
+## Подложка карты — загрузка плана здания
+- [x] API `POST|GET|DELETE /api/floorplan` (detection.py): файл в
+      `data/floorplan/plan.<ext>`, PNG/JPG/WEBP ≤20 МБ, один на установку.
+- [x] Фронт: загрузка/удаление плана в калибраторе `MapPage`; план — подложка
+      живой карты и калибровки; панель берёт пропорции плана (нет плана → сетка);
+      `api.uploadFloorplan`/`deleteFloorplan`/`getFloorplanUrl`.
+- [x] Тесты `test_floorplan_api.py` (upload/get/delete/валидация/замена) — поймали
+      баг `send_file(headers=...)`, исправлено. Итог: 521 passed.
 </content>
 </invoke>

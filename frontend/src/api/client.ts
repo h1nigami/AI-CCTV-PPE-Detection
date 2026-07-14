@@ -307,6 +307,27 @@ export const api = {
       { method: "PUT", body: JSON.stringify({ map_points: mapPoints }) },
     ),
 
+  // ---- План здания (подложка карты) ----
+  /** URL плана для <img> (cache-bust параметром version). 404 → плана нет. */
+  getFloorplanUrl: (version = 0) => `${BASE}/api/floorplan?v=${version}`,
+  uploadFloorplan: async (file: File) => {
+    // multipart/form-data — свой fetch (общий request() шлёт JSON); Content-Type
+    // не ставим, чтобы браузер сам проставил boundary.
+    const fd = new FormData()
+    fd.append("file", file)
+    const headers: Record<string, string> = {}
+    const tok = getAccessToken()
+    if (tok) headers["Authorization"] = `Bearer ${tok}`
+    const res = await fetch(`${BASE}/api/floorplan`, { method: "POST", headers, body: fd })
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      throw new Error((body as ApiError).error || `HTTP ${res.status}`)
+    }
+    return res.json() as Promise<{ status: string }>
+  },
+  deleteFloorplan: () =>
+    request<{ status: string }>("/api/floorplan", { method: "DELETE" }),
+
   // ---- Вспомогательные URL ----
   /** URL одиночного JPEG-кадра для load-driven поллинга (см. CameraCard).
    *  Постоянный MJPEG (/video_feed) намеренно НЕ используем: он держит

@@ -36,8 +36,27 @@ export default function MapPage() {
   const [camId, setCamId] = useState("")
   const [mode, setMode] = useState<"live" | "calibrate">("live")
 
+  // План здания (подложка). planVersion — cache-bust после загрузки/удаления;
+  // planAspect берём из натуральных размеров плана, чтобы панель карты имела те
+  // же пропорции и в калибровке, и в живом виде (нормализованные координаты
+  // совпадали). hasPlan=false → рисуем сетку.
+  const [planVersion, setPlanVersion] = useState(0)
+  const [hasPlan, setHasPlan] = useState(false)
+  const [planAspect, setPlanAspect] = useState(16 / 9)
+  useEffect(() => {
+    const img = new Image()
+    img.onload = () => {
+      setHasPlan(true)
+      if (img.naturalHeight > 0) setPlanAspect(img.naturalWidth / img.naturalHeight)
+    }
+    img.onerror = () => { setHasPlan(false); setPlanAspect(16 / 9) }
+    img.src = api.getFloorplanUrl(planVersion)
+  }, [planVersion])
+  const onPlanChange = () => setPlanVersion((v) => v + 1)
+
   useEffect(() => { if (!camId && camList.length > 0) setCamId(camList[0]) }, [camList, camId])
 
+  const plan = { hasPlan, planVersion, planAspect }
   return (
     <div style={styles.page}>
       <div style={styles.header}>
@@ -48,14 +67,23 @@ export default function MapPage() {
         </div>
       </div>
       {mode === "live"
-        ? <LiveMap isRunning={isRunning} />
-        : <Calibrator camId={camId} setCamId={setCamId} camList={camList} />}
+        ? <LiveMap isRunning={isRunning} {...plan} />
+        : <Calibrator camId={camId} setCamId={setCamId} camList={camList} {...plan} onPlanChange={onPlanChange} />}
     </div>
   )
 }
 
+// Подложка плана здания в панели карты (за сеткой/треками). objectFit:fill +
+// aspectRatio панели = пропорции плана → без искажений и с совпадением координат.
+function FloorplanBg({ hasPlan, planVersion }: { hasPlan: boolean; planVersion: number }) {
+  if (!hasPlan) return null
+  return <img src={api.getFloorplanUrl(planVersion)} alt="" style={styles.planImg} />
+}
+
+interface PlanProps { hasPlan: boolean; planVersion: number; planAspect: number }
+
 // ── Живая карта: сшитые траектории ──────────────────────────────────────────
-function LiveMap({ isRunning }: { isRunning: boolean }) {
+function LiveMap({ isRunning, hasPlan, planVersion, planAspect }: { isRunning: boolean } & PlanProps) {
   const [tracks, setTracks] = useState<MovementTrack[]>([])
   useEffect(() => {
     if (!isRunning) { setTracks([]); return }
@@ -74,9 +102,10 @@ function LiveMap({ isRunning }: { isRunning: boolean }) {
   return (
     <div style={styles.body}>
       <div style={styles.canvasWrap}>
-        <div style={styles.mapInner}>
+        <div style={{ ...styles.mapInner, aspectRatio: planAspect }}>
+          <FloorplanBg hasPlan={hasPlan} planVersion={planVersion} />
           <svg viewBox="0 0 1 1" preserveAspectRatio="none" style={styles.svg}>
-            <Grid />
+            {!hasPlan && <Grid />}
             {tracks.map((t) => {
               const col = personColor(t.global_id)
               const pointsStr = t.points.map((p) => `${p.x},${p.y}`).join(" ")
@@ -132,14 +161,30 @@ function LiveMap({ isRunning }: { isRunning: boolean }) {
 }
 
 // ── Калибровка: 4+ пары «кадр ↔ карта» ──────────────────────────────────────
-function Calibrator({ camId, setCamId, camList }:
-  { camId: string; setCamId: (v: string) => void; camList: string[] }) {
+function Calibrator({ camId, setCamId, camList, hasPlan, planVersion, planAspect, onPlanChange }:
+  { camId: string; setCamId: (v: string) => void; camList: string[]; onPlanChange: () => void } & PlanProps) {
   const [pairs, setPairs] = useState<CameraMappingPoint[]>([])
   const [frameUrl, setFrameUrl] = useState("")
   const [status, setStatus] = useState("")
   const imgSvg = useRef<SVGSVGElement>(null)
   const mapSvg = useRef<SVGSVGElement>(null)
+  const planInput = useRef<HTMLInputElement>(null)
   const dragRef = useRef<{ which: "image" | "map"; idx: number } | null>(null)
+
+  const onPlanFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ""  // позволить повторно выбрать тот же файл
+    if (!file) return
+    try {
+      await api.uploadFloorplan(file)
+      setStatus("План загружен ✓")
+      onPlanChange()
+    } catch (err) { setStatus(`Ошибка загрузки: ${(err as Error).message}`) }
+  }
+  const removePlan = async () => {
+    try { await api.deleteFloorplan(); setStatus("План удалён"); onPlanChange() }
+    catch (err) { setStatus(`Ошибка: ${(err as Error).message}`) }
+  }
 
   const refreshFrame = useCallback(() => { if (camId) setFrameUrl(api.getFrameUrl(camId)) }, [camId])
   const loadMapping = useCallback(async () => {
@@ -222,10 +267,11 @@ function Calibrator({ camId, setCamId, camList }:
         {/* Карта */}
         <div style={styles.calibCol}>
           <div style={styles.calibLabel}>План помещения — те же точки</div>
-          <div style={styles.mapInner}>
+          <div style={{ ...styles.mapInner, aspectRatio: planAspect }}>
+            <FloorplanBg hasPlan={hasPlan} planVersion={planVersion} />
             <svg ref={mapSvg} viewBox="0 0 1 1" preserveAspectRatio="none" style={styles.svg}
               onPointerMove={onMove(mapSvg)} onPointerUp={onUp} onPointerLeave={onUp}>
-              <Grid />
+              {!hasPlan && <Grid />}
               {markers("map", mapSvg)}
             </svg>
           </div>
@@ -243,10 +289,20 @@ function Calibrator({ camId, setCamId, camList }:
           <button style={styles.btnSave} onClick={save} disabled={!camId}>Сохранить</button>
           {status && <span style={styles.status}>{status}</span>}
         </div>
+        <div style={styles.sideTitle}>План здания</div>
+        <div style={styles.controlsCol}>
+          <input ref={planInput} type="file" accept="image/png,image/jpeg,image/webp"
+            onChange={onPlanFile} style={{ display: "none" }} />
+          <button style={styles.btnPrimary} onClick={() => planInput.current?.click()}>
+            {hasPlan ? "Заменить план (PNG/JPG)" : "Загрузить план (PNG/JPG)"}
+          </button>
+          {hasPlan && <button style={styles.btn} onClick={removePlan}>Удалить план</button>}
+        </div>
         <div style={styles.hint}>
-          Поставьте ≥4 пар: точку на полу в кадре и ТУ ЖЕ точку на плане. По ним
-          строится проекция кадр→карта, и траектории с разных камер сшиваются в
-          одну линию. Номера точек должны соответствовать друг другу.
+          Загрузите план здания — он станет подложкой карты. Затем поставьте ≥4
+          пар: точку на полу в кадре и ТУ ЖЕ точку на плане. По ним строится
+          проекция кадр→карта, и траектории с разных камер сшиваются в одну
+          линию. Номера точек должны соответствовать друг другу.
         </div>
         <div style={styles.sideTitle}>Пары точек: {pairs.length}</div>
       </div>
@@ -268,6 +324,7 @@ const styles: Record<string, React.CSSProperties> = {
   calibLabel: { fontFamily: "monospace", fontSize: "0.68rem", color: "#888", textTransform: "uppercase", letterSpacing: "1px" },
   mapInner: { position: "relative" as const, width: "100%", maxWidth: "760px", aspectRatio: "16 / 9", background: "#0a0a0a", borderRadius: "8px", overflow: "hidden", border: "1px solid #2a2a2a" },
   frame: { position: "absolute" as const, inset: 0, width: "100%", height: "100%", objectFit: "fill" as const, display: "block" },
+  planImg: { position: "absolute" as const, inset: 0, width: "100%", height: "100%", objectFit: "fill" as const, display: "block", opacity: 0.75 },
   noFrame: { position: "absolute" as const, inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#555", fontFamily: "monospace", fontSize: "0.8rem" },
   svg: { position: "absolute" as const, inset: 0, width: "100%", height: "100%", touchAction: "none" },
   side: { width: "300px", borderLeft: "1px solid #333", padding: "12px 16px", overflowY: "auto" as const, display: "flex", flexDirection: "column", gap: "10px" },
